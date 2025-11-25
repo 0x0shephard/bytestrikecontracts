@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Environment
+.env
+.env.*
+
+# Build
+dist/
+
+# Data (will be mounted as volume)
+data/
+*.json
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!package.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+test/
+*.test.ts
+*.spec.ts
+
+# Misc
+screenshots/
+logs/

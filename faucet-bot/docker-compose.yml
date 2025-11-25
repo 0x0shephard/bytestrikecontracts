@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  faucet-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bytestrike-faucet-bot
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      # Blockchain Configuration
+      - SEPOLIA_RPC_URL=${SEPOLIA_RPC_URL}
+      - MASTER_WALLET_PRIVATE_KEY=${MASTER_WALLET_PRIVATE_KEY}
+
+      # Google Cloud Faucet Configuration
+      - GOOGLE_EMAIL=${GOOGLE_EMAIL}
+      - GOOGLE_PASSWORD=${GOOGLE_PASSWORD}
+      - FAUCET_WALLET_ADDRESS=${FAUCET_WALLET_ADDRESS}
+
+      # Bot Configuration
+      - PORT=${PORT:-3001}
+      - CLAIM_INTERVAL_HOURS=${CLAIM_INTERVAL_HOURS:-24}
+      - DISTRIBUTION_AMOUNT=${DISTRIBUTION_AMOUNT:-0.04}
+      - MIN_MASTER_BALANCE=${MIN_MASTER_BALANCE:-0.1}
+
+      # Rate Limiting
+      - MAX_REQUESTS_PER_WALLET_PER_DAY=${MAX_REQUESTS_PER_WALLET_PER_DAY:-1}
+      - MAX_REQUESTS_PER_IP_PER_DAY=${MAX_REQUESTS_PER_IP_PER_DAY:-3}
+      - MIN_WALLET_BALANCE_THRESHOLD=${MIN_WALLET_BALANCE_THRESHOLD:-0.05}
+
+      # Browser Configuration
+      - HEADLESS=${HEADLESS:-true}
+      - NODE_ENV=production
+      - PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+      - PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+    volumes:
+      # Persistent data directory for requests, claims, rate limits
+      - ./data:/app/faucet-bot/data
+
+    networks:
+      - faucet-network
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  faucet-network:
+    driver: bridge

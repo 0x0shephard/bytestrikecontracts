@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: bytestrike-faucet-bot
+    env: node
+    region: oregon
+    plan: starter # $7/month - Change to 'free' for free tier (with limitations)
+    buildCommand: npm install && npx playwright install chromium --with-deps && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+        value: false
+      - key: HEADLESS
+        value: true
+      # Add these in Render Dashboard (sensitive):
+      # - SEPOLIA_RPC_URL
+      # - MASTER_WALLET_PRIVATE_KEY
+      # - GOOGLE_EMAIL
+      # - GOOGLE_PASSWORD
+      # - FAUCET_WALLET_ADDRESS
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: faucet-data
+      mountPath: /app/faucet-bot/data
+      sizeGB: 1
