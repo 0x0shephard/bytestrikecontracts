@@ -58,6 +58,9 @@ interface IVAMM {
     /// @notice Cumulative funding per unit (1e18) since inception (signed).
     function cumulativeFundingPerUnitX18() external view returns (int256);
 
+    /// @notice Get current virtual reserves
+    function getReserves() external view returns (uint256 base, uint256 quote);
+
     // ========= Admin / Keepers =========
     /// @notice Set total virtual liquidity (used if LP shares are handled externally via cuERC20).
     function setLiquidity(uint128 newLiquidity) external;

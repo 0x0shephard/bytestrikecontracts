@@ -1,0 +1,55 @@
+Compiling 32 files with Solc 0.8.30
+Solc 0.8.30 finished in 4.31s
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    CLEARINGHOUSE UPGRADE V2
+    Fix: Decimal conversion for fees
+  =========================================
+  
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Proxy: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6
+  
+  Deploying new ClearingHouse implementation...
+  New Implementation: 0x2EC22b3e3AC4Bc5427dCA20B70746de6E663f187
+  
+  Upgrading proxy...
+  Upgrade complete!
+  
+  =========================================
+    UPGRADE SUCCESSFUL
+  =========================================
+  
+  Changes:
+    - Fees now converted from 1e18 to quote decimals
+    - USDC fees: 1e18 -> 1e6 (divide by 1e12)
+    - Insurance fund payouts use correct decimals
+  
+  Proxy: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6
+  New Implementation: 0x2EC22b3e3AC4Bc5427dCA20B70746de6E663f187
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001026323 gwei
+
+Estimated total gas used for script: 7174978
+
+Estimated amount required: 0.000007363844945894 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/UpgradeClearingHouseV2.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/UpgradeClearingHouseV2.s.sol/11155111/run-latest.json
+

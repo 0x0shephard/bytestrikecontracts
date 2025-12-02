@@ -1,0 +1,251 @@
+No files changed, compilation skipped
+Traces:
+  [3749660] DeployFreshClearingHouse::run()
+    ├─ [0] VM::envUint("PRIVATE_KEY") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::addr(<pk>) [staticcall]
+    │   └─ ← [Return] 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    ├─ [0] console::log("=== DEPLOY FRESH CLEARINGHOUSE (OPTION C) ===") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Deployer:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::startBroadcast(<pk>)
+    │   └─ ← [Return]
+    ├─ [0] console::log("Step 1: Deploying ClearingHouse implementation...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [3347291] → new ClearingHouse@0xB7c9ebEc73c45a4aE487bF5508976Ee70995b3b2
+    │   ├─ emit Initialized(version: 18446744073709551615 [1.844e19])
+    │   └─ ← [Return] 16601 bytes of code
+    ├─ [0] console::log("Implementation deployed at:", ClearingHouse: [0xB7c9ebEc73c45a4aE487bF5508976Ee70995b3b2]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Step 2: Deploying ERC1967 Proxy...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [143938] → new ERC1967Proxy@0x18F863b1b0A3Eca6B2235dc1957291E357f490B0
+    │   ├─ emit Upgraded(implementation: ClearingHouse: [0xB7c9ebEc73c45a4aE487bF5508976Ee70995b3b2])
+    │   ├─ [93420] ClearingHouse::initialize(0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2, 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD, 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [delegatecall]
+    │   │   ├─ emit RoleGranted(role: 0x0000000000000000000000000000000000000000000000000000000000000000, account: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406, sender: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406)
+    │   │   ├─ emit Initialized(version: 1)
+    │   │   └─ ← [Return]
+    │   └─ ← [Return] 130 bytes of code
+    ├─ [0] console::log("Proxy deployed at:", ERC1967Proxy: [0x18F863b1b0A3Eca6B2235dc1957291E357f490B0]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Step 3: Setting H100-PERP risk parameters...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [112149] ERC1967Proxy::fallback(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, 1000, 500, 250, 1000000000000000000000 [1e21])
+    │   ├─ [111821] ClearingHouse::setRiskParams(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, 1000, 500, 250, 1000000000000000000000 [1e21]) [delegatecall]
+    │   │   ├─ [16181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937) [staticcall]
+    │   │   │   └─ ← [Return] Market({ vamm: 0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85, feeBps: 10, paused: false, oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, feeRouter: 0xa75839A6D2Bb2f47FE98dc81EC47eaD01D4A2c1F, insuranceFund: 0x3C1085dF918a38A95F84945E6705CC857b664074, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000000000000000 [1e18] })
+    │   │   ├─ emit RiskParamsSet(marketId: 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, imrBps: 1000, mmrBps: 500, liquidationPenaltyBps: 250, penaltyCap: 1000000000000000000000 [1e21])
+    │   │   └─ ← [Return]
+    │   └─ ← [Return]
+    ├─ [0] console::log("Risk params set for H100-PERP") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Step 4: Verifying deployment...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [1343] ERC1967Proxy::fallback() [staticcall]
+    │   ├─ [1036] ClearingHouse::vault() [delegatecall]
+    │   │   └─ ← [Return] 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2
+    │   └─ ← [Return] 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2
+    ├─ [1277] ERC1967Proxy::fallback() [staticcall]
+    │   ├─ [970] ClearingHouse::marketRegistry() [delegatecall]
+    │   │   └─ ← [Return] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD
+    │   └─ ← [Return] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD
+    ├─ [977] ERC1967Proxy::fallback() [staticcall]
+    │   ├─ [670] ClearingHouse::DEFAULT_ADMIN_ROLE() [delegatecall]
+    │   │   └─ ← [Return] 0x0000000000000000000000000000000000000000000000000000000000000000
+    │   └─ ← [Return] 0x0000000000000000000000000000000000000000000000000000000000000000
+    ├─ [1247] ERC1967Proxy::fallback(0x0000000000000000000000000000000000000000000000000000000000000000, 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   ├─ [934] ClearingHouse::hasRole(0x0000000000000000000000000000000000000000000000000000000000000000, 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [delegatecall]
+    │   │   └─ ← [Return] true
+    │   └─ ← [Return] true
+    ├─ [0] console::log("Verification passed!") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Step 5: Verifying clean state...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [2948] ERC1967Proxy::fallback(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   ├─ [2638] ClearingHouse::_totalReservedMargin(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [delegatecall]
+    │   │   └─ ← [Return] 0
+    │   └─ ← [Return] 0
+    ├─ [29465] ERC1967Proxy::fallback(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   ├─ [29155] ClearingHouse::getAccountValue(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [delegatecall]
+    │   │   ├─ [25267] 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2::getAccountCollateralValueX18(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   │   │   └─ ← [Return] 0
+    │   │   └─ ← [Return] 0
+    │   └─ ← [Return] 0
+    ├─ [0] console::log("Test User:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Reserved Margin:", 0, "(should be 0)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Account Value:", 0, "(should be 0)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Clean state confirmed!") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=== DEPLOYMENT SUMMARY ===") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("New ClearingHouse Proxy:", ERC1967Proxy: [0x18F863b1b0A3Eca6B2235dc1957291E357f490B0]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("New ClearingHouse Implementation:", ClearingHouse: [0xB7c9ebEc73c45a4aE487bF5508976Ee70995b3b2]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Connected to Vault:", 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Connected to MarketRegistry:", 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=== NEXT STEPS ===") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("1. Update MarketRegistry to authorize new ClearingHouse:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("   - Call setClearinghouse() on MarketRegistry") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("2. Update CollateralVault to authorize new ClearingHouse:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("   - Call setClearinghouse() on CollateralVault") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("3. Update frontend addresses.js:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("   clearingHouse: '", ERC1967Proxy: [0x18F863b1b0A3Eca6B2235dc1957291E357f490B0], "'") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("   clearingHouseImpl: '", ClearingHouse: [0xB7c9ebEc73c45a4aE487bF5508976Ee70995b3b2], "'") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("4. Regenerate and update ABI:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("   cp out/ClearingHouse.sol/ClearingHouse.json \\") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("      bytestrike3/src/contracts/abis/ClearingHouse.json") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("5. Users must deposit collateral to start trading") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=== OLD CLEARINGHOUSE ===") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Old ClearingHouse Proxy: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Status: Deprecated (historical reference only)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Note: Users cannot interact with old contract after frontend update") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::stopBroadcast()
+    │   └─ ← [Return]
+    └─ ← [Return]
+
+
+Script ran successfully.
+
+== Logs ==
+  === DEPLOY FRESH CLEARINGHOUSE (OPTION C) ===
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  
+  Step 1: Deploying ClearingHouse implementation...
+  Implementation deployed at: 0xB7c9ebEc73c45a4aE487bF5508976Ee70995b3b2
+  
+  Step 2: Deploying ERC1967 Proxy...
+  Proxy deployed at: 0x18F863b1b0A3Eca6B2235dc1957291E357f490B0
+  
+  Step 3: Setting H100-PERP risk parameters...
+  Risk params set for H100-PERP
+  
+  Step 4: Verifying deployment...
+  Verification passed!
+  
+  Step 5: Verifying clean state...
+  Test User: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Reserved Margin: 0 (should be 0)
+  Account Value: 0 (should be 0)
+  Clean state confirmed!
+  
+  === DEPLOYMENT SUMMARY ===
+  New ClearingHouse Proxy: 0x18F863b1b0A3Eca6B2235dc1957291E357f490B0
+  New ClearingHouse Implementation: 0xB7c9ebEc73c45a4aE487bF5508976Ee70995b3b2
+  Connected to Vault: 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2
+  Connected to MarketRegistry: 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD
+  
+  === NEXT STEPS ===
+  1. Update MarketRegistry to authorize new ClearingHouse:
+     - Call setClearinghouse() on MarketRegistry
+  
+  2. Update CollateralVault to authorize new ClearingHouse:
+     - Call setClearinghouse() on CollateralVault
+  
+  3. Update frontend addresses.js:
+     clearingHouse: ' 0x18F863b1b0A3Eca6B2235dc1957291E357f490B0 '
+     clearingHouseImpl: ' 0xB7c9ebEc73c45a4aE487bF5508976Ee70995b3b2 '
+  
+  4. Regenerate and update ABI:
+     cp out/ClearingHouse.sol/ClearingHouse.json \
+        bytestrike3/src/contracts/abis/ClearingHouse.json
+  
+  5. Users must deposit collateral to start trading
+  
+  === OLD CLEARINGHOUSE ===
+  Old ClearingHouse Proxy: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6
+  Status: Deprecated (historical reference only)
+  Note: Users cannot interact with old contract after frontend update
+
+## Setting up 1 EVM.
+==========================
+Simulated On-chain Traces:
+
+  [3347291] → new ClearingHouse@0xB7c9ebEc73c45a4aE487bF5508976Ee70995b3b2
+    ├─ emit Initialized(version: 18446744073709551615 [1.844e19])
+    └─ ← [Return] 16601 bytes of code
+
+  [146438] → new ERC1967Proxy@0x18F863b1b0A3Eca6B2235dc1957291E357f490B0
+    ├─ emit Upgraded(implementation: ClearingHouse: [0xB7c9ebEc73c45a4aE487bF5508976Ee70995b3b2])
+    ├─ [93420] ClearingHouse::initialize(0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2, 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD, 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [delegatecall]
+    │   ├─ emit RoleGranted(role: 0x0000000000000000000000000000000000000000000000000000000000000000, account: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406, sender: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406)
+    │   ├─ emit Initialized(version: 1)
+    │   └─ ← [Return]
+    └─ ← [Return] 130 bytes of code
+
+  [120649] ERC1967Proxy::fallback(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, 1000, 500, 250, 1000000000000000000000 [1e21])
+    ├─ [115821] ClearingHouse::setRiskParams(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, 1000, 500, 250, 1000000000000000000000 [1e21]) [delegatecall]
+    │   ├─ [16181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937) [staticcall]
+    │   │   └─ ← [Return] Market({ vamm: 0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85, feeBps: 10, paused: false, oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, feeRouter: 0xa75839A6D2Bb2f47FE98dc81EC47eaD01D4A2c1F, insuranceFund: 0x3C1085dF918a38A95F84945E6705CC857b664074, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000000000000000 [1e18] })
+    │   ├─ emit RiskParamsSet(marketId: 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, imrBps: 1000, mmrBps: 500, liquidationPenaltyBps: 250, penaltyCap: 1000000000000000000000 [1e21])
+    │   └─ ← [Return]
+    └─ ← [Return]
+
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.00100001 gwei
+
+Estimated total gas used for script: 5254062
+
+Estimated amount required: 0.00000525411454062 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/DeployFreshClearingHouse.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/DeployFreshClearingHouse.s.sol/11155111/run-latest.json
+

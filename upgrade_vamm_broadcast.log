@@ -1,0 +1,60 @@
+No files changed, compilation skipped
+Script ran successfully.
+
+== Logs ==
+  =================================
+  Upgrading vAMM with Reserve Protection
+  =================================
+  Proxy Address: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5
+  
+  Deploying new vAMM implementation...
+  New Implementation: 0x1f903Bd4C88E3cdAD8F2f3b5CE494e83348CEbc9
+  
+  Upgrading proxy to new implementation...
+  Proxy upgraded successfully!
+  
+  Setting minimum reserves...
+    Min Base Reserve: 10000000 GPU-HRS
+    Min Quote Reserve: 37900000 USDC
+  Minimum reserves set!
+  
+  Resetting reserves to rescue vAMM...
+    New Price: $3.79
+    New Base Reserve: 1000000000 GPU-HRS
+    New Quote Reserve: 3790000000 USDC
+  Reserves reset successfully!
+  
+  Verifying upgrade...
+    Current Base Reserve: 1000000000
+    Current Quote Reserve: 3790000000
+    Current Mark Price: $ 379 . 0
+  
+  =================================
+  Upgrade Complete!
+  =================================
+  vAMM is now protected against reserve depletion
+  Positions can now be closed properly
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 3.027282267 gwei
+
+Estimated total gas used for script: 2986718
+
+Estimated amount required: 0.009041638437929706 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/UpgradeVAMMWithReserveProtection.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/UpgradeVAMMWithReserveProtection.s.sol/11155111/run-latest.json
+

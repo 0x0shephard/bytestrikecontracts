@@ -1,0 +1,80 @@
+No files changed, compilation skipped
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    TESTING DECIMAL CONVERSION FIX
+  =========================================
+  
+  Trader: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  ClearingHouse: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6
+  Market: 0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5
+  
+  BEFORE TRADE:
+    Trader USDC balance: 753901000000
+    Trader collateral: 386099000000
+    InsuranceFund USDC: 0
+    FeeRouter USDC: 0
+  
+  POSITION BEFORE:
+    Size: 0
+    Margin: 0
+  
+  Opening position:
+    Size: 100000000000000 wei (0.0001 ETH)
+    Price limit: 4000000000000000000
+  
+  FAILED: Low-level error
+  0xe450d38c000000000000000000000000a75839a6d2bb2f47fe98dc81ec47ead01d4a2c1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001b4ff40826e
+
+## Setting up 1 EVM.
+  [362768] 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6::openPosition(0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5, true, 100000000000000 [1e14], 4000000000000000000 [4e18])
+    ├─ [357933] 0x2EC22b3e3AC4Bc5427dCA20B70746de6E663f187::openPosition(0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5, true, 100000000000000 [1e14], 4000000000000000000 [4e18]) [delegatecall]
+    │   ├─ [16181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5) [staticcall]
+    │   │   └─ ← [Return] Market({ vamm: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5, feeBps: 100, paused: false, oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, feeRouter: 0xa75839A6D2Bb2f47FE98dc81EC47eaD01D4A2c1F, insuranceFund: 0x3C1085dF918a38A95F84945E6705CC857b664074, baseAsset: 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE, quoteToken: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000000000000000 [1e18] })
+    │   ├─ [53092] 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5::pokeFunding()
+    │   │   ├─ [48288] 0x2B83ca8210cCe6CB14Bc0cFdA2CDFD83021D743b::pokeFunding() [delegatecall]
+    │   │   │   ├─ [2343] 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad::getPrice() [staticcall]
+    │   │   │   │   └─ ← [Return] 3790104796597920768 [3.79e18]
+    │   │   │   ├─ emit FundingPoked(cumulativeFundingPerUnitX18: -251520587148566899 [-2.515e17], timestamp: 1763682456 [1.763e9], fundingRateX18: -1052159229729858 [-1.052e15])
+    │   │   │   └─ ← [Stop]
+    │   │   └─ ← [Return]
+    │   ├─ [937] 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5::cumulativeFundingPerUnitX18() [staticcall]
+    │   │   ├─ [630] 0x2B83ca8210cCe6CB14Bc0cFdA2CDFD83021D743b::cumulativeFundingPerUnitX18() [delegatecall]
+    │   │   │   └─ ← [Return] -251520587148566899 [-2.515e17]
+    │   │   └─ ← [Return] -251520587148566899 [-2.515e17]
+    │   ├─ [1605] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::isActive(0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5) [staticcall]
+    │   │   └─ ← [Return] true
+    │   ├─ [2181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5) [staticcall]
+    │   │   └─ ← [Return] Market({ vamm: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5, feeBps: 100, paused: false, oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, feeRouter: 0xa75839A6D2Bb2f47FE98dc81EC47eaD01D4A2c1F, insuranceFund: 0x3C1085dF918a38A95F84945E6705CC857b664074, baseAsset: 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE, quoteToken: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000000000000000 [1e18] })
+    │   ├─ [76333] 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5::swapBaseForQuote(100000000000000 [1e14], 4000000000000000000 [4e18])
+    │   │   ├─ [76014] 0x2B83ca8210cCe6CB14Bc0cFdA2CDFD83021D743b::swapBaseForQuote(100000000000000 [1e14], 4000000000000000000 [4e18]) [delegatecall]
+    │   │   │   ├─ emit Swap(sender: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6, baseDelta: 100000000000000 [1e14], quoteDelta: -375377631766149 [-3.753e14], avgPriceX18: 3753776317661490000 [3.753e18])
+    │   │   │   └─ ← [Return] 100000000000000 [1e14], -375377631766149 [-3.753e14], 3753776317661490000 [3.753e18]
+    │   │   └─ ← [Return] 100000000000000 [1e14], -375377631766149 [-3.753e14], 3753776317661490000 [3.753e18]
+    │   ├─ [2181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5) [staticcall]
+    │   │   └─ ← [Return] Market({ vamm: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5, feeBps: 100, paused: false, oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, feeRouter: 0xa75839A6D2Bb2f47FE98dc81EC47eaD01D4A2c1F, insuranceFund: 0x3C1085dF918a38A95F84945E6705CC857b664074, baseAsset: 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE, quoteToken: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000000000000000 [1e18] })
+    │   ├─ [74016] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getAccountCollateralValueX18(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   │   ├─ [20437] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::getPrice("USDC") [staticcall]
+    │   │   │   ├─ [2253] 0x700Be93872eAC1D97eEBFa5ab0863a222cAa6f41::decimals() [staticcall]
+    │   │   │   │   └─ ← [Return] 8
+    │   │   │   ├─ [4513] 0x700Be93872eAC1D97eEBFa5ab0863a222cAa6f41::latestRoundData() [staticcall]
+    │   │   │   │   └─ ← [Return] 1, 100000000 [1e8], 1763641428 [1.763e9], 1763641428 [1.763e9], 1
+    │   │   │   └─ ← [Return] 1000000000000000000 [1e18]
+    │   │   ├─ [3937] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::getPrice("USDC") [staticcall]
+    │   │   │   ├─ [253] 0x700Be93872eAC1D97eEBFa5ab0863a222cAa6f41::decimals() [staticcall]
+    │   │   │   │   └─ ← [Return] 8
+    │   │   │   ├─ [513] 0x700Be93872eAC1D97eEBFa5ab0863a222cAa6f41::latestRoundData() [staticcall]
+    │   │   │   │   └─ ← [Return] 1, 100000000 [1e8], 1763641428 [1.763e9], 1763641428 [1.763e9], 1
+    │   │   │   └─ ← [Return] 1000000000000000000 [1e18]
+    │   │   └─ ← [Return] 99647622368309000000000000 [9.964e25]
+    │   ├─ [17106] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   │   └─ ← [Return] CollateralConfig({ token: 0x0000000000000000000000000000000000000000, baseUnit: 0, haircutBps: 0, liqIncentiveBps: 0, cap: 0, accountCap: 0, enabled: false, depositPaused: false, withdrawPaused: false, oracleSymbol: "" })
+    │   ├─ [12469] 0xa75839A6D2Bb2f47FE98dc81EC47eaD01D4A2c1F::onTradeFee(3753776317661 [3.753e12])
+    │   │   ├─ [2736] 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7::transfer(0x3C1085dF918a38A95F84945E6705CC857b664074, 1876888158830 [1.876e12])
+    │   │   │   └─ ← [Revert] custom error 0xe450d38c: 000000000000000000000000a75839a6d2bb2f47fe98dc81ec47ead01d4a2c1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001b4ff40826e
+    │   │   └─ ← [Revert] custom error 0xe450d38c: 000000000000000000000000a75839a6d2bb2f47fe98dc81ec47ead01d4a2c1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001b4ff40826e
+    │   └─ ← [Revert] custom error 0xe450d38c: 000000000000000000000000a75839a6d2bb2f47fe98dc81ec47ead01d4a2c1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001b4ff40826e
+    └─ ← [Revert] custom error 0xe450d38c: 000000000000000000000000a75839a6d2bb2f47fe98dc81ec47ead01d4a2c1f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001b4ff40826e
+
+Error: Simulated execution failed.

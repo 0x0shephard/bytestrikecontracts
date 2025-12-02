@@ -1,0 +1,57 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 531.88ms
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    ENABLE USDC COLLATERAL
+  =========================================
+  
+  Admin: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Vault: 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0
+  USDC: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9
+  
+  Registering USDC collateral configuration...
+    Base Unit: 1000000 (6 decimals)
+    Haircut: 0 bps (0%)
+    Liq Incentive: 500 bps (5%)
+    Oracle Symbol: USDC
+  
+  SUCCESS: USDC enabled as collateral!
+  
+  Verification:
+    Token: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9
+    Base Unit: 1000000
+    Haircut BPS: 0
+    Liq Incentive BPS: 500
+    Enabled: true
+    Oracle Symbol: USDC
+  
+  =========================================
+    SETUP COMPLETE!
+  =========================================
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001052643 gwei
+
+Estimated total gas used for script: 394384
+
+Estimated amount required: 0.000000415145556912 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/EnableUSDCCollateral.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/EnableUSDCCollateral.s.sol/11155111/run-latest.json
+

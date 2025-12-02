@@ -1,0 +1,50 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 500.88ms
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    ADD ETH-PERP-V2 TO OLD REGISTRY
+  =========================================
+  
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Old MarketRegistry: 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD
+  
+  Adding market:
+    Market ID: 0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5
+    vAMM: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5
+    Oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad
+    Fee: 100 bps
+    Base Asset: 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
+    Quote Token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+  
+  Market added successfully!
+  
+  =========================================
+    MARKET ADDED
+  =========================================
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001000012 gwei
+
+Estimated total gas used for script: 274787
+
+Estimated amount required: 0.000000274790297444 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/AddMarketToOldRegistry.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/AddMarketToOldRegistry.s.sol/11155111/run-latest.json
+

@@ -1,0 +1,61 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 624.57ms
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    TEST OPEN LONG POSITION
+  =========================================
+  
+  Trader: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Market ID: 0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e
+  
+  USDC Wallet Balance: 1000000 USDC
+  
+  STEP 1: Depositing USDC...
+    Approved 5000 USDC
+    Deposited 5000 USDC
+    Vault Balance: 5000 USDC
+    Collateral Value: 28000 USD
+  
+  STEP 2: Opening long position...
+    Size: 0.01 ETH
+    Mark Price: 3 USD
+    Notional: 0 USD
+  
+  FAILED: Transaction reverted
+  Reason: Not CH
+  
+  =========================================
+    TEST COMPLETE
+  =========================================
+
+## Setting up 1 EVM.
+  [109442] 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6::openPosition(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e, true, 10000000000000000 [1e16], 0)
+    ├─ [104607] 0x9586ec03985d824f223e16cb6E703551F63b1F20::openPosition(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e, true, 10000000000000000 [1e16], 0) [delegatecall]
+    │   ├─ [16181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e) [staticcall]
+    │   │   └─ ← [Return] Market({ vamm: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5, feeBps: 10, paused: false, oracle: 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c, feeRouter: 0xc6B7aE853742992297a7526F5De7fdbF8164e687, insuranceFund: 0x7d8B6B91aAC78F65EBc1D39d0a5c3608115Afe42, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, baseUnit: 1000000000000000000 [1e18] })
+    │   ├─ [43878] 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5::pokeFunding()
+    │   │   ├─ [39074] 0x2B83ca8210cCe6CB14Bc0cFdA2CDFD83021D743b::pokeFunding() [delegatecall]
+    │   │   │   ├─ [2343] 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad::getPrice() [staticcall]
+    │   │   │   │   └─ ← [Return] 3790104796597920768 [3.79e18]
+    │   │   │   ├─ emit FundingPoked(cumulativeFundingPerUnitX18: -249644514871036609 [-2.496e17], timestamp: 1763678412 [1.763e9], fundingRateX18: -87646533949797342 [-8.764e16])
+    │   │   │   └─ ← [Stop]
+    │   │   └─ ← [Return]
+    │   ├─ [937] 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5::cumulativeFundingPerUnitX18() [staticcall]
+    │   │   ├─ [630] 0x2B83ca8210cCe6CB14Bc0cFdA2CDFD83021D743b::cumulativeFundingPerUnitX18() [delegatecall]
+    │   │   │   └─ ← [Return] -249644514871036609 [-2.496e17]
+    │   │   └─ ← [Return] -249644514871036609 [-2.496e17]
+    │   ├─ [1605] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::isActive(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e) [staticcall]
+    │   │   └─ ← [Return] true
+    │   ├─ [2181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e) [staticcall]
+    │   │   └─ ← [Return] Market({ vamm: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5, feeBps: 10, paused: false, oracle: 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c, feeRouter: 0xc6B7aE853742992297a7526F5De7fdbF8164e687, insuranceFund: 0x7d8B6B91aAC78F65EBc1D39d0a5c3608115Afe42, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, baseUnit: 1000000000000000000 [1e18] })
+    │   ├─ [2943] 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5::swapBaseForQuote(10000000000000000 [1e16], 0)
+    │   │   ├─ [2617] 0x2B83ca8210cCe6CB14Bc0cFdA2CDFD83021D743b::swapBaseForQuote(10000000000000000 [1e16], 0) [delegatecall]
+    │   │   │   └─ ← [Revert] Not CH
+    │   │   └─ ← [Revert] Not CH
+    │   └─ ← [Revert] Not CH
+    └─ ← [Revert] Not CH
+
+Error: Simulated execution failed.

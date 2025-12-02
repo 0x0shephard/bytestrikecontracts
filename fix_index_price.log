@@ -1,0 +1,45 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 591.30ms
+Compiler run successful!
+Traces:
+  [1158110] → new FixIndexPrice@0x9f7cF1d1F558E57ef88a59ac3D47214eF25B6A06
+    └─ ← [Return] 5674 bytes of code
+
+  [14805] FixIndexPrice::run()
+    ├─ [0] VM::envUint("PRIVATE_KEY") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::addr(<pk>) [staticcall]
+    │   └─ ← [Return] 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  FIX INDEX PRICE") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Deployer:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("ETH Price: $3.79") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::startBroadcast(<pk>)
+    │   └─ ← [Return]
+    ├─ [0] console::log("Step 1: Registering ETH asset...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [350] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::registerAsset(0xaaaebeba3810b1e6b70781f14b2d72c1cb89c0b2b320c43bb67ff79f562f5ff4)
+    │   └─ ← [Revert] EvmError: Revert
+    └─ ← [Revert] EvmError: Revert
+
+
+
+== Logs ==
+  =========================================
+    FIX INDEX PRICE
+  =========================================
+  
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  ETH Price: $3.79
+  
+  Step 1: Registering ETH asset...

@@ -1,0 +1,8 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 335.15ms
+Error: Compiler run failed:
+Error (9582): Member "setMarketRegistry" not found or not visible after argument-dependent lookup in contract ClearingHouse.
+  --> script/UpdateMarketRegistryAddress.s.sol:36:9:
+   |
+36 |         ClearingHouse(CLEARING_HOUSE).setMarketRegistry(MARKET_REGISTRY_NEW);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

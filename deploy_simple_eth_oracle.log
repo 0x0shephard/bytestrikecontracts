@@ -1,0 +1,55 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 508.10ms
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    DEPLOY SIMPLE ETH ORACLE
+  =========================================
+  
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  ETH Price: $3.79
+  
+  Step 1: Deploying SimpleETHOracle...
+    Oracle deployed: 0x5d57118594a8b1C3Aa3dbA1f0A18a6744f531096
+    Oracle price: 3790000000000000000
+  
+  Step 2: Setting vAMM oracle...
+    Oracle set!
+  
+  =========================================
+    VERIFICATION
+  =========================================
+    Oracle Address: 0x5d57118594a8b1C3Aa3dbA1f0A18a6744f531096
+    vAMM Oracle: 0x5d57118594a8b1C3Aa3dbA1f0A18a6744f531096
+    Match: true
+    Price: 3790000000000000000 ($3.79)
+  
+  =========================================
+    COMPLETE
+  =========================================
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001088579 gwei
+
+Estimated total gas used for script: 167828
+
+Estimated amount required: 0.000000182694036412 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/DeploySimpleETHOracle.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/DeploySimpleETHOracle.s.sol/11155111/run-latest.json
+

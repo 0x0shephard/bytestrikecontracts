@@ -1,0 +1,111 @@
+No files changed, compilation skipped
+Traces:
+  [32836] AuthorizeNewClearingHouse::run()
+    ├─ [0] VM::envUint("PRIVATE_KEY") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::addr(<pk>) [staticcall]
+    │   └─ ← [Return] 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    ├─ [0] VM::envAddress("NEW_CH") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] console::log("=== AUTHORIZE NEW CLEARINGHOUSE ===") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Deployer:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("New ClearingHouse:", 0x18F863b1b0A3Eca6B2235dc1957291E357f490B0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::startBroadcast(<pk>)
+    │   └─ ← [Return]
+    ├─ [0] console::log("Step 1: Setting ClearingHouse in CollateralVault...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [8780] 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2::setClearinghouse(0x18F863b1b0A3Eca6B2235dc1957291E357f490B0)
+    │   ├─ emit ClearinghouseSet(clearinghouse: 0x18F863b1b0A3Eca6B2235dc1957291E357f490B0)
+    │   └─ ← [Stop]
+    ├─ [0] console::log("CollateralVault updated to use new ClearingHouse") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [830] 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2::getClearinghouse() [staticcall]
+    │   └─ ← [Return] 0x18F863b1b0A3Eca6B2235dc1957291E357f490B0
+    ├─ [0] console::log("Verification:", 0x18F863b1b0A3Eca6B2235dc1957291E357f490B0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [830] 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2::getClearinghouse() [staticcall]
+    │   └─ ← [Return] 0x18F863b1b0A3Eca6B2235dc1957291E357f490B0
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Step 2: Verifying MarketRegistry...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("MarketRegistry verified at:", 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Note: MarketRegistry doesn't store ClearingHouse reference") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=== AUTHORIZATION COMPLETE ===") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("New ClearingHouse is now authorized to:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  - Manage deposits/withdrawals in CollateralVault") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  - Read market configurations from MarketRegistry") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("NEXT: Update frontend to use new ClearingHouse address") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::stopBroadcast()
+    │   └─ ← [Return]
+    └─ ← [Return]
+
+
+Script ran successfully.
+
+== Logs ==
+  === AUTHORIZE NEW CLEARINGHOUSE ===
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  New ClearingHouse: 0x18F863b1b0A3Eca6B2235dc1957291E357f490B0
+  
+  Step 1: Setting ClearingHouse in CollateralVault...
+  CollateralVault updated to use new ClearingHouse
+  Verification: 0x18F863b1b0A3Eca6B2235dc1957291E357f490B0
+  
+  Step 2: Verifying MarketRegistry...
+  MarketRegistry verified at: 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD
+  Note: MarketRegistry doesn't store ClearingHouse reference
+  
+  === AUTHORIZATION COMPLETE ===
+  New ClearingHouse is now authorized to:
+    - Manage deposits/withdrawals in CollateralVault
+    - Read market configurations from MarketRegistry
+  
+  NEXT: Update frontend to use new ClearingHouse address
+
+## Setting up 1 EVM.
+==========================
+Simulated On-chain Traces:
+
+  [8780] 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2::setClearinghouse(0x18F863b1b0A3Eca6B2235dc1957291E357f490B0)
+    ├─ emit ClearinghouseSet(clearinghouse: 0x18F863b1b0A3Eca6B2235dc1957291E357f490B0)
+    └─ ← [Stop]
+
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001000007 gwei
+
+Estimated total gas used for script: 41730
+
+Estimated amount required: 0.00000004173029211 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/AuthorizeNewClearingHouse.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/AuthorizeNewClearingHouse.s.sol/11155111/run-latest.json
+

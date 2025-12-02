@@ -1,0 +1,120 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 685.99ms
+Compiler run successful!
+Traces:
+  [1278438] → new SetupETHPerpV2@0x9f7cF1d1F558E57ef88a59ac3D47214eF25B6A06
+    └─ ← [Return] 6275 bytes of code
+
+  [389065] SetupETHPerpV2::run()
+    ├─ [0] VM::envUint("PRIVATE_KEY") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::addr(<pk>) [staticcall]
+    │   └─ ← [Return] 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  SETUP ETH-PERP-V2 MARKET") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Deployer:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::toString(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e) [staticcall]
+    │   └─ ← [Return] "0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e"
+    ├─ [0] console::log("Market ID:", "0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::startBroadcast(<pk>)
+    │   └─ ← [Return]
+    ├─ [0] console::log("STEP 1: Adding market to MarketRegistry...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [16181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e) [staticcall]
+    │   └─ ← [Return] Market({ vamm: 0x0000000000000000000000000000000000000000, feeBps: 0, paused: false, oracle: 0x0000000000000000000000000000000000000000, feeRouter: 0x0000000000000000000000000000000000000000, insuranceFund: 0x0000000000000000000000000000000000000000, baseAsset: 0x0000000000000000000000000000000000000000, quoteToken: 0x0000000000000000000000000000000000000000, baseUnit: 0 })
+    ├─ [149665] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::addMarket(AddMarketConfig({ marketId: 0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e, vamm: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5, oracle: 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, baseUnit: 1000000000000000000 [1e18], feeBps: 10, feeRouter: 0xc6B7aE853742992297a7526F5De7fdbF8164e687, insuranceFund: 0x7d8B6B91aAC78F65EBc1D39d0a5c3608115Afe42 }))
+    │   ├─ emit MarketAdded(marketId: 0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e, vamm: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5)
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Market added successfully!") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("STEP 2: Setting risk parameters...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [104106] 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6::setRiskParams(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e, 1000, 500, 250, 1000000000000000000000 [1e21])
+    │   ├─ [99278] 0x9586ec03985d824f223e16cb6E703551F63b1F20::setRiskParams(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e, 1000, 500, 250, 1000000000000000000000 [1e21]) [delegatecall]
+    │   │   ├─ [2181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e) [staticcall]
+    │   │   │   └─ ← [Return] Market({ vamm: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5, feeBps: 10, paused: false, oracle: 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c, feeRouter: 0xc6B7aE853742992297a7526F5De7fdbF8164e687, insuranceFund: 0x7d8B6B91aAC78F65EBc1D39d0a5c3608115Afe42, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, baseUnit: 1000000000000000000 [1e18] })
+    │   │   ├─ emit RiskParamsSet(marketId: 0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e, imrBps: 1000, mmrBps: 500, liquidationPenaltyBps: 250, penaltyCap: 1000000000000000000000 [1e21])
+    │   │   └─ ← [Return]
+    │   └─ ← [Return]
+    ├─ [0] console::log("  Risk parameters set:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    IMR: 10% (1000 bps)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    MMR: 5% (500 bps)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Liquidation Penalty: 2.5% (250 bps)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Penalty Cap: 1000 USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("STEP 3: Minting USDC to trader...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [12265] 0x71075745A2A63dff3BD4819e9639D0E412c14AA9::mint(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406, 10000000000 [1e10])
+    │   ├─ emit Transfer(from: 0x0000000000000000000000000000000000000000, to: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406, value: 10000000000 [1e10])
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Minted", 10000 [1e4], "USDC to", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [537] 0x71075745A2A63dff3BD4819e9639D0E412c14AA9::balanceOf(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Return] 1010000000000 [1.01e12]
+    ├─ [0] console::log("  Current USDC balance:", 1010000 [1.01e6], "USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("STEP 4: Depositing USDC to CollateralVault...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [24325] 0x71075745A2A63dff3BD4819e9639D0E412c14AA9::approve(0x46615074Bb2bAA2b33553d50A25D0e4f2ec4542e, 5000000000 [5e9])
+    │   ├─ emit Approval(owner: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406, spender: 0x46615074Bb2bAA2b33553d50A25D0e4f2ec4542e, value: 5000000000 [5e9])
+    │   └─ ← [Return] true
+    ├─ [0] console::log("  Approved", 5000, "USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [24533] 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6::deposit(0x71075745A2A63dff3BD4819e9639D0E412c14AA9, 5000000000 [5e9])
+    │   ├─ [24207] 0x9586ec03985d824f223e16cb6E703551F63b1F20::deposit(0x71075745A2A63dff3BD4819e9639D0E412c14AA9, 5000000000 [5e9]) [delegatecall]
+    │   │   ├─ [18819] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::deposit(0x71075745A2A63dff3BD4819e9639D0E412c14AA9, 5000000000 [5e9], 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406)
+    │   │   │   └─ ← [Revert] Token not enabled
+    │   │   └─ ← [Revert] Token not enabled
+    │   └─ ← [Revert] Token not enabled
+    └─ ← [Revert] Token not enabled
+
+
+
+== Logs ==
+  =========================================
+    SETUP ETH-PERP-V2 MARKET
+  =========================================
+  
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  
+  Market ID: 0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e
+  
+  STEP 1: Adding market to MarketRegistry...
+    Market added successfully!
+  
+  STEP 2: Setting risk parameters...
+    Risk parameters set:
+      IMR: 10% (1000 bps)
+      MMR: 5% (500 bps)
+      Liquidation Penalty: 2.5% (250 bps)
+      Penalty Cap: 1000 USDC
+  
+  STEP 3: Minting USDC to trader...
+    Minted 10000 USDC to 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    Current USDC balance: 1010000 USDC
+  
+  STEP 4: Depositing USDC to CollateralVault...
+    Approved 5000 USDC
+Error: script failed: Token not enabled

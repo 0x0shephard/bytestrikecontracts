@@ -1,0 +1,16 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 338.93ms
+Error: Compiler run failed:
+Error (9429): This looks like an address but has an invalid checksum. Correct checksummed address: "0x37D5154731eE25C83E06E1abC312075AB4B4D8fF". If this is not used as an address, please prepend '00'. For more information please see https://docs.soliditylang.org/en/develop/types.html#address-literals
+SyntaxError: This looks like an address but has an invalid checksum. Correct checksummed address: "0x37D5154731eE25C83E06E1abC312075AB4B4D8fF". If this is not used as an address, please prepend '00'. For more information please see https://docs.soliditylang.org/en/develop/types.html#address-literals
+  --> script/CleanupVaultTokens.s.sol:14:32:
+   |
+14 |     address constant TOKEN_1 = 0x37d5154731ee25c83e06e1abc312075ab4b4d8ff; // Old token
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Error (9429): This looks like an address but has an invalid checksum. Correct checksummed address: "0x71075745A2A63dff3BD4819e9639D0E412c14AA9". If this is not used as an address, please prepend '00'. For more information please see https://docs.soliditylang.org/en/develop/types.html#address-literals
+SyntaxError: This looks like an address but has an invalid checksum. Correct checksummed address: "0x71075745A2A63dff3BD4819e9639D0E412c14AA9". If this is not used as an address, please prepend '00'. For more information please see https://docs.soliditylang.org/en/develop/types.html#address-literals
+  --> script/CleanupVaultTokens.s.sol:15:32:
+   |
+15 |     address constant TOKEN_2 = 0x71075745a2a63dff3bd4819e9639d0e412c14aa9; // Old token
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

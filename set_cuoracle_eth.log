@@ -1,0 +1,28 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 514.86ms
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    SET ETH INDEX PRICE IN CUORACLE
+  =========================================
+  
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  CuOracle: 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c
+  Target Price (wei): 3790000000000000000
+  Target Price (USD): 3.79
+  
+  Failed with low-level error
+  Trying alternative methods...
+  Could not read price (might need symbol parameter)
+  
+  =========================================
+    COMPLETE
+  =========================================
+
+## Setting up 1 EVM.
+  [350] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::updatePrice(3790000000000000000 [3.79e18])
+    └─ ← [Revert] EvmError: Revert
+
+Error: Simulated execution failed.

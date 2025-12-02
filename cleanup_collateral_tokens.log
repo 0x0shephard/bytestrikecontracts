@@ -1,0 +1,276 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 651.45ms
+Compiler run successful!
+Traces:
+  [195482] CleanupCollateralTokens::run()
+    ├─ [0] VM::envUint("PRIVATE_KEY") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::addr(<pk>) [staticcall]
+    │   └─ ← [Return] 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  CLEANUP COLLATERAL VAULT TOKENS") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Admin:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Vault:", 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("STEP 1: Checking current registered tokens...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [5073] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registeredTokens(0) [staticcall]
+    │   └─ ← [Return] 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF
+    ├─ [17116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x37D5154731eE25C83E06E1abC312075AB4B4D8fF) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 200, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [0] console::log("  Index", 0, ":", 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Enabled:", true) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Oracle Symbol:", "USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Base Unit:", 1000000 [1e6]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [3073] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registeredTokens(1) [staticcall]
+    │   └─ ← [Return] 0x71075745A2A63dff3BD4819e9639D0E412c14AA9
+    ├─ [17116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x71075745A2A63dff3BD4819e9639D0E412c14AA9) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [0] console::log("  Index", 1, ":", 0x71075745A2A63dff3BD4819e9639D0E412c14AA9) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Enabled:", true) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Oracle Symbol:", "USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Base Unit:", 1000000 [1e6]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [3073] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registeredTokens(2) [staticcall]
+    │   └─ ← [Return] 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+    ├─ [17116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [0] console::log("  Index", 2, ":", 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Enabled:", true) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Oracle Symbol:", "USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Base Unit:", 1000000 [1e6]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [3073] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registeredTokens(3) [staticcall]
+    │   └─ ← [Return] 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+    ├─ [3116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [0] console::log("  Index", 3, ":", 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Enabled:", true) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Oracle Symbol:", "USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Base Unit:", 1000000 [1e6]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [707] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registeredTokens(4) [staticcall]
+    │   └─ ← [Revert] EvmError: Revert
+    ├─ [0] console::log("  (No more tokens after index", 4, ")") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::startBroadcast(<pk>)
+    │   └─ ← [Return]
+    ├─ [0] console::log("STEP 2: Disabling old/duplicate tokens...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Disabling:", "Old Token 0", "at", 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [3116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x37D5154731eE25C83E06E1abC312075AB4B4D8fF) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 200, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [13356] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::setCollateralParams(0x37D5154731eE25C83E06E1abC312075AB4B4D8fF, CollateralConfig({ token: 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 200, cap: 0, accountCap: 0, enabled: false, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" }))
+    │   ├─ emit CollateralParamsUpdated(token: 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF, haircutBps: 0, liqIncentiveBps: 200, cap: 0, accountCap: 0, enabled: false, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC")
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Disabled successfully") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Disabling:", "Old mUSDC", "at", 0x71075745A2A63dff3BD4819e9639D0E412c14AA9) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [3116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x71075745A2A63dff3BD4819e9639D0E412c14AA9) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [11356] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::setCollateralParams(0x71075745A2A63dff3BD4819e9639D0E412c14AA9, CollateralConfig({ token: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: false, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" }))
+    │   ├─ emit CollateralParamsUpdated(token: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: false, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC")
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Disabled successfully") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Ensuring correct mUSDC is enabled:", 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [3116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [0] console::log("  Already enabled") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::stopBroadcast()
+    │   └─ ← [Return]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("STEP 3: Verifying cleanup...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [1073] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registeredTokens(0) [staticcall]
+    │   └─ ← [Return] 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF
+    ├─ [3116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x37D5154731eE25C83E06E1abC312075AB4B4D8fF) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 200, cap: 0, accountCap: 0, enabled: false, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [1073] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registeredTokens(1) [staticcall]
+    │   └─ ← [Return] 0x71075745A2A63dff3BD4819e9639D0E412c14AA9
+    ├─ [3116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x71075745A2A63dff3BD4819e9639D0E412c14AA9) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: false, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [1073] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registeredTokens(2) [staticcall]
+    │   └─ ← [Return] 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+    ├─ [3116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [0] console::log("  Enabled Token:", 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Oracle Symbol:", "USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Base Unit:", 1000000 [1e6]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [1073] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registeredTokens(3) [staticcall]
+    │   └─ ← [Return] 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+    ├─ [3116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [0] console::log("  Enabled Token:", 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Oracle Symbol:", "USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("    Base Unit:", 1000000 [1e6]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [707] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registeredTokens(4) [staticcall]
+    │   └─ ← [Revert] EvmError: Revert
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Total enabled tokens:", 2) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("WARNING: Expected 1 enabled token, found", 2) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  CLEANUP COMPLETE") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    └─ ← [Return]
+
+
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    CLEANUP COLLATERAL VAULT TOKENS
+  =========================================
+  
+  Admin: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Vault: 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0
+  
+  STEP 1: Checking current registered tokens...
+  
+    Index 0 : 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF
+      Enabled: true
+      Oracle Symbol: USDC
+      Base Unit: 1000000
+  
+    Index 1 : 0x71075745A2A63dff3BD4819e9639D0E412c14AA9
+      Enabled: true
+      Oracle Symbol: USDC
+      Base Unit: 1000000
+  
+    Index 2 : 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+      Enabled: true
+      Oracle Symbol: USDC
+      Base Unit: 1000000
+  
+    Index 3 : 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+      Enabled: true
+      Oracle Symbol: USDC
+      Base Unit: 1000000
+  
+    (No more tokens after index 4 )
+  STEP 2: Disabling old/duplicate tokens...
+  
+  Disabling: Old Token 0 at 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF
+    Disabled successfully
+  
+  Disabling: Old mUSDC at 0x71075745A2A63dff3BD4819e9639D0E412c14AA9
+    Disabled successfully
+  
+  Ensuring correct mUSDC is enabled: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+    Already enabled
+  
+  
+  STEP 3: Verifying cleanup...
+  
+    Enabled Token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+      Oracle Symbol: USDC
+      Base Unit: 1000000
+    Enabled Token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+      Oracle Symbol: USDC
+      Base Unit: 1000000
+  
+  Total enabled tokens: 2
+  
+  WARNING: Expected 1 enabled token, found 2
+  
+  =========================================
+    CLEANUP COMPLETE
+  =========================================
+
+## Setting up 1 EVM.
+==========================
+Simulated On-chain Traces:
+
+  [27656] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::setCollateralParams(0x37D5154731eE25C83E06E1abC312075AB4B4D8fF, CollateralConfig({ token: 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 200, cap: 0, accountCap: 0, enabled: false, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" }))
+    ├─ emit CollateralParamsUpdated(token: 0x37D5154731eE25C83E06E1abC312075AB4B4D8fF, haircutBps: 0, liqIncentiveBps: 200, cap: 0, accountCap: 0, enabled: false, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC")
+    └─ ← [Stop]
+
+  [27656] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::setCollateralParams(0x71075745A2A63dff3BD4819e9639D0E412c14AA9, CollateralConfig({ token: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: false, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" }))
+    ├─ emit CollateralParamsUpdated(token: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: false, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC")
+    └─ ← [Stop]
+
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001000016 gwei
+
+Estimated total gas used for script: 128018
+
+Estimated amount required: 0.000000128020048288 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/CleanupCollateralTokens.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/CleanupCollateralTokens.s.sol/11155111/run-latest.json
+

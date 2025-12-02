@@ -1,0 +1,42 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 617.79ms
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    TEST OPEN LONG POSITION
+  =========================================
+  
+  Trader: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Market ID: 0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e
+  
+  USDC Wallet Balance: 1000000 USDC
+  
+  STEP 1: Depositing USDC...
+    Approved 5000 USDC
+    Deposited 5000 USDC
+    Vault Balance: 5000 USDC
+    Collateral Value: 28000 USD
+  
+  STEP 2: Opening long position...
+    Size: 0.01 ETH
+    Mark Price: 3 USD
+    Notional: 0 USD
+  
+  FAILED: Transaction reverted
+  Reason: Market does not exist
+  
+  =========================================
+    TEST COMPLETE
+  =========================================
+
+## Setting up 1 EVM.
+  [27953] 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6::openPosition(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e, true, 10000000000000000 [1e16], 0)
+    ├─ [23118] 0x9586ec03985d824f223e16cb6E703551F63b1F20::openPosition(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e, true, 10000000000000000 [1e16], 0) [delegatecall]
+    │   ├─ [16181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e) [staticcall]
+    │   │   └─ ← [Return] Market({ vamm: 0x0000000000000000000000000000000000000000, feeBps: 0, paused: false, oracle: 0x0000000000000000000000000000000000000000, feeRouter: 0x0000000000000000000000000000000000000000, insuranceFund: 0x0000000000000000000000000000000000000000, baseAsset: 0x0000000000000000000000000000000000000000, quoteToken: 0x0000000000000000000000000000000000000000, baseUnit: 0 })
+    │   └─ ← [Revert] Market does not exist
+    └─ ← [Revert] Market does not exist
+
+Error: Simulated execution failed.

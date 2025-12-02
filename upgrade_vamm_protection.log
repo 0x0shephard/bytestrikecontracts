@@ -1,0 +1,52 @@
+Compiling 58 files with Solc 0.8.30
+Solc 0.8.30 finished in 4.55s
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =================================
+  Upgrading vAMM with Reserve Protection
+  =================================
+  Proxy Address: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5
+  
+  Deploying new vAMM implementation...
+  New Implementation: 0x27563E397dd9670BB063C5F95c0D09488aFEdFe4
+  
+  Upgrading proxy to new implementation...
+  Proxy upgraded successfully!
+  
+  Setting minimum reserves...
+    Min Base Reserve: 10000000 GPU-HRS
+    Min Quote Reserve: 37900000 USDC
+  Minimum reserves set!
+  
+  Resetting reserves to rescue vAMM...
+    New Price: $3.79
+    New Base Reserve: 1000000000 GPU-HRS
+    New Quote Reserve: 3790000000 USDC
+  Reserves reset successfully!
+  
+  Verifying upgrade...
+    Current Base Reserve: 1000000000
+    Current Quote Reserve: 3790000000
+    Current Mark Price: $ 379 . 0
+  
+  =================================
+  Upgrade Complete!
+  =================================
+  vAMM is now protected against reserve depletion
+  Positions can now be closed properly
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 2.79755137 gwei
+
+Estimated total gas used for script: 3002578
+
+Estimated amount required: 0.00839986619743186 ETH
+
+==========================

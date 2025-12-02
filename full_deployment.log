@@ -1,0 +1,38 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 693.54ms
+Error: Compiler run failed:
+Error (6160): Wrong argument count for function call: 1 arguments given but expected 0.
+   --> script/FullRedeployment.s.sol:160:46:
+    |
+160 |         deployment.chainlinkOracle = address(new Oracle(deployer));
+    |                                              ^^^^^^^^^^^^^^^^^^^^
+
+Error (6160): Wrong argument count for function call: 1 arguments given but expected 0.
+   --> script/FullRedeployment.s.sol:168:45:
+    |
+168 |         deployment.marketRegistry = address(new MarketRegistry(deployer));
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Error (6160): Wrong argument count for function call: 2 arguments given but expected 0.
+   --> script/FullRedeployment.s.sol:172:46:
+    |
+172 |         deployment.collateralVault = address(new CollateralVault(
+    |                                              ^ (Relevant source part starts here and spans across multiple lines).
+
+Error (6160): Wrong argument count for function call: 5 arguments given but expected 6.
+   --> script/FullRedeployment.s.sol:186:40:
+    |
+186 |         deployment.feeRouter = address(new FeeRouter(
+    |                                        ^ (Relevant source part starts here and spans across multiple lines).
+
+Error (6160): Wrong argument count for function call: 7 arguments given but expected 1.
+   --> script/FullRedeployment.s.sol:220:9:
+    |
+220 |         vault.registerCollateral(
+    |         ^ (Relevant source part starts here and spans across multiple lines).
+
+Error (9582): Member "authorizeCaller" not found or not visible after argument-dependent lookup in contract CollateralVault.
+   --> script/FullRedeployment.s.sol:232:9:
+    |
+232 |         vault.authorizeCaller(deployment.clearingHouseProxy);
+    |         ^^^^^^^^^^^^^^^^^^^^^

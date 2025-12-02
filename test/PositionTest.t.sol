@@ -31,13 +31,30 @@ contract PositionTest is BaseTest {
         assertTrue(pos.entryPriceX18 > 0, "Entry price not set");
         assertTrue(pos.margin > 0, "Margin not set");
 
-        // Collateral should be unchanged (margin is virtual)
-        assertEq(getCollateralBalance(alice), balanceBefore, "Collateral should not change");
+        // Collateral balance should decrease as margin is reserved for the position
+        // The helper only adds minimum required margin, so some collateral should remain
+        assertTrue(getCollateralBalance(alice) < balanceBefore, "Collateral should decrease when margin is reserved");
+    }
+
+    function test_OpenLongPosition_AutoMarginWithoutManualAdd() public {
+        uint256 depositAmount = 1000 * USDC_UNIT;
+        uint128 size = ethQty(1);
+
+        // Deposit collateral without pre-adding margin; rely on auto allocation inside openPosition
+        fundAndDeposit(alice, depositAmount);
+
+        vm.startPrank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, size, 0);
+        vm.stopPrank();
+
+        IClearingHouse.PositionView memory pos = getPosition(alice);
+        assertEq(pos.size, int256(uint256(size)), "Position size incorrect");
+        assertTrue(pos.margin > 0, "Margin should be auto allocated");
     }
 
     function test_OpenLongPosition_WithPriceLimit() public {
         uint256 depositAmount = 10000 * USDC_UNIT;
-    uint128 size = ethQty(1);
+        uint128 size = ethQty(1);
         uint256 priceLimit = 2050 * PRICE_PRECISION; // Allow up to $2050
 
         fundAndDeposit(alice, depositAmount);
@@ -52,12 +69,17 @@ contract PositionTest is BaseTest {
     function test_RevertWhen_OpenLongPosition_PriceLimitTooLow() public {
         uint256 depositAmount = 10000 * USDC_UNIT;
     uint128 size = ethQty(1);
-        uint256 priceLimit = 1900 * PRICE_PRECISION; // Too low
+        uint256 priceLimit = 1900 * PRICE_PRECISION; // Too low - mark price is ~$2000
 
         fundAndDeposit(alice, depositAmount);
 
-        vm.expectRevert();
-        openLongPosition(alice, size, priceLimit);
+        // Manually open with price limit to test the revert
+        vm.startPrank(alice);
+        clearingHouse.addMargin(ETH_PERP, 500 * USDC_UNIT); // Sufficient margin
+
+        vm.expectRevert("slippage"); // vAMM error message
+        clearingHouse.openPosition(ETH_PERP, true, size, priceLimit);
+        vm.stopPrank();
     }
 
     function test_OpenLongPosition_IncreasesExistingPosition() public {
@@ -84,13 +106,18 @@ contract PositionTest is BaseTest {
     }
 
     function test_RevertWhen_OpenLongPosition_InsufficientMargin() public {
-        uint256 depositAmount = 50 * USDC_UNIT; // Too small
-    uint128 size = ethQty(1);
+        uint256 depositAmount = USDC_UNIT / 100; // Insufficient for 1 ETH position even before fees
+        uint128 size = ethQty(1);
 
         fundAndDeposit(alice, depositAmount);
 
-        vm.expectRevert();
-        openLongPosition(alice, size, 0);
+    // Manually add insufficient margin and try to open position
+        vm.startPrank(alice);
+    clearingHouse.addMargin(ETH_PERP, depositAmount); // Add entire (insufficient) deposit
+
+        vm.expectRevert("Insufficient collateral");
+        clearingHouse.openPosition(ETH_PERP, true, size, 0);
+        vm.stopPrank();
     }
 
     // ============ Opening Short Positions ============
@@ -164,17 +191,20 @@ contract PositionTest is BaseTest {
         uint128 size = ethQty(1);
 
         fundAndDeposit(alice, depositAmount);
+        fundAndDeposit(bob, depositAmount);
+
+        // Alice opens long at ~$2,002
         openLongPosition(alice, size, 0);
 
-        // Price goes up
-        setOraclePrice(2200 * PRICE_PRECISION);
+        // Bob opens long, pushing vAMM price further up
+        openLongPosition(bob, ethQty(2), 0);
 
-        // Close position
+        // Now Alice closes at the higher price
         closePosition(alice, size, 0);
 
         IClearingHouse.PositionView memory pos = getPosition(alice);
 
-        // Should have profit
+        // Should have profit since Bob pushed the price up after Alice entered
         assertTrue(pos.realizedPnL > 0, "Should have realized profit");
     }
 
@@ -305,7 +335,7 @@ contract PositionTest is BaseTest {
 
     function test_LargePosition_PriceImpact() public {
         uint256 depositAmount = 100000 * USDC_UNIT;
-        uint128 largeSize = ethQty(100); // Large position
+        uint128 largeSize = ethQty(50); // Large position (reduced to fit within available margin)
 
         fundAndDeposit(alice, depositAmount);
 

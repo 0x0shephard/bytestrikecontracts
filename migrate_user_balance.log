@@ -1,0 +1,85 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 571.60ms
+Compiler run successful!
+Traces:
+  [890032] → new MigrateUserBalance@0x9f7cF1d1F558E57ef88a59ac3D47214eF25B6A06
+    └─ ← [Return] 4335 bytes of code
+
+  [90212] MigrateUserBalance::run()
+    ├─ [0] VM::envUint("PRIVATE_KEY") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::addr(<pk>) [staticcall]
+    │   └─ ← [Return] 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  USER BALANCE MIGRATION") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("User:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Old Vault:", 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("New Vault:", 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Token (mUSDC):", 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [3274] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::balanceOf(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406, 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Return] 746920552816 [7.469e11]
+    ├─ [3274] 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2::balanceOf(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406, 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Return] 0
+    ├─ [2537] 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7::balanceOf(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Return] 0
+    ├─ [0] console::log("BEFORE MIGRATION:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Balance in old vault:", 746920552816 [7.469e11]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Balance in new vault:", 0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Balance in wallet:", 0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::startBroadcast(<pk>)
+    │   └─ ← [Return]
+    ├─ [0] console::log("STEP 1: Withdrawing from old vault...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [53950] 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6::withdraw(0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, 746920552816 [7.469e11])
+    │   ├─ [49133] 0x56a18F7b3348bd35512CCb6710e55344E4Bddc85::withdraw(0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, 746920552816 [7.469e11]) [delegatecall]
+    │   │   ├─ [23267] 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2::getAccountCollateralValueX18(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   │   │   └─ ← [Return] 0
+    │   │   ├─ [19689] 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2::getTokenValueX18(0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, 746920552816 [7.469e11]) [staticcall]
+    │   │   │   ├─ [14105] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::getPrice("USDC") [staticcall]
+    │   │   │   │   ├─ [148] 0xb025aaA1368dD9E42F7E152E7D37FA94cEba84d7::decimals() [staticcall]
+    │   │   │   │   │   └─ ← [Return] 8
+    │   │   │   │   ├─ [286] 0xb025aaA1368dD9E42F7E152E7D37FA94cEba84d7::latestRoundData() [staticcall]
+    │   │   │   │   │   └─ ← [Return] 1, 100000000 [1e8], 1764273180 [1.764e9], 1764273180 [1.764e9], 1
+    │   │   │   │   └─ ← [Return] 1000000000000000000 [1e18]
+    │   │   │   └─ ← [Return] 746920552816000000000000 [7.469e23]
+    │   │   └─ ← [Revert] panic: arithmetic underflow or overflow (0x11)
+    │   └─ ← [Revert] panic: arithmetic underflow or overflow (0x11)
+    └─ ← [Revert] panic: arithmetic underflow or overflow (0x11)
+
+
+
+== Logs ==
+  =========================================
+    USER BALANCE MIGRATION
+  =========================================
+  
+  User: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Old Vault: 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0
+  New Vault: 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2
+  Token (mUSDC): 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+  
+  BEFORE MIGRATION:
+    Balance in old vault: 746920552816
+    Balance in new vault: 0
+    Balance in wallet: 0
+  
+  STEP 1: Withdrawing from old vault...
+Error: script failed: panic: arithmetic underflow or overflow (0x11)

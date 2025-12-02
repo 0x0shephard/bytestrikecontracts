@@ -37,6 +37,10 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	uint256 public kFundingX18;          // funding scaling factor (1e18 = 1.0)
 	uint32 public observationWindow;     // default TWAP window (s)
 
+	// ========= Reserve Protection =========
+	uint256 public minReserveBase;       // Minimum base reserve to prevent depletion (1e18)
+	uint256 public minReserveQuote;      // Minimum quote reserve to prevent depletion (1e18)
+
 	uint128 private _liquidity;          // accounting denominator for fee growth (not price impacting)
 	uint256 private _feeGrowthGlobalX128;
 	int256 private _cumulativeFundingPerUnitX18;
@@ -70,6 +74,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	event OwnerChanged(address indexed newOwner);
 	event ClearinghouseChanged(address indexed newCH);
 	event OracleChanged(address indexed newOracle);
+	event MinReservesSet(uint256 minBase, uint256 minQuote);
+	event ReservesReset(uint256 newPrice, uint256 newBaseReserve, uint256 newQuoteReserve);
 
 	// ========= Constructor =========
 	constructor() {
@@ -150,8 +156,11 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(priceLimitX18 == 0 || avgPriceX18 <= priceLimitX18, "slippage");
 
 		// Update reserves (v2 style: reserves add gross input, subtract output)
+		uint256 newReserveBase = X - uint256(baseAmount);
+		require(newReserveBase >= minReserveBase, "Reserve base depleted");
+
 		reserveQuote = Y + grossQuoteIn;
-		reserveBase = X - uint256(baseAmount);
+		reserveBase = newReserveBase;
 
 		// Fee accounting
 		uint256 fee = grossQuoteIn - Calculations.mulDiv(grossQuoteIn, 10_000 - feeBps, 10_000);
@@ -188,8 +197,11 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		avgPriceX18 = Calculations.mulDiv(grossIn, 1e18, baseOut);
 		require(priceLimitX18 == 0 || avgPriceX18 <= priceLimitX18, "slippage");
 
+		uint256 newReserveBase = X - baseOut;
+		require(newReserveBase >= minReserveBase, "Reserve base depleted");
+
 		reserveQuote = Y + grossIn;
-		reserveBase = X - baseOut;
+		reserveBase = newReserveBase;
 
 		uint256 fee = Calculations.mulDiv(grossIn, feeBps, 10_000);
 		if (_liquidity > 0 && fee > 0) {
@@ -226,9 +238,12 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		avgPriceX18 = Calculations.mulDiv(quoteOut, 1e18, grossBaseIn);
 		require(priceLimitX18 == 0 || avgPriceX18 >= priceLimitX18, "slippage");
 
-		// Update reserves
+		// Update reserves with protection
+		uint256 newReserveQuote = Y - quoteOut;
+		require(newReserveQuote >= minReserveQuote, "Reserve quote depleted");
+
 		reserveBase = X + grossBaseIn;
-		reserveQuote = Y - quoteOut;
+		reserveQuote = newReserveQuote;
 
 		// Fee accounting
 		uint256 feeInBase = Calculations.mulDiv(grossBaseIn, feeBps, 10_000);
@@ -430,6 +445,37 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(newOracle != address(0), "oracle=0");
 		oracle = newOracle;
 		emit OracleChanged(newOracle);
+	}
+
+	/// @notice Sets minimum reserve thresholds to prevent reserve depletion
+	/// @param minBase_ Minimum base reserve (1e18 units)
+	/// @param minQuote_ Minimum quote reserve (1e18 units)
+	function setMinReserves(uint256 minBase_, uint256 minQuote_) external onlyOwner {
+		minReserveBase = minBase_;
+		minReserveQuote = minQuote_;
+		emit MinReservesSet(minBase_, minQuote_);
+	}
+
+	/// @notice Emergency function to reset reserves if they become depleted
+	/// @dev Only callable by owner. Use to rescue vAMM from broken state.
+	/// @param newPriceX18 New mark price to set (quote per base, 1e18)
+	/// @param newBaseReserve New base reserve amount (1e18 units)
+	function resetReserves(uint256 newPriceX18, uint256 newBaseReserve) external onlyOwner {
+		require(newPriceX18 > 0, "price=0");
+		require(newBaseReserve > 0, "base=0");
+
+		// Calculate new quote reserve: Y = X * Price
+		uint256 newQuoteReserve = Calculations.mulDiv(newBaseReserve, newPriceX18, 1e18);
+		require(newQuoteReserve > 0, "quote=0");
+
+		// Ensure new reserves meet minimum requirements
+		require(newBaseReserve >= minReserveBase, "base < min");
+		require(newQuoteReserve >= minReserveQuote, "quote < min");
+
+		reserveBase = newBaseReserve;
+		reserveQuote = newQuoteReserve;
+
+		emit ReservesReset(newPriceX18, newBaseReserve, newQuoteReserve);
 	}
 
 	// ========= Internal: TWAP accumulation =========

@@ -1,0 +1,46 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 456.53ms
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    FUND INSURANCE FUND
+  =========================================
+  
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  
+  Deployer USDC balance: 753901000000
+  
+  Transferring 10000000000 USDC to InsuranceFund
+  Transferred successfully!
+  
+  InsuranceFund balance: 10000000000
+  
+  =========================================
+    FUNDING COMPLETE
+  =========================================
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001000016 gwei
+
+Estimated total gas used for script: 70801
+
+Estimated amount required: 0.000000070802132816 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/FundInsuranceFund.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/FundInsuranceFund.s.sol/11155111/run-latest.json
+

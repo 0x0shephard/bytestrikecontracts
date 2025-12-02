@@ -5,6 +5,7 @@ import {IClearingHouse} from "./Interfaces/IClearingHouse.sol";
 import {ICollateralVault} from "./Interfaces/ICollateralVault.sol";
 import {IMarketRegistry} from "./Interfaces/IMarketRegistry.sol";
 import {IVAMM} from "./Interfaces/IVAMM.sol";
+import {IOracle} from "./Interfaces/IOracle.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
@@ -67,6 +68,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
     event FundingSettled(bytes32 indexed marketId, address indexed account, int256 fundingPayment);
     event MarketPaused(bytes32 indexed marketId, bool isPaused);
     event LiquidatorWhitelistUpdated(address indexed liquidator, bool isWhitelisted);
+    event VaultUpdated(address indexed oldVault, address indexed newVault);
     event LiquidationExecuted(
         bytes32 indexed marketId,
         address indexed liquidator,
@@ -95,6 +97,16 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
         vault = _vault;
         marketRegistry = _marketRegistry;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
+    }
+
+    /// @notice Updates the vault address (for migration purposes).
+    /// @param _newVault The address of the new CollateralVault contract.
+    /// @dev Only callable by admin. Used when migrating to a new vault.
+    function setVault(address _newVault) external onlyAdmin {
+        require(_newVault != address(0), "Invalid vault address");
+        address oldVault = vault;
+        vault = _newVault;
+        emit VaultUpdated(oldVault, _newVault);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyAdmin {}
@@ -162,9 +174,13 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
         PositionView storage position = positions[account][marketId];
         if (position.size == 0) return false;
 
-        // Perpetuals: compare raw margin vs MMR at vAMM mark
+    // Calculate effective margin including unrealized PnL (oracle-based for liquidation checks)
+    int256 unrealizedPnL = _getUnrealizedPnLAtOracle(account, marketId);
+        int256 effectiveMargin = int256(position.margin) + unrealizedPnL;
+
+        // Position is liquidatable if effective margin falls below maintenance margin
         uint256 maintenanceMargin = _getMaintenanceMargin(account, marketId);
-        return position.margin < maintenanceMargin;
+        return effectiveMargin < int256(maintenanceMargin);
     }
 
     /// @notice Sets the risk parameters for a market.
@@ -217,9 +233,53 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
 
         uint256 mmrBps = marketRiskParams[marketId].mmrBps;
         uint256 positionSize = uint256(position.size > 0 ? position.size : -position.size);
-        uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
-        uint256 notionalValue = positionSize.mulDiv(markPrice, 1e18);
+        uint256 riskPrice = _getRiskPrice(m);
+        uint256 notionalValue = positionSize.mulDiv(riskPrice, 1e18);
         return notionalValue.mulDiv(mmrBps, 10_000);
+    }
+
+    /// @notice Internal function to calculate unrealized PnL for a position using mark price.
+    function _getUnrealizedPnL(address account, bytes32 marketId) internal view returns (int256) {
+        PositionView storage position = positions[account][marketId];
+        if (position.size == 0 || position.entryPriceX18 == 0) {
+            return 0;
+        }
+
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        if (m.vamm == address(0)) return 0;
+
+        uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
+        return _computeUnrealizedPnL(position, markPrice);
+    }
+
+    /// @notice Internal function to calculate unrealized PnL for liquidation risk using oracle (index) price.
+    function _getUnrealizedPnLAtOracle(address account, bytes32 marketId) internal view returns (int256) {
+        PositionView storage position = positions[account][marketId];
+        if (position.size == 0 || position.entryPriceX18 == 0) {
+            return 0;
+        }
+
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        if (m.vamm == address(0)) return 0;
+
+        uint256 riskPrice = _getRiskPrice(m);
+        return _computeUnrealizedPnL(position, riskPrice);
+    }
+
+    /// @notice Shared helper to compute unrealized PnL from a provided price.
+    function _computeUnrealizedPnL(PositionView storage position, uint256 priceX18) internal view returns (int256) {
+        if (priceX18 == 0 || position.size == 0 || position.entryPriceX18 == 0) {
+            return 0;
+        }
+
+        uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
+        if (position.size > 0) {
+            // Long position: PnL = (price - entry) * size
+            return (int256(priceX18) - int256(position.entryPriceX18)) * int256(absSize) / 1e18;
+        } else {
+            // Short position: PnL = (entry - price) * size
+            return (int256(position.entryPriceX18) - int256(priceX18)) * int256(absSize) / 1e18;
+        }
     }
 
 
@@ -275,54 +335,68 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
     function liquidate(address account, bytes32 marketId, uint128 size) external override onlyWhitelistedLiquidator {
         require(this.isLiquidatable(account, marketId), "Not liquidatable");
         PositionView storage position = positions[account][marketId];
-        uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
-        require(size > 0 && uint256(size) <= absSize, "Invalid size");
+        {
+            uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
+            require(size > 0 && uint256(size) <= absSize, "Invalid size");
+        }
 
         IMarketRegistry.Market memory m = _getMarketInfo(marketId);
 
-        // Close position via vAMM
-        IVAMM vamm = IVAMM(m.vamm);
-        (int256 baseDelta, int256 quoteDelta, ) = position.size > 0
-            ? vamm.swapSellBaseForQuote(size, 0)
-            : vamm.swapBaseForQuote(size, 0);
-        _applyTrade(account, marketId, baseDelta, quoteDelta);
-
-        uint256 markPrice = vamm.getMarkPrice();
-        uint256 notional = Calculations.mulDiv(uint256(size), markPrice, 1e18);
-        uint256 penalty = Calculations.mulDiv(notional, marketRiskParams[marketId].liquidationPenaltyBps, 10_000);
-        if (penalty > marketRiskParams[marketId].penaltyCap) {
-            penalty = marketRiskParams[marketId].penaltyCap;
+        // Close position via vAMM - scope to free stack
+        {
+            IVAMM vamm = IVAMM(m.vamm);
+            (int256 baseDelta, int256 quoteDelta, ) = position.size > 0
+                ? vamm.swapSellBaseForQuote(size, 0)
+                : vamm.swapBaseForQuote(size, 0);
+            _applyTrade(account, marketId, baseDelta, quoteDelta);
         }
 
-        // Split penalty: liquidator incentive and protocol fee
-        uint256 liqIncentive = penalty;
-        uint256 routeAmount = 0;
-        if (m.feeRouter != address(0)) {
-            routeAmount = penalty / 2;
-            liqIncentive = penalty - routeAmount;
+        // Calculate penalty - reuse variables to save stack
+        uint256 notional;
+        uint256 penalty;
+        {
+            uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
+            notional = Calculations.mulDiv(uint256(size), markPrice, 1e18);
+            penalty = Calculations.mulDiv(notional, marketRiskParams[marketId].liquidationPenaltyBps, 10_000);
+            if (penalty > marketRiskParams[marketId].penaltyCap) {
+                penalty = marketRiskParams[marketId].penaltyCap;
+            }
         }
 
-        // Deduct penalty from margin first
-        uint256 marginApplied = penalty <= position.margin ? penalty : position.margin;
-        if (marginApplied > 0) {
-            position.margin -= marginApplied;
-            _totalReservedMargin[account] = (_totalReservedMargin[account] >= marginApplied)
-                ? (_totalReservedMargin[account] - marginApplied)
-                : 0;
-        }
+        // Split penalty and process payments
+        uint256 liqIncentive;
+        uint256 routeAmount;
+        uint256 insurancePayout;
+        {
+            liqIncentive = penalty;
+            routeAmount = 0;
+            if (m.feeRouter != address(0)) {
+                routeAmount = penalty / 2;
+                liqIncentive = penalty - routeAmount;
+            }
 
-        // Pay liquidator from collateral, insurance covers shortfall
-        uint256 insurancePayout = 0;
-        (, uint256 liqShortfall) = _collectQuote(account, msg.sender, m.quoteToken, liqIncentive, false);
-        if (liqShortfall > 0) {
-            require(m.insuranceFund != address(0), "Insurance fund missing");
-            IInsuranceFund(m.insuranceFund).payout(msg.sender, liqShortfall);
-            insurancePayout = liqShortfall;
-        }
+            // Deduct penalty from margin first
+            uint256 marginApplied = penalty <= position.margin ? penalty : position.margin;
+            if (marginApplied > 0) {
+                position.margin -= marginApplied;
+                _totalReservedMargin[account] = (_totalReservedMargin[account] >= marginApplied)
+                    ? (_totalReservedMargin[account] - marginApplied)
+                    : 0;
+            }
 
-        // Route protocol share of penalty
-        if (routeAmount > 0) {
-            _routeLiqPenalty(account, routeAmount, m);
+            // Pay liquidator from collateral, insurance covers shortfall
+            insurancePayout = 0;
+            (, uint256 liqShortfall) = _collectQuote(account, msg.sender, m.quoteToken, liqIncentive, false);
+            if (liqShortfall > 0) {
+                require(m.insuranceFund != address(0), "Insurance fund missing");
+                IInsuranceFund(m.insuranceFund).payout(msg.sender, liqShortfall);
+                insurancePayout = liqShortfall;
+            }
+
+            // Route protocol share of penalty
+            if (routeAmount > 0) {
+                _routeLiqPenalty(account, routeAmount, m);
+            }
         }
 
         emit LiquidationExecuted(
@@ -345,6 +419,20 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         require(m.vamm != address(0), "Market does not exist");
         return m;
+    }
+
+    /// @notice Returns the preferred risk price for margin checks, preferring oracle/index price with mark fallback.
+    function _getRiskPrice(IMarketRegistry.Market memory m) internal view returns (uint256) {
+        if (m.oracle != address(0)) {
+            try IOracle(m.oracle).getPrice() returns (uint256 indexPrice) {
+                if (indexPrice > 0) {
+                    return indexPrice;
+                }
+            } catch {}
+        }
+
+        require(m.vamm != address(0), "Market does not exist");
+        return IVAMM(m.vamm).getMarkPrice();
     }
 
 
@@ -495,12 +583,23 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
         position.size = s1;
         position.realizedPnL += realized;
 
-        // The cost of the trade (quoteDelta) and any realized PnL are settled against the position's margin.
-        // quoteDelta is from the trader's perspective.
-        // - Buying base (long): quoteDelta is negative (cost). Margin decreases.
-        // - Selling base (short): quoteDelta is positive (proceeds). Margin increases.
-        // Realized PnL is added to margin.
-        int256 marginChange = realized + quoteDelta;
+        // Margin allocation logic:
+        // 1. When opening or increasing position: allocate margin from available collateral
+        // 2. When closing/reducing position: realized PnL affects margin
+        int256 marginChange = realized;
+
+        // Auto-allocate margin when opening new position or increasing existing one
+        if (s0 == 0 || ((s0 > 0 && baseDelta > 0) || (s0 < 0 && baseDelta < 0))) {
+            // Calculate notional value of the trade
+            uint256 tradeNotional = Calculations.mulDiv(absBaseDelta, execPxX18, 1e18);
+
+            // Get IMR requirement for this trade
+            uint256 imrBps = marketRiskParams[marketId].imrBps;
+            uint256 marginRequired = Calculations.mulDiv(tradeNotional, imrBps, 10_000);
+
+            // Allocate margin from available collateral
+            marginChange += int256(marginRequired);
+        }
         if (marginChange > 0) {
             uint256 credit = uint256(marginChange);
             position.margin += credit;
@@ -518,18 +617,9 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
             }
         }
 
-        // Post-trade IMR check. This is the most critical check.
-        // It ensures the remaining margin is sufficient for the new/updated position.
-        if (absS1 > 0) {
-            uint256 imrBps = marketRiskParams[marketId].imrBps;
-            IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
-            uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
-            uint256 notional = absS1.mulDiv(markPrice, 1e18);
-            uint256 requiredMargin = notional.mulDiv(imrBps, 10_000);
-            require(position.margin >= requiredMargin, "IMR breach after trade");
-        }
-
         // Protocol trading fee for perps: charge on this trade's notional at execPx
+        // Fees are collected directly from available collateral before the IMR check so
+        // that position margin remains intact for the risk assessment.
         if (absBaseDelta > 0) {
             IMarketRegistry.Market memory m2 = IMarketRegistry(marketRegistry).getMarket(marketId);
             if (m2.feeBps > 0) {
@@ -537,15 +627,29 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
                 if (notional2 > 0) {
                     uint256 fee = Calculations.mulDiv(notional2, m2.feeBps, 10_000);
                     if (fee > 0) {
-                        require(position.margin >= fee, "fee: margin");
-                        position.margin -= fee;
-                        _totalReservedMargin[account] = (_totalReservedMargin[account] >= fee)
-                            ? (_totalReservedMargin[account] - fee)
-                            : 0;
+                        _ensureAvailableCollateral(account, fee);
                         _routeTradeFee(account, fee, m2);
                     }
                 }
             }
+        }
+
+        // Post-trade IMR check. This is the most critical check.
+        // It ensures the remaining margin is sufficient for the new/updated position AFTER fees.
+        // BUG FIX: This check now happens AFTER fee deduction to accurately validate final margin.
+        if (absS1 > 0) {
+            uint256 imrBps = marketRiskParams[marketId].imrBps;
+            IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+            uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
+            uint256 notional = absS1.mulDiv(markPrice, 1e18);
+            uint256 requiredMargin = notional.mulDiv(imrBps, 10_000);
+            if (position.margin < requiredMargin) {
+                uint256 shortfall = requiredMargin - position.margin;
+                _ensureAvailableCollateral(account, shortfall);
+                position.margin += shortfall;
+                _totalReservedMargin[account] += shortfall;
+            }
+            require(position.margin >= requiredMargin, "IMR breach after trade");
         }
     }
 
@@ -588,10 +692,49 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
         emit LiquidatorWhitelistUpdated(liquidator, false);
     }
 
+    /// @notice Emergency admin function to clear stuck positions and reserved margin after vault migration.
+    /// @dev This is needed when _totalReservedMargin has stale data from old vault, causing negative account values.
+    /// @param user The address whose stuck position to clear.
+    /// @param marketId The market ID of the stuck position.
+    function adminClearStuckPosition(address user, bytes32 marketId) external onlyAdmin {
+        require(user != address(0), "Invalid user");
+
+        PositionView storage position = positions[user][marketId];
+
+        // Only allow clearing positions with size = 0 (already closed)
+        require(position.size == 0, "Position still has size");
+
+        // Store old values for event
+        uint256 oldMargin = position.margin;
+        uint256 oldReservedMargin = _totalReservedMargin[user];
+
+        // Clear the position's reserved margin
+        if (position.margin > 0) {
+            _totalReservedMargin[user] -= position.margin;
+            position.margin = 0;
+        }
+
+        // Reset other position fields
+        position.entryPriceX18 = 0;
+        position.lastFundingIndex = 0;
+        position.realizedPnL = 0;
+
+        emit PositionCleared(user, marketId, oldMargin, oldReservedMargin, _totalReservedMargin[user]);
+    }
+
+    /// @notice Event emitted when an admin clears a stuck position.
+    event PositionCleared(
+        address indexed user,
+        bytes32 indexed marketId,
+        uint256 clearedMargin,
+        uint256 oldReservedMargin,
+        uint256 newReservedMargin
+    );
+
     // ===== Internal helpers (Fees) =====
     /// @notice Internal function to route trade fees to the fee router.
     /// @param account The user's address.
-    /// @param fee The fee amount.
+    /// @param fee The fee amount in 1e18 precision.
     /// @param m The market struct.
     function _routeTradeFee(
         address account,
@@ -599,7 +742,12 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
         IMarketRegistry.Market memory m
     ) internal {
         if (fee == 0 || m.feeRouter == address(0)) return;
-        (, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, fee, true);
+
+        // Convert fee from 1e18 to quote token's native decimals
+        // For USDC (baseUnit=1e6): feeInQuote = fee * 1e6 / 1e18 = fee / 1e12
+        uint256 feeInQuoteDecimals = (fee * ICollateralVault(vault).getConfig(m.quoteToken).baseUnit) / 1e18;
+
+        (, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, feeInQuoteDecimals, true);
         if (shortfall > 0) {
             address insuranceFund = m.insuranceFund;
             if (insuranceFund == address(0)) {
@@ -607,12 +755,19 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
             }
             IInsuranceFund(insuranceFund).payout(m.feeRouter, shortfall);
         }
-        IFeeRouter(m.feeRouter).onTradeFee(fee);
+        IFeeRouter(m.feeRouter).onTradeFee(feeInQuoteDecimals);
+    }
+
+    /// @notice Ensures the account has sufficient free collateral to cover additional reservations.
+    function _ensureAvailableCollateral(address account, uint256 amount) internal view {
+        if (amount == 0) return;
+        uint256 collateralValue = ICollateralVault(vault).getAccountCollateralValueX18(account);
+        require(collateralValue >= _totalReservedMargin[account] + amount, "Insufficient collateral");
     }
 
     /// @notice Internal function to route liquidation penalties.
     /// @param account The user's address.
-    /// @param amount The penalty amount.
+    /// @param amount The penalty amount in 1e18 precision.
     /// @param m The market struct.
     function _routeLiqPenalty(
         address account,
@@ -620,7 +775,11 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
         IMarketRegistry.Market memory m
     ) internal {
         if (amount == 0 || m.feeRouter == address(0)) return;
-        (, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, amount, true);
+
+        // Convert penalty from 1e18 to quote token's native decimals
+        uint256 penaltyInQuoteDecimals = (amount * ICollateralVault(vault).getConfig(m.quoteToken).baseUnit) / 1e18;
+
+        (, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, penaltyInQuoteDecimals, true);
         if (shortfall > 0) {
             address insuranceFund = m.insuranceFund;
             if (insuranceFund == address(0)) {
@@ -629,6 +788,6 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ICleari
             IInsuranceFund(insuranceFund).payout(m.feeRouter, shortfall);
         }
 
-        IFeeRouter(m.feeRouter).onLiquidationPenalty(amount);
+        IFeeRouter(m.feeRouter).onLiquidationPenalty(penaltyInQuoteDecimals);
     }
 }

@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.30;
+
+import {Script} from "forge-std/Script.sol";
+import {console} from "forge-std/console.sol";
+import {ClearingHouse} from "../src/ClearingHouse.sol";
+
+/**
+ * @title UpdateMarketRegistryAddress
+ * @notice Updates ClearingHouse to point to correct MarketRegistry
+ */
+contract UpdateMarketRegistryAddress is Script {
+    address constant CLEARING_HOUSE = 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6;
+    address constant MARKET_REGISTRY_NEW = 0x937F40013B088832919992E0Bd0D0F48520dC964;
+
+    function run() external {
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        address deployer = vm.addr(deployerPrivateKey);
+
+        console.log("=========================================");
+        console.log("  UPDATE MARKET REGISTRY ADDRESS");
+        console.log("=========================================");
+        console.log("");
+        console.log("Deployer:", deployer);
+        console.log("ClearingHouse:", CLEARING_HOUSE);
+        console.log("New MarketRegistry:", MARKET_REGISTRY_NEW);
+        console.log("");
+
+        // Check current
+        address currentRegistry = ClearingHouse(CLEARING_HOUSE).marketRegistry();
+        console.log("Current MarketRegistry:", currentRegistry);
+        console.log("");
+
+        vm.startBroadcast(deployerPrivateKey);
+
+        ClearingHouse(CLEARING_HOUSE).setMarketRegistry(MARKET_REGISTRY_NEW);
+        console.log("MarketRegistry updated!");
+
+        vm.stopBroadcast();
+
+        // Verify
+        address newRegistry = ClearingHouse(CLEARING_HOUSE).marketRegistry();
+        console.log("");
+        console.log("New MarketRegistry:", newRegistry);
+        console.log("");
+        console.log("=========================================");
+        console.log("  UPDATE COMPLETE");
+        console.log("=========================================");
+    }
+}

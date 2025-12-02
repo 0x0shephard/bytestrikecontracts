@@ -1,0 +1,55 @@
+Compiling 2 files with Solc 0.8.30
+Solc 0.8.30 finished in 1.76s
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    CLEARINGHOUSE UPGRADE V3
+    Fix: Correct fee amount to FeeRouter
+  =========================================
+  
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Proxy: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6
+  
+  Deploying new ClearingHouse implementation...
+  New Implementation: 0x02d8dcE5A4CF10FcE80F9479d379229ECB08937d
+  
+  Upgrading proxy...
+  Upgrade complete!
+  
+  =========================================
+    UPGRADE SUCCESSFUL
+  =========================================
+  
+  Changes:
+    - Fees collected in correct decimals (1e6 for USDC)
+    - FeeRouter notified with correct amount (converted)
+    - Insurance fund payouts use correct decimals
+  
+  Proxy: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6
+  New Implementation: 0x02d8dcE5A4CF10FcE80F9479d379229ECB08937d
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001000016 gwei
+
+Estimated total gas used for script: 4664015
+
+Estimated amount required: 0.00000466408962424 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/UpgradeClearingHouseV3.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/UpgradeClearingHouseV3.s.sol/11155111/run-latest.json
+

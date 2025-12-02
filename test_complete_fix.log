@@ -1,0 +1,77 @@
+No files changed, compilation skipped
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    TESTING DECIMAL CONVERSION FIX
+  =========================================
+  
+  Trader: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  ClearingHouse: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6
+  Market: 0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5
+  
+  BEFORE TRADE:
+    Trader USDC balance: 743901000000
+    Trader collateral: 386099000000
+    InsuranceFund USDC: 10000000000
+    FeeRouter USDC: 0
+  
+  POSITION BEFORE:
+    Size: 0
+    Margin: 0
+  
+  Opening position:
+    Size: 100000000000000 wei (0.0001 ETH)
+    Price limit: 4000000000000000000
+  
+  SUCCESS: Position opened
+  
+  AFTER TRADE:
+    Trader USDC balance: 743901000000
+    Trader collateral: 386099000000
+    InsuranceFund USDC: 9999999998
+    FeeRouter USDC: 2
+  
+  CHANGES:
+    Trader USDC: + 0
+    Trader collateral: + 0
+    InsuranceFund:  -2
+    FeeRouter: + 2
+  
+  POSITION AFTER:
+    Size: 100000000000000
+    Margin: 0
+    Entry Price (X18): 3753776317661490000
+  
+  =========================================
+    TEST COMPLETE
+  =========================================
+  
+  Analysis:
+    Expected fee: ~4 USDC units (0.00000375 USD in 1e6)
+    Actual FeeRouter change: 2
+    PASS: Fee amount reasonable
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001000016 gwei
+
+Estimated total gas used for script: 673449
+
+Estimated amount required: 0.000000673459775184 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/TestDecimalFix.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/TestDecimalFix.s.sol/11155111/run-latest.json
+

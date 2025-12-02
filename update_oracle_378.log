@@ -1,0 +1,46 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 615.52ms
+Compiler run successful!
+Traces:
+  [447389] → new UpdateOracleTo378@0x9f7cF1d1F558E57ef88a59ac3D47214eF25B6A06
+    └─ ← [Return] 2124 bytes of code
+
+  [17035] UpdateOracleTo378::run()
+    ├─ [0] VM::envOr("PRIVATE_KEY", 0) [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] console::log("=================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Updating Oracle Price on Sepolia") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Oracle Address:", 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("New Price: $3.78 (H100 GPU rental rate)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::startBroadcast(<pk>)
+    │   └─ ← [Return]
+    ├─ [2343] 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad::getPrice() [staticcall]
+    │   └─ ← [Return] 3790104796597920768 [3.79e18]
+    ├─ [0] console::log("Current Price (wei):", 3790104796597920768 [3.79e18]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Current Price (USD): $", 379, ".", 1) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [196] 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad::updatePrice(3780000000000000000 [3.78e18])
+    │   └─ ← [Revert] EvmError: Revert
+    └─ ← [Revert] EvmError: Revert
+
+
+
+== Logs ==
+  =================================
+  Updating Oracle Price on Sepolia
+  =================================
+  Oracle Address: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad
+  New Price: $3.78 (H100 GPU rental rate)
+  
+  Current Price (wei): 3790104796597920768
+  Current Price (USD): $ 379 . 1
+Error: script failed: <empty revert data>

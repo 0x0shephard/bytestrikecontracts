@@ -1,0 +1,52 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 513.50ms
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    FIX VAMM ORACLE
+  =========================================
+  
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  vAMM: 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5
+  Target Oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad
+    (Chainlink Oracle with ETH at $3.79)
+  
+  Current Oracle: 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c
+  
+  Setting oracle...
+  Oracle updated!
+  
+  Verification:
+    New Oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad
+    Expected: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad
+    Match: true
+  
+  =========================================
+    COMPLETE
+  =========================================
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001161274 gwei
+
+Estimated total gas used for script: 51493
+
+Estimated amount required: 0.000000059797482082 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/FixVAMMOracle.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/FixVAMMOracle.s.sol/11155111/run-latest.json
+

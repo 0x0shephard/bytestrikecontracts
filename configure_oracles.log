@@ -1,0 +1,65 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 535.88ms
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    CONFIGURE ORACLES PROPERLY
+  =========================================
+  
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  
+  Plan:
+    1. Update vAMM to use CuOracle for ETH index price
+    2. Set ETH index price in CuOracle ($3.79)
+    3. Chainlink Oracle keeps USDC price
+  
+  Step 1: Updating vAMM oracle to CuOracle...
+    vAMM oracle updated to: 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c
+  
+  Step 2: Setting ETH index price in CuOracle...
+    Note: CuOracle uses commit-reveal mechanism
+    You'll need to:
+      1. Commit price hash
+      2. Wait 5 minutes
+      3. Reveal price
+  
+    For now, check if CuOracle has a direct set function...
+  Verification:
+    vAMM oracle now: 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c
+    Expected: 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c
+    Match: YES
+  
+  =========================================
+    CONFIGURATION COMPLETE
+  =========================================
+  
+  Next Steps:
+    1. Update ETH index price in CuOracle ($3.79)
+    2. Keep USDC price in Chainlink Oracle ($1.00)
+    3. Test funding rate calculation
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001000012 gwei
+
+Estimated total gas used for script: 51493
+
+Estimated amount required: 0.000000051493617916 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/ConfigureOraclesProperly.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/ConfigureOraclesProperly.s.sol/11155111/run-latest.json
+

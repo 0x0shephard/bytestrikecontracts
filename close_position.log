@@ -1,0 +1,42 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 522.52ms
+Compiler run successful!
+Traces:
+  [748089] → new CloseStuckPosition@0x9f7cF1d1F558E57ef88a59ac3D47214eF25B6A06
+    └─ ← [Return] 3626 bytes of code
+
+  [19094] CloseStuckPosition::run()
+    ├─ [0] VM::envOr("PRIVATE_KEY", 0) [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::addr(<pk>) [staticcall]
+    │   └─ ← [Return] 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    ├─ [0] console::log("=================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Closing Stuck Short Position") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Trader:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::toString(0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5) [staticcall]
+    │   └─ ← [Return] "0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5"
+    ├─ [0] console::log("Market ID:", "0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [5650] 0x445Fa8890562Ec6220A60b3911C692DffaD49AcB::getPosition(0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5, 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   ├─ [839] 0x260082DddF1c367008E889Db10836019de4910fD::getPosition(0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5, 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [delegatecall]
+    │   │   └─ ← [Revert] EvmError: Revert
+    │   └─ ← [Revert] EvmError: Revert
+    └─ ← [Revert] EvmError: Revert
+
+
+
+== Logs ==
+  =================================
+  Closing Stuck Short Position
+  =================================
+  Trader: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Market ID: 0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5
+  
+Error: script failed: <empty revert data>

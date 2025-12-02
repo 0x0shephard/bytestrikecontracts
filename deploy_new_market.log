@@ -1,0 +1,279 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 1.54s
+Compiler run successful with warnings:
+Warning (2072): Unused local variable.
+   --> script/DeployNewMarketComplete.s.sol:141:36:
+    |
+141 |         (uint256 imr, uint256 mmr, uint256 liqPenalty, uint256 cap) = ClearingHouse(CLEARING_HOUSE).marketRiskParams(marketId);
+    |                                    ^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+   --> script/DeployNewMarketComplete.s.sol:141:56:
+    |
+141 |         (uint256 imr, uint256 mmr, uint256 liqPenalty, uint256 cap) = ClearingHouse(CLEARING_HOUSE).marketRiskParams(marketId);
+    |                                                        ^^^^^^^^^^^
+
+Traces:
+  [2729960] DeployNewMarketComplete::run()
+    ├─ [0] VM::envUint("PRIVATE_KEY") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::addr(<pk>) [staticcall]
+    │   └─ ← [Return] 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    ├─ [0] console::log("=== Deploying New Market ===") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Deployer:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Market Name:", "H100-PERP") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::startBroadcast(<pk>)
+    │   └─ ← [Return]
+    ├─ [0] console::log("Step 1: Deploying new vAMM...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [1965451] → new vAMM@0xd64175cE957F089bA7fb3EBdA5B17f268DE01190
+    │   ├─ emit Initialized(version: 18446744073709551615 [1.844e19])
+    │   └─ ← [Return] 9700 bytes of code
+    ├─ [0] console::log("vAMM Implementation deployed at:", vAMM: [0xd64175cE957F089bA7fb3EBdA5B17f268DE01190]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [372368] → new ERC1967Proxy@0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85
+    │   ├─ emit Upgraded(implementation: vAMM: [0xd64175cE957F089bA7fb3EBdA5B17f268DE01190])
+    │   ├─ [321776] vAMM::initialize(0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6, 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, 3790000000000000000 [3.79e18], 100000000000000000000000 [1e23], 1000000000000000000000000 [1e24], 10, 100, 1000000000000000000 [1e18], 900) [delegatecall]
+    │   │   ├─ emit Initialized(owner: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406, clearinghouse: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6, priceX18: 3790000000000000000 [3.79e18], baseReserve: 100000000000000000000000 [1e23], quoteReserve: 379000000000000000000000 [3.79e23])
+    │   │   ├─ emit ParamsSet(feeBps: 10, frMaxBpsPerHour: 100, kFundingX18: 1000000000000000000 [1e18], observationWindow: 900)
+    │   │   ├─ emit LiquiditySet(newLiquidity: 1000000000000000000000000 [1e24])
+    │   │   ├─ emit Initialized(version: 1)
+    │   │   └─ ← [Stop]
+    │   └─ ← [Return] 130 bytes of code
+    ├─ [0] console::log("vAMM Proxy deployed at:", ERC1967Proxy: [0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Step 2: Registering market in MarketRegistry...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::toString(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937) [staticcall]
+    │   └─ ← [Return] "0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937"
+    ├─ [0] console::log("Market ID:", "0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [163765] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::addMarket(AddMarketConfig({ marketId: 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, vamm: 0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85, oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000000000000000 [1e18], feeBps: 10, feeRouter: 0xa75839A6D2Bb2f47FE98dc81EC47eaD01D4A2c1F, insuranceFund: 0x3C1085dF918a38A95F84945E6705CC857b664074 }))
+    │   ├─ emit MarketAdded(marketId: 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, vamm: ERC1967Proxy: [0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85])
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Market registered successfully") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Step 3: Setting risk parameters...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("IMR:", 1000, "bps (10%)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("MMR:", 500, "bps (5%)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Liquidation Penalty:", 250, "bps (2.5%)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Penalty Cap:", 1000, "USD") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [104127] 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6::setRiskParams(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, 1000, 500, 250, 1000000000000000000000 [1e21])
+    │   ├─ [99299] 0x02d8dcE5A4CF10FcE80F9479d379229ECB08937d::setRiskParams(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, 1000, 500, 250, 1000000000000000000000 [1e21]) [delegatecall]
+    │   │   ├─ [2181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937) [staticcall]
+    │   │   │   └─ ← [Return] Market({ vamm: 0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85, feeBps: 10, paused: false, oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, feeRouter: 0xa75839A6D2Bb2f47FE98dc81EC47eaD01D4A2c1F, insuranceFund: 0x3C1085dF918a38A95F84945E6705CC857b664074, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000000000000000 [1e18] })
+    │   │   ├─ emit RiskParamsSet(marketId: 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, imrBps: 1000, mmrBps: 500, liquidationPenaltyBps: 250, penaltyCap: 1000000000000000000000 [1e21])
+    │   │   └─ ← [Return]
+    │   └─ ← [Return]
+    ├─ [0] console::log("Risk parameters set successfully") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Step 4: Verifying deployment...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [1354] ERC1967Proxy::fallback() [staticcall]
+    │   ├─ [1047] vAMM::getMarkPrice() [delegatecall]
+    │   │   └─ ← [Return] 3790000000000000000 [3.79e18]
+    │   └─ ← [Return] 3790000000000000000 [3.79e18]
+    ├─ [0] console::log("vAMM Mark Price:", 3, "USD") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [2181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937) [staticcall]
+    │   └─ ← [Return] Market({ vamm: 0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85, feeBps: 10, paused: false, oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, feeRouter: 0xa75839A6D2Bb2f47FE98dc81EC47eaD01D4A2c1F, insuranceFund: 0x3C1085dF918a38A95F84945E6705CC857b664074, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000000000000000 [1e18] })
+    ├─ [0] console::log("Registered vAMM:", ERC1967Proxy: [0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Market Paused:", false) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Market Active:", true) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [1595] 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6::marketRiskParams(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937) [staticcall]
+    │   ├─ [1273] 0x02d8dcE5A4CF10FcE80F9479d379229ECB08937d::marketRiskParams(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937) [delegatecall]
+    │   │   └─ ← [Return] 1000, 500, 250, 1000000000000000000000 [1e21]
+    │   └─ ← [Return] 1000, 500, 250, 1000000000000000000000 [1e21]
+    ├─ [0] console::log("ClearingHouse IMR:", 1000, "bps") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("ClearingHouse MMR:", 500, "bps") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::stopBroadcast()
+    │   └─ ← [Return]
+    ├─ [0] console::log("=== DEPLOYMENT COMPLETE ===") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Frontend Integration:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Add to bytestrike3/src/contracts/addresses.js:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("export const SEPOLIA_CONTRACTS = {") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  ...,") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  vammProxy:", ERC1967Proxy: [0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85], ",") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("};") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("export const MARKET_IDS = {") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::toString(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937) [staticcall]
+    │   └─ ← [Return] "0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937"
+    ├─ [0] console::log("  'H100-PERP':", "0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937", ",") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("};") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Market Configuration:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::toString(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937) [staticcall]
+    │   └─ ← [Return] "0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937"
+    ├─ [0] console::log("- Market ID:", "0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("- vAMM Address:", ERC1967Proxy: [0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("- Oracle:", 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("- Initial Price: $3.79/hour") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("- IMR: 10%") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("- MMR: 5%") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("- Liquidation Penalty: 2.5%") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("- Trading Fee: 0.1%") [staticcall]
+    │   └─ ← [Stop]
+    └─ ← [Return]
+
+
+Script ran successfully.
+
+== Logs ==
+  === Deploying New Market ===
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Market Name: H100-PERP
+  
+  Step 1: Deploying new vAMM...
+  vAMM Implementation deployed at: 0xd64175cE957F089bA7fb3EBdA5B17f268DE01190
+  vAMM Proxy deployed at: 0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85
+  
+  Step 2: Registering market in MarketRegistry...
+  Market ID: 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937
+  Market registered successfully
+  
+  Step 3: Setting risk parameters...
+  IMR: 1000 bps (10%)
+  MMR: 500 bps (5%)
+  Liquidation Penalty: 250 bps (2.5%)
+  Penalty Cap: 1000 USD
+  Risk parameters set successfully
+  
+  Step 4: Verifying deployment...
+  vAMM Mark Price: 3 USD
+  Registered vAMM: 0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85
+  Market Paused: false
+  Market Active: true
+  ClearingHouse IMR: 1000 bps
+  ClearingHouse MMR: 500 bps
+  
+  === DEPLOYMENT COMPLETE ===
+  
+  Frontend Integration:
+  Add to bytestrike3/src/contracts/addresses.js:
+  
+  export const SEPOLIA_CONTRACTS = {
+    ...,
+    vammProxy: 0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85 ,
+  };
+  
+  export const MARKET_IDS = {
+    'H100-PERP': 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937 ,
+  };
+  
+  Market Configuration:
+  - Market ID: 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937
+  - vAMM Address: 0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85
+  - Oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad
+  - Initial Price: $3.79/hour
+  - IMR: 10%
+  - MMR: 5%
+  - Liquidation Penalty: 2.5%
+  - Trading Fee: 0.1%
+
+## Setting up 1 EVM.
+==========================
+Simulated On-chain Traces:
+
+  [1965451] → new vAMM@0xd64175cE957F089bA7fb3EBdA5B17f268DE01190
+    ├─ emit Initialized(version: 18446744073709551615 [1.844e19])
+    └─ ← [Return] 9700 bytes of code
+
+  [374868] → new ERC1967Proxy@0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85
+    ├─ emit Upgraded(implementation: vAMM: [0xd64175cE957F089bA7fb3EBdA5B17f268DE01190])
+    ├─ [321776] vAMM::initialize(0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6, 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, 3790000000000000000 [3.79e18], 100000000000000000000000 [1e23], 1000000000000000000000000 [1e24], 10, 100, 1000000000000000000 [1e18], 900) [delegatecall]
+    │   ├─ emit Initialized(owner: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406, clearinghouse: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6, priceX18: 3790000000000000000 [3.79e18], baseReserve: 100000000000000000000000 [1e23], quoteReserve: 379000000000000000000000 [3.79e23])
+    │   ├─ emit ParamsSet(feeBps: 10, frMaxBpsPerHour: 100, kFundingX18: 1000000000000000000 [1e18], observationWindow: 900)
+    │   ├─ emit LiquiditySet(newLiquidity: 1000000000000000000000000 [1e24])
+    │   ├─ emit Initialized(version: 1)
+    │   └─ ← [Stop]
+    └─ ← [Return] 130 bytes of code
+
+  [163765] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::addMarket(AddMarketConfig({ marketId: 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, vamm: 0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85, oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000000000000000 [1e18], feeBps: 10, feeRouter: 0xa75839A6D2Bb2f47FE98dc81EC47eaD01D4A2c1F, insuranceFund: 0x3C1085dF918a38A95F84945E6705CC857b664074 }))
+    ├─ emit MarketAdded(marketId: 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, vamm: ERC1967Proxy: [0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85])
+    └─ ← [Stop]
+
+  [120627] 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6::setRiskParams(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, 1000, 500, 250, 1000000000000000000000 [1e21])
+    ├─ [115799] 0x02d8dcE5A4CF10FcE80F9479d379229ECB08937d::setRiskParams(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, 1000, 500, 250, 1000000000000000000000 [1e21]) [delegatecall]
+    │   ├─ [16181] 0x01D2bdbed2cc4eC55B0eA92edA1aAb47d57627fD::getMarket(0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937) [staticcall]
+    │   │   └─ ← [Return] Market({ vamm: 0xF7210ccC245323258CC15e0Ca094eBbe2DC2CD85, feeBps: 10, paused: false, oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, feeRouter: 0xa75839A6D2Bb2f47FE98dc81EC47eaD01D4A2c1F, insuranceFund: 0x3C1085dF918a38A95F84945E6705CC857b664074, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000000000000000 [1e18] })
+    │   ├─ emit RiskParamsSet(marketId: 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937, imrBps: 1000, mmrBps: 500, liquidationPenaltyBps: 250, penaltyCap: 1000000000000000000000 [1e21])
+    │   └─ ← [Return]
+    └─ ← [Return]
+
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001013147 gwei
+
+Estimated total gas used for script: 3886890
+
+Estimated amount required: 0.00000393799094283 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+##
+Start verification for (2) contracts
+Start verifying contract `0xd64175cE957F089bA7fb3EBdA5B17f268DE01190` deployed on sepolia
+EVM version: prague
+Compiler version: 0.8.30
+Optimizations:    200
+
+Submitting verification for [src/vAMM.sol:vAMM] 0xd64175cE957F089bA7fb3EBdA5B17f268DE01190.
+Error: Encountered an error verifying this contract:
+Response: `NOTOK`
+Details:
+                        `Invalid API Key (#err2)|SEPOLIA-`

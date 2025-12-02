@@ -1,0 +1,49 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 515.50ms
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    SET RISK PARAMS FOR ETH-PERP-V2
+  =========================================
+  
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  ClearingHouse: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6
+  Market ID: 0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5
+  
+  Parameters:
+    IMR: 1000 bps (10%)
+    MMR: 500 bps (5%)
+    Liquidation Penalty: 250 bps (2.5%)
+    Penalty Cap: $1000
+  
+  Risk parameters set!
+  
+  =========================================
+    COMPLETE
+  =========================================
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001000016 gwei
+
+Estimated total gas used for script: 208895
+
+Estimated amount required: 0.00000020889834232 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/SetRiskParamsETHPerpV2.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/SetRiskParamsETHPerpV2.s.sol/11155111/run-latest.json
+

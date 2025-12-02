@@ -1,0 +1,142 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 839.27ms
+Compiler run successful with warnings:
+Warning (2072): Unused local variable.
+  --> script/TestOpenLong.s.sol:92:42:
+   |
+92 |         (uint256 imrBps, uint256 mmrBps, uint256 liqPenaltyBps, uint256 penaltyCap) =
+   |                                          ^^^^^^^^^^^^^^^^^^^^^
+
+Warning (2072): Unused local variable.
+  --> script/TestOpenLong.s.sol:92:65:
+   |
+92 |         (uint256 imrBps, uint256 mmrBps, uint256 liqPenaltyBps, uint256 penaltyCap) =
+   |                                                                 ^^^^^^^^^^^^^^^^^^
+
+Traces:
+  [1701895] → new TestOpenLong@0x9f7cF1d1F558E57ef88a59ac3D47214eF25B6A06
+    └─ ← [Return] 8390 bytes of code
+
+  [115024] TestOpenLong::run()
+    ├─ [0] VM::envUint("PRIVATE_KEY") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::addr(<pk>) [staticcall]
+    │   └─ ← [Return] 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  TEST OPEN LONG POSITION") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Trader:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("ClearingHouse:", 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=== PRE-FLIGHT CHECKS ===") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("1. Market Status:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [15605] 0x6d96DFC1a209B500Eb928C83455F415cb96AFF3C::isActive(0x352291f10e3a0d4a9f7beb3b623eac0b06f735c95170f956bc68b2f8b504a35d) [staticcall]
+    │   └─ ← [Return] true
+    ├─ [0] console::log("   Is Active:", true) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [2181] 0x6d96DFC1a209B500Eb928C83455F415cb96AFF3C::getMarket(0x352291f10e3a0d4a9f7beb3b623eac0b06f735c95170f956bc68b2f8b504a35d) [staticcall]
+    │   └─ ← [Return] Market({ vamm: 0xb46928829C728e3CE1B20eA4157a23553eeA5701, feeBps: 10, paused: false, oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad, feeRouter: 0xc6B7aE853742992297a7526F5De7fdbF8164e687, insuranceFund: 0x7d8B6B91aAC78F65EBc1D39d0a5c3608115Afe42, baseAsset: 0x36EC0f183Bd4014097934dcD7e23d9A5F0a69b40, quoteToken: 0x71075745A2A63dff3BD4819e9639D0E412c14AA9, baseUnit: 1000000000000000000 [1e18] })
+    ├─ [0] console::log("   vAMM:", 0xb46928829C728e3CE1B20eA4157a23553eeA5701) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("   Oracle:", 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("   Paused:", false) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("2. Trader Collateral (BEFORE):") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [3274] 0x46615074Bb2bAA2b33553d50A25D0e4f2ec4542e::balanceOf(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406, 0x71075745A2A63dff3BD4819e9639D0E412c14AA9) [staticcall]
+    │   └─ ← [Return] 0
+    ├─ [0] console::log("   USDC Balance:", 0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [23267] 0x46615074Bb2bAA2b33553d50A25D0e4f2ec4542e::getAccountCollateralValueX18(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Return] 0
+    ├─ [0] console::log("   Total Collateral Value (X18):", 0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [7426] 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6::_totalReservedMargin(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   ├─ [2616] 0x9586ec03985d824f223e16cb6E703551F63b1F20::_totalReservedMargin(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [delegatecall]
+    │   │   └─ ← [Return] 0
+    │   └─ ← [Return] 0
+    ├─ [0] console::log("   Reserved Margin:", 0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("   Available:", 0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("3. Oracle Price:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [2343] 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad::getPrice() [staticcall]
+    │   └─ ← [Return] 3790104796597920768 [3.79e18]
+    ├─ [0] console::log("   Oracle Price (X18):", 3790104796597920768 [3.79e18]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("4. vAMM Status:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [9763] 0xb46928829C728e3CE1B20eA4157a23553eeA5701::getMarkPrice() [staticcall]
+    │   ├─ [4956] 0x91D47bFE9A6242a1D5b20B8913c02CA9e2Feb17e::getMarkPrice() [delegatecall]
+    │   │   └─ ← [Return] 2000000000000000000000 [2e21]
+    │   └─ ← [Return] 2000000000000000000000 [2e21]
+    ├─ [0] console::log("   Mark Price (X18):", 2000000000000000000000 [2e21]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("5. Risk Parameters:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [9595] 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6::marketRiskParams(0x352291f10e3a0d4a9f7beb3b623eac0b06f735c95170f956bc68b2f8b504a35d) [staticcall]
+    │   ├─ [9273] 0x9586ec03985d824f223e16cb6E703551F63b1F20::marketRiskParams(0x352291f10e3a0d4a9f7beb3b623eac0b06f735c95170f956bc68b2f8b504a35d) [delegatecall]
+    │   │   └─ ← [Return] 0, 0, 0, 0
+    │   └─ ← [Return] 0, 0, 0, 0
+    ├─ [0] console::log("   IMR BPS:", 0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("   MMR BPS:", 0) [staticcall]
+    │   └─ ← [Stop]
+    └─ ← [Revert] IMR not set
+
+
+
+== Logs ==
+  =========================================
+    TEST OPEN LONG POSITION
+  =========================================
+  
+  Trader: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  ClearingHouse: 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6
+  
+  === PRE-FLIGHT CHECKS ===
+  
+  1. Market Status:
+     Is Active: true
+     vAMM: 0xb46928829C728e3CE1B20eA4157a23553eeA5701
+     Oracle: 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad
+     Paused: false
+  
+  2. Trader Collateral (BEFORE):
+     USDC Balance: 0
+     Total Collateral Value (X18): 0
+     Reserved Margin: 0
+     Available: 0
+  
+  3. Oracle Price:
+     Oracle Price (X18): 3790104796597920768
+  
+  4. vAMM Status:
+     Mark Price (X18): 2000000000000000000000
+  
+  5. Risk Parameters:
+     IMR BPS: 0
+     MMR BPS: 0
+Error: script failed: IMR not set

@@ -1,0 +1,85 @@
+No files changed, compilation skipped
+Script ran successfully.
+
+== Logs ==
+  === ByteStrike Deployment with Mocks ===
+  Admin: 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38
+  Treasury: 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38
+  Initial ETH price: 2000 USD
+  Initial base reserve: 1000 ETH
+  
+  1. Deploying Mock Tokens and Oracle...
+  Quote Token (mUSDC) deployed at: 0x5b73C5498c1E3b4dbA84de0F1833c4a029d90519
+  Base Token (mWETH) deployed at: 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+  MockOracle deployed at: 0x34A1D3fff3958843C43aD80F30b94c510645C316
+  
+  Minted test tokens to admin
+  
+  2. Deploying Core Infrastructure...
+  CollateralVault deployed at: 0xDB8cFf278adCCF9E9b5da745B44E754fC4EE3C76
+  MarketRegistry deployed at: 0x62c20Aa1e0272312BC100b4e23B4DC1Ed96dD7D1
+  ClearingHouse implementation at: 0xDEb1E9a6Be7Baf84208BB6E10aC9F9bbE1D70809
+  ClearingHouse proxy at: 0xD718d5A27a29FF1cD22403426084bA0d479869a0
+  
+  3. Deploying Market Components...
+  vAMM implementation at: 0x4f559F30f5eB88D635FDe1548C4267DB8FaB0351
+  vAMM proxy at: 0x416C42991d05b31E9A6dC209e91AD22b79D87Ae6
+  InsuranceFund at: 0xd21060559c9beb54fC07aFd6151aDf6cFCDDCAeB
+  FeeRouter at: 0x4C52a6277b1B84121b3072C0c92b6Be0b7CC10F1
+  
+  4. Configuring Permissions...
+  Registered USDC as collateral
+  Configured InsuranceFund
+  Wired Vault to ClearingHouse
+  Granted MARKET_ADMIN_ROLE to admin
+  
+  5. Registering ETH-PERP market...
+  ETH-PERP market registered
+  
+  6. Setting risk parameters...
+  Risk parameters set
+  
+  === Deployment Complete ===
+  
+  Core Contracts:
+    Oracle: 0x34A1D3fff3958843C43aD80F30b94c510645C316
+    MarketRegistry: 0x62c20Aa1e0272312BC100b4e23B4DC1Ed96dD7D1
+    CollateralVault: 0xDB8cFf278adCCF9E9b5da745B44E754fC4EE3C76
+    ClearingHouse: 0xD718d5A27a29FF1cD22403426084bA0d479869a0
+    InsuranceFund: 0xd21060559c9beb54fC07aFd6151aDf6cFCDDCAeB
+    FeeRouter: 0x4C52a6277b1B84121b3072C0c92b6Be0b7CC10F1
+  
+  Market:
+    ETH-PERP vAMM: 0x416C42991d05b31E9A6dC209e91AD22b79D87Ae6
+    Market ID: 0x352291f10e3a0d4a9f7beb3b623eac0b06f735c95170f956bc68b2f8b504a35d
+    Initial Price: 2000 USD
+  
+  Tokens:
+    Quote (mUSDC): 0x5b73C5498c1E3b4dbA84de0F1833c4a029d90519
+    Base (mWETH): 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+  
+  To update oracle price:
+    cast send 0x34A1D3fff3958843C43aD80F30b94c510645C316 "setPrice(uint256)" <newPrice>
+  
+  Example: Set ETH to $2500:
+    cast send 0x34A1D3fff3958843C43aD80F30b94c510645C316 "setPrice(uint256)" 2500000000000000000000
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.010000016 gwei
+
+Estimated total gas used for script: 17119317
+
+Estimated amount required: 0.000171193443909072 ETH
+
+==========================
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/DeployWithMocks.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/DeployWithMocks.s.sol/11155111/run-latest.json
+
+Error: You seem to be using Foundry's default sender. Be sure to set your own --sender.

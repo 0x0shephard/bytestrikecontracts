@@ -1,0 +1,60 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 605.68ms
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    OPEN TEST POSITION
+  =========================================
+  
+  Trader: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Market: ETH-PERP-V2
+  
+  BEFORE:
+    USDC Balance: 743901000000
+    Collateral: 0
+  
+  Step 1: Depositing collateral via ClearingHouse...
+    Deposited: 100000000000
+  
+  Step 2: Opening position...
+    Size: 10000000000000000 wei (0.01 ETH)
+    Direction: LONG
+    Price Limit: $5.00
+  
+  SUCCESS: Position opened!
+  
+  AFTER:
+    Position Size: 10100000000000000
+    Position Margin: 3787522842924761
+    Entry Price: 3753776355199619603
+    Collateral: 99999999625
+  
+  =========================================
+    COMPLETE
+  =========================================
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.001000018 gwei
+
+Estimated total gas used for script: 875679
+
+Estimated amount required: 0.000000875694762222 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/OpenTestPosition.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/OpenTestPosition.s.sol/11155111/run-latest.json
+

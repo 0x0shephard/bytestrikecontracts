@@ -1,0 +1,240 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 770.57ms
+Compiler run successful!
+Traces:
+  [382356] FixUSDCCollateralAndOracle::run()
+    ├─ [0] VM::envUint("PRIVATE_KEY") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::addr(<pk>) [staticcall]
+    │   └─ ← [Return] 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  FIX USDC COLLATERAL & ORACLE") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Admin:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Vault:", 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("mUSDC:", 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Oracle:", 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::startBroadcast(<pk>)
+    │   └─ ← [Return]
+    ├─ [0] console::log("Step 1: Registering mUSDC collateral in vault...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Base Unit: 1000000 (6 decimals)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Haircut: 0 bps (no haircut for stablecoin)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Liq Incentive: 500 bps (5%)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Oracle Symbol: USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [52646] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registerCollateral(CollateralConfig({ token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" }))
+    │   ├─ emit CollateralRegistered(token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC")
+    │   └─ ← [Stop]
+    ├─ [0] console::log("SUCCESS: mUSDC registered in vault!") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Step 2: Configuring oracle price feed for USDC...") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [2411] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::owner() [staticcall]
+    │   └─ ← [Return] 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    ├─ [0] console::log("Oracle owner:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Deployer:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [154690] → new MockUSDCPriceFeed@0xb025aaA1368dD9E42F7E152E7D37FA94cEba84d7
+    │   └─ ← [Return] 551 bytes of code
+    ├─ [0] console::log("MockUSDCPriceFeed deployed at:", MockUSDCPriceFeed: [0xb025aaA1368dD9E42F7E152E7D37FA94cEba84d7]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [7761] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::setPriceFeed("USDC", MockUSDCPriceFeed: [0xb025aaA1368dD9E42F7E152E7D37FA94cEba84d7])
+    │   ├─ emit PriceFeedSet(tokenSymbol: 0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa, priceFeedAddress: MockUSDCPriceFeed: [0xb025aaA1368dD9E42F7E152E7D37FA94cEba84d7])
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Oracle price feed set for USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [4696] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::setBaseUnit("USDC", 1000000 [1e6])
+    │   ├─ emit BaseUnitSet(tokenSymbol: 0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa, baseUnit: 1000000 [1e6])
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Oracle base unit set for USDC: 1e6") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [9605] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::getPrice("USDC") [staticcall]
+    │   ├─ [148] MockUSDCPriceFeed::decimals() [staticcall]
+    │   │   └─ ← [Return] 8
+    │   ├─ [286] MockUSDCPriceFeed::latestRoundData() [staticcall]
+    │   │   └─ ← [Return] 1, 100000000 [1e8], 1764255636 [1.764e9], 1764255636 [1.764e9], 1
+    │   └─ ← [Return] 1000000000000000000 [1e18]
+    ├─ [0] console::log("USDC price from oracle:", 1, "USD (1e18 format)") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] VM::stopBroadcast()
+    │   └─ ← [Return]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  VERIFICATION") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [3116] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getConfig(0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Return] CollateralConfig({ token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" })
+    ├─ [0] console::log("Vault Configuration:") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Token:", 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Base Unit:", 1000000 [1e6]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Haircut BPS:", 0) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Liq Incentive BPS:", 500) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Enabled:", true) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  Oracle Symbol:", "USDC") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Testing getAccountCollateralValueX18 for:", 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [69770] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::getAccountCollateralValueX18(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406) [staticcall]
+    │   ├─ [3605] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::getPrice("USDC") [staticcall]
+    │   │   ├─ [148] MockUSDCPriceFeed::decimals() [staticcall]
+    │   │   │   └─ ← [Return] 8
+    │   │   ├─ [286] MockUSDCPriceFeed::latestRoundData() [staticcall]
+    │   │   │   └─ ← [Return] 1, 100000000 [1e8], 1764255636 [1.764e9], 1764255636 [1.764e9], 1
+    │   │   └─ ← [Return] 1000000000000000000 [1e18]
+    │   ├─ [3605] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::getPrice("USDC") [staticcall]
+    │   │   ├─ [148] MockUSDCPriceFeed::decimals() [staticcall]
+    │   │   │   └─ ← [Return] 8
+    │   │   ├─ [286] MockUSDCPriceFeed::latestRoundData() [staticcall]
+    │   │   │   └─ ← [Return] 1, 100000000 [1e8], 1764255636 [1.764e9], 1764255636 [1.764e9], 1
+    │   │   └─ ← [Return] 1000000000000000000 [1e18]
+    │   ├─ [3605] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::getPrice("USDC") [staticcall]
+    │   │   ├─ [148] MockUSDCPriceFeed::decimals() [staticcall]
+    │   │   │   └─ ← [Return] 8
+    │   │   ├─ [286] MockUSDCPriceFeed::latestRoundData() [staticcall]
+    │   │   │   └─ ← [Return] 1, 100000000 [1e8], 1764255636 [1.764e9], 1764255636 [1.764e9], 1
+    │   │   └─ ← [Return] 1000000000000000000 [1e18]
+    │   ├─ [3605] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::getPrice("USDC") [staticcall]
+    │   │   ├─ [148] MockUSDCPriceFeed::decimals() [staticcall]
+    │   │   │   └─ ← [Return] 8
+    │   │   ├─ [286] MockUSDCPriceFeed::latestRoundData() [staticcall]
+    │   │   │   └─ ← [Return] 1, 100000000 [1e8], 1764255636 [1.764e9], 1764255636 [1.764e9], 1
+    │   │   └─ ← [Return] 1000000000000000000 [1e18]
+    │   └─ ← [Return] 101141490142869000000000000 [1.011e26]
+    ├─ [0] console::log("  SUCCESS! Collateral value:", 101141490 [1.011e8], "USD") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("  FIX COMPLETE!") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("=========================================") [staticcall]
+    │   └─ ← [Stop]
+    └─ ← [Return]
+
+
+Script ran successfully.
+
+== Logs ==
+  =========================================
+    FIX USDC COLLATERAL & ORACLE
+  =========================================
+  
+  Admin: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Vault: 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0
+  mUSDC: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+  Oracle: 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c
+  
+  Step 1: Registering mUSDC collateral in vault...
+    Base Unit: 1000000 (6 decimals)
+    Haircut: 0 bps (no haircut for stablecoin)
+    Liq Incentive: 500 bps (5%)
+    Oracle Symbol: USDC
+  
+  SUCCESS: mUSDC registered in vault!
+  
+  Step 2: Configuring oracle price feed for USDC...
+  Oracle owner: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  Deployer: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+  MockUSDCPriceFeed deployed at: 0xb025aaA1368dD9E42F7E152E7D37FA94cEba84d7
+  Oracle price feed set for USDC
+  Oracle base unit set for USDC: 1e6
+  
+  USDC price from oracle: 1 USD (1e18 format)
+  
+  =========================================
+    VERIFICATION
+  =========================================
+  
+  Vault Configuration:
+    Token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7
+    Base Unit: 1000000
+    Haircut BPS: 0
+    Liq Incentive BPS: 500
+    Enabled: true
+    Oracle Symbol: USDC
+  
+  Testing getAccountCollateralValueX18 for: 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+    SUCCESS! Collateral value: 101141490 USD
+  
+  =========================================
+    FIX COMPLETE!
+  =========================================
+
+## Setting up 1 EVM.
+==========================
+Simulated On-chain Traces:
+
+  [52646] 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0::registerCollateral(CollateralConfig({ token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC" }))
+    ├─ emit CollateralRegistered(token: 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7, baseUnit: 1000000 [1e6], haircutBps: 0, liqIncentiveBps: 500, cap: 0, accountCap: 0, enabled: true, depositPaused: false, withdrawPaused: false, oracleSymbol: "USDC")
+    └─ ← [Stop]
+
+  [154690] → new MockUSDCPriceFeed@0xb025aaA1368dD9E42F7E152E7D37FA94cEba84d7
+    └─ ← [Return] 551 bytes of code
+
+  [9761] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::setPriceFeed("USDC", MockUSDCPriceFeed: [0xb025aaA1368dD9E42F7E152E7D37FA94cEba84d7])
+    ├─ emit PriceFeedSet(tokenSymbol: 0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa, priceFeedAddress: MockUSDCPriceFeed: [0xb025aaA1368dD9E42F7E152E7D37FA94cEba84d7])
+    └─ ← [Stop]
+
+  [6696] 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c::setBaseUnit("USDC", 1000000 [1e6])
+    ├─ emit BaseUnitSet(tokenSymbol: 0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa, baseUnit: 1000000 [1e6])
+    └─ ← [Stop]
+
+
+==========================
+
+Chain 11155111
+
+Estimated gas price: 0.00101314 gwei
+
+Estimated total gas used for script: 475104
+
+Estimated amount required: 0.00000048134686656 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /Users/muhammadjonraza/root/byte-strike/broadcast/FixUSDCCollateralAndOracle.s.sol/11155111/run-latest.json
+
+Sensitive values saved to: /Users/muhammadjonraza/root/byte-strike/cache/FixUSDCCollateralAndOracle.s.sol/11155111/run-latest.json
+

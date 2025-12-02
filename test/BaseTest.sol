@@ -204,12 +204,22 @@ abstract contract BaseTest is Test {
         uint128 size,
         uint256 priceLimit
     ) public {
-        // Add margin from vault to position before trading
-        // For longs: need to cover trade cost + IMR + fees, but use all available collateral for risky tests
+        // Calculate required margin for the position
+        // Estimate notional value (actual execution price may vary slightly)
+        uint256 estimatedPrice = getMarkPrice();
+        uint256 estimatedNotional = (uint256(size) * estimatedPrice) / 1e18;
+
+        // Required margin = IMR + fees (with 10% buffer for price impact)
+        uint256 requiredIMR = (estimatedNotional * IMR_BPS) / 10000;
+        uint256 estimatedFees = (estimatedNotional * TRADE_FEE_BPS) / 10000;
+        uint256 requiredMargin = ((requiredIMR + estimatedFees) * 110) / 100;
+
+        // Use all available collateral if test explicitly wants a risky/undercollateralized position
         uint256 availableCollateral = getCollateralBalance(user);
+        uint256 marginToAdd = requiredMargin > availableCollateral ? availableCollateral : requiredMargin;
 
         vm.startPrank(user);
-        clearingHouse.addMargin(ETH_PERP, availableCollateral);
+        clearingHouse.addMargin(ETH_PERP, marginToAdd);
         clearingHouse.openPosition(ETH_PERP, true, size, priceLimit);
         vm.stopPrank();
     }
@@ -220,12 +230,22 @@ abstract contract BaseTest is Test {
         uint128 size,
         uint256 priceLimit
     ) public {
-        // Add margin from vault to position before trading
-        // Use all available collateral to match test expectations (risky positions use minimal deposits)
+        // Calculate required margin for the position
+        // Estimate notional value (actual execution price may vary slightly)
+        uint256 estimatedPrice = getMarkPrice();
+        uint256 estimatedNotional = (uint256(size) * estimatedPrice) / 1e18;
+
+        // Required margin = IMR + fees (with 10% buffer for price impact)
+        uint256 requiredIMR = (estimatedNotional * IMR_BPS) / 10000;
+        uint256 estimatedFees = (estimatedNotional * TRADE_FEE_BPS) / 10000;
+        uint256 requiredMargin = ((requiredIMR + estimatedFees) * 110) / 100;
+
+        // Use all available collateral if test explicitly wants a risky/undercollateralized position
         uint256 availableCollateral = getCollateralBalance(user);
+        uint256 marginToAdd = requiredMargin > availableCollateral ? availableCollateral : requiredMargin;
 
         vm.startPrank(user);
-        clearingHouse.addMargin(ETH_PERP, availableCollateral);
+        clearingHouse.addMargin(ETH_PERP, marginToAdd);
         clearingHouse.openPosition(ETH_PERP, false, size, priceLimit);
         vm.stopPrank();
     }

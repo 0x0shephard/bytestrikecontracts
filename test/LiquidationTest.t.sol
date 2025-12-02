@@ -28,6 +28,11 @@ contract LiquidationTest is BaseTest {
         // Price crashes - long loses value
         setOraclePrice(1200 * PRICE_PRECISION); // -40% crash
 
+        // Push vAMM price down by having bob open large short positions
+        // This simulates market participants reacting to the oracle price drop
+        fundAndDeposit(bob, 50000 * USDC_UNIT);
+        openShortPosition(bob, ethQty(20), 0);
+
         // Should now be liquidatable
         assertTrue(isLiquidatable(alice), "Should be liquidatable after price crash");
 
@@ -57,6 +62,10 @@ contract LiquidationTest is BaseTest {
 
         // Price pumps - short loses value
         setOraclePrice(2800 * PRICE_PRECISION); // +40% pump
+
+        // Push vAMM price up by having bob open large long positions
+        fundAndDeposit(bob, 50000 * USDC_UNIT);
+        openLongPosition(bob, ethQty(20), 0);
 
         assertTrue(isLiquidatable(alice), "Should be liquidatable after price pump");
 
@@ -111,6 +120,10 @@ contract LiquidationTest is BaseTest {
         // Price drops to make it liquidatable
         setOraclePrice(1300 * PRICE_PRECISION);
 
+        // Push vAMM price down
+        fundAndDeposit(bob, 50000 * USDC_UNIT);
+        openShortPosition(bob, ethQty(30), 0);
+
         assertTrue(isLiquidatable(alice), "Should be liquidatable");
 
         // Partial liquidation
@@ -137,6 +150,10 @@ contract LiquidationTest is BaseTest {
         // Price crashes
         setOraclePrice(1200 * PRICE_PRECISION);
 
+        // Push vAMM price down
+        fundAndDeposit(bob, 50000 * USDC_UNIT);
+        openShortPosition(bob, ethQty(20), 0);
+
         // Liquidate
         vm.prank(liquidator);
         clearingHouse.liquidate(alice, ETH_PERP, size);
@@ -157,6 +174,10 @@ contract LiquidationTest is BaseTest {
 
         // Price crashes
         setOraclePrice(1200 * PRICE_PRECISION);
+
+        // Push vAMM price down
+        fundAndDeposit(bob, 50000 * USDC_UNIT);
+        openShortPosition(bob, ethQty(20), 0);
 
         // Calculate expected notional and penalty
         uint256 notional = getNotional(alice);
@@ -189,6 +210,10 @@ contract LiquidationTest is BaseTest {
 
         // Massive price crash
         setOraclePrice(800 * PRICE_PRECISION); // -60%
+
+        // Push vAMM price down massively
+        fundAndDeposit(bob, 100000 * USDC_UNIT);
+        openShortPosition(bob, ethQty(50), 0);
 
         // Liquidate (might need insurance fund to cover shortfall)
         vm.prank(liquidator);
@@ -244,8 +269,9 @@ contract LiquidationTest is BaseTest {
     function test_MultipleLiquidations_DifferentUsers() public {
         uint256 depositAmount = 5000 * USDC_UNIT;
     uint128 size = ethQty(2);
+        address charlie = makeAddr("charlie");
 
-        // Both Alice and Bob open risky positions
+        // Both Alice and Bob open risky long positions
         fundAndDeposit(alice, depositAmount);
         openLongPosition(alice, size, 0);
 
@@ -254,6 +280,10 @@ contract LiquidationTest is BaseTest {
 
         // Price crashes
         setOraclePrice(1200 * PRICE_PRECISION);
+
+        // Charlie pushes vAMM price down
+        fundAndDeposit(charlie, 50000 * USDC_UNIT);
+        openShortPosition(charlie, ethQty(25), 0);
 
         assertTrue(isLiquidatable(alice), "Alice should be liquidatable");
         assertTrue(isLiquidatable(bob), "Bob should be liquidatable");
@@ -329,6 +359,10 @@ contract LiquidationTest is BaseTest {
         // Catastrophic price crash
         setOraclePrice(500 * PRICE_PRECISION); // -75%
 
+        // Push vAMM price down catastrophically
+        fundAndDeposit(bob, 150000 * USDC_UNIT);
+        openShortPosition(bob, ethQty(80), 0);
+
         assertTrue(isLiquidatable(alice), "Should definitely be liquidatable");
 
         // Liquidate
@@ -348,6 +382,10 @@ contract LiquidationTest is BaseTest {
         openLongPosition(alice, size, 0);
 
         setOraclePrice(1200 * PRICE_PRECISION);
+
+        // Push vAMM price down
+        fundAndDeposit(bob, 50000 * USDC_UNIT);
+        openShortPosition(bob, ethQty(20), 0);
 
         uint256 gasBefore = gasleft();
 

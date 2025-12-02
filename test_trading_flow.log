@@ -1,0 +1,14 @@
+Compiling 1 files with Solc 0.8.30
+Solc 0.8.30 finished in 389.84ms
+Error: Compiler run failed:
+Error (9553): Invalid type for argument in function call. Invalid implicit conversion from uint256 to uint128 requested.
+  --> script/TestFullTradingFlow.s.sol:94:44:
+   |
+94 |         ch.openPosition(H100_MARKET, true, size, priceLimit);
+   |                                            ^^^^
+
+Error (9582): Member "log" not found or not visible after argument-dependent lookup in type(library console).
+   --> script/TestFullTradingFlow.s.sol:105:9:
+    |
+105 |         console.log("  Realized PnL:", position.realizedPnL / 1e18, "USD");
+    |         ^^^^^^^^^^^
