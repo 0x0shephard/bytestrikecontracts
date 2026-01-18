@@ -1,0 +1,216 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.30;
+
+import {Script} from "forge-std/Script.sol";
+import {console} from "forge-std/console.sol";
+import {ClearingHouse} from "../src/ClearingHouse.sol";
+import {CollateralVault} from "../src/CollateralVault.sol";
+import {MarketRegistry} from "../src/MarketRegistry.sol";
+import {IVAMM} from "../src/Interfaces/IVAMM.sol";
+import {IOracle} from "../src/Interfaces/IOracle.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+/**
+ * @title DebugOpenPosition
+ * @notice Debug script to identify why openPosition is failing
+ */
+contract DebugOpenPosition is Script {
+    // Sepolia addresses
+    address constant CLEARING_HOUSE = 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6;
+    address constant COLLATERAL_VAULT = 0x46615074Bb2bAA2b33553d50A25D0e4f2ec4542e;
+    address constant MARKET_REGISTRY = 0x6d96DFC1a209B500Eb928C83455F415cb96AFF3C;
+    address constant VAMM = 0xb46928829C728e3CE1B20eA4157a23553eeA5701;
+    address constant MOCK_USDC = 0x71075745A2A63dff3BD4819e9639D0E412c14AA9;
+
+    // Market ID for ETH-PERP
+    bytes32 constant MARKET_ID = 0x352291f10e3a0d4a9f7beb3b623eac0b06f735c95170f956bc68b2f8b504a35d;
+
+    function run() external view {
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        address trader = vm.addr(deployerPrivateKey);
+
+        console.log("=========================================");
+        console.log("  DEBUG OPEN POSITION");
+        console.log("=========================================");
+        console.log("");
+        console.log("Trader:", trader);
+        console.log("");
+
+        ClearingHouse ch = ClearingHouse(CLEARING_HOUSE);
+        CollateralVault vault = CollateralVault(COLLATERAL_VAULT);
+        MarketRegistry registry = MarketRegistry(MARKET_REGISTRY);
+
+        // 1. Check market status
+        console.log("1. Market Status:");
+        bool isActive = registry.isActive(MARKET_ID);
+        console.log("   Is Active:", isActive);
+
+        IMarketRegistry.Market memory market = registry.getMarket(MARKET_ID);
+        console.log("   vAMM:", market.vamm);
+        console.log("   Oracle:", market.oracle);
+        console.log("   Quote Token:", market.quoteToken);
+        console.log("   Fee BPS:", market.feeBps);
+        console.log("   Paused:", market.paused);
+        console.log("");
+
+        // 2. Check trader's collateral
+        console.log("2. Trader Collateral:");
+        uint256 usdcBalance = vault.balanceOf(trader, MOCK_USDC);
+        console.log("   USDC Balance:", usdcBalance);
+
+        try vault.getAccountCollateralValueX18(trader) returns (uint256 collateralValue) {
+            console.log("   Total Collateral Value (X18):", collateralValue);
+        } catch Error(string memory reason) {
+            console.log("   ERROR getting collateral value:", reason);
+        } catch (bytes memory lowLevelData) {
+            console.log("   ERROR getting collateral value (low-level)");
+            console.logBytes(lowLevelData);
+        }
+
+        uint256 reservedMargin = ch._totalReservedMargin(trader);
+        console.log("   Reserved Margin:", reservedMargin);
+        console.log("");
+
+        // 3. Check oracle
+        console.log("3. Oracle Status:");
+        if (market.oracle != address(0)) {
+            try IOracle(market.oracle).getPrice() returns (uint256 price) {
+                console.log("   Oracle Price (X18):", price);
+            } catch Error(string memory reason) {
+                console.log("   ERROR getting oracle price:", reason);
+            } catch (bytes memory lowLevelData) {
+                console.log("   ERROR getting oracle price (low-level)");
+                console.logBytes(lowLevelData);
+            }
+        } else {
+            console.log("   No oracle configured");
+        }
+        console.log("");
+
+        // 4. Check vAMM
+        console.log("4. vAMM Status:");
+        if (market.vamm != address(0)) {
+            IVAMM vamm = IVAMM(market.vamm);
+            uint256 markPrice = vamm.getMarkPrice();
+            console.log("   Mark Price (X18):", markPrice);
+
+            (uint256 baseReserve, uint256 quoteReserve) = vamm.getReserves();
+            console.log("   Base Reserve:", baseReserve);
+            console.log("   Quote Reserve:", quoteReserve);
+        }
+        console.log("");
+
+        // 5. Check risk parameters
+        console.log("5. Risk Parameters:");
+        (uint256 imrBps, uint256 mmrBps, uint256 liqPenaltyBps, uint256 penaltyCap) =
+            ch.marketRiskParams(MARKET_ID);
+        console.log("   IMR BPS:", imrBps);
+        console.log("   MMR BPS:", mmrBps);
+        console.log("   Liq Penalty BPS:", liqPenaltyBps);
+        console.log("   Penalty Cap:", penaltyCap);
+        console.log("");
+
+        // 6. Check vault oracle
+        console.log("6. Collateral Vault Oracle:");
+        address vaultOracle = vault.getOracle();
+        console.log("   Vault Oracle Address:", vaultOracle);
+
+        // Try to get the collateral config
+        try vault.getConfig(MOCK_USDC) returns (ICollateralVault.CollateralConfig memory config) {
+            console.log("   USDC Config:");
+            console.log("     Enabled:", config.enabled);
+            console.log("     Oracle Symbol:", config.oracleSymbol);
+            console.log("     Base Unit:", config.baseUnit);
+            console.log("     Haircut BPS:", config.haircutBps);
+            console.log("     Deposit Paused:", config.depositPaused);
+            console.log("     Withdraw Paused:", config.withdrawPaused);
+
+            // Try to get USDC price from vault oracle
+            if (vaultOracle != address(0)) {
+                console.log("");
+                console.log("   Testing Vault Oracle Price Fetch:");
+                try IOracle(vaultOracle).getPrice() returns (uint256 price) {
+                    console.log("     getPrice() SUCCESS - Price:", price);
+                } catch Error(string memory reason) {
+                    console.log("     getPrice() ERROR:", reason);
+                } catch (bytes memory lowLevelData) {
+                    console.log("     getPrice() ERROR (low-level)");
+                    console.logBytes(lowLevelData);
+                }
+            }
+        } catch Error(string memory reason) {
+            console.log("   ERROR getting USDC config:", reason);
+        } catch (bytes memory) {
+            console.log("   ERROR getting USDC config (low-level)");
+        }
+        console.log("");
+
+        // 7. Calculate what would be needed for a small position
+        console.log("7. Position Requirements (for 0.1 ETH long):");
+        if (market.vamm != address(0)) {
+            IVAMM vamm = IVAMM(market.vamm);
+            uint256 markPrice = vamm.getMarkPrice();
+            uint128 testSize = 0.1 ether; // 0.1 ETH
+
+            uint256 notional = (uint256(testSize) * markPrice) / 1e18;
+            console.log("   Notional Value:", notional);
+
+            if (imrBps > 0) {
+                uint256 marginRequired = (notional * imrBps) / 10_000;
+                console.log("   Margin Required (IMR):", marginRequired);
+
+                if (market.feeBps > 0) {
+                    uint256 fee = (notional * market.feeBps) / 10_000;
+                    console.log("   Trading Fee:", fee);
+                    console.log("   Total Needed:", marginRequired + fee);
+                }
+            }
+        }
+        console.log("");
+
+        console.log("=========================================");
+        console.log("  DIAGNOSIS");
+        console.log("=========================================");
+        console.log("");
+        console.log("Check the following:");
+        console.log("1. Is vault oracle set correctly?");
+        console.log("2. Can vault oracle getPrice() be called?");
+        console.log("3. Is USDC oracle symbol configured?");
+        console.log("4. Does trader have enough USDC + available collateral?");
+        console.log("5. Are risk params (IMR/MMR) set for the market?");
+    }
+}
+
+interface IMarketRegistry {
+    struct Market {
+        address vamm;
+        uint16 feeBps;
+        bool paused;
+        address oracle;
+        address feeRouter;
+        address insuranceFund;
+        address baseAsset;
+        address quoteToken;
+        uint256 baseUnit;
+    }
+
+    function getMarket(bytes32 marketId) external view returns (Market memory);
+    function isActive(bytes32 marketId) external view returns (bool);
+}
+
+interface ICollateralVault {
+    struct CollateralConfig {
+        address token;
+        uint256 baseUnit;
+        uint16 haircutBps;
+        uint16 liqIncentiveBps;
+        uint256 cap;
+        uint256 accountCap;
+        bool enabled;
+        bool depositPaused;
+        bool withdrawPaused;
+        string oracleSymbol;
+    }
+
+    function getConfig(address token) external view returns (CollateralConfig memory);
+}

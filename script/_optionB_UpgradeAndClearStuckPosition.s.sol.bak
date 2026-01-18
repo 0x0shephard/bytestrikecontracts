@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.30;
+
+import "forge-std/Script.sol";
+import "../src/ClearingHouse.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
+/**
+ * @title UpgradeAndClearStuckPosition
+ * @notice Upgrades ClearingHouse to V5 with adminClearStuckPosition function,
+ *         then clears the stuck position for 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406
+ *
+ * PROBLEM:
+ * - User has -$24.7M portfolio value due to stale _totalReservedMargin from old vault
+ * - Position size = 0 but margin = 566.29 is still reserved
+ * - Total reserved margin = 24,731,180.36 (should be 0 after vault migration)
+ *
+ * SOLUTION:
+ * 1. Deploy new ClearingHouse implementation (V5) with adminClearStuckPosition
+ * 2. Upgrade proxy to use new implementation
+ * 3. Call adminClearStuckPosition to reset stuck position and reserved margin
+ *
+ * USAGE:
+ * forge script script/UpgradeAndClearStuckPosition.s.sol:UpgradeAndClearStuckPosition \
+ *   --rpc-url $SEPOLIA_RPC_URL \
+ *   --broadcast \
+ *   --verify \
+ *   -vvvv
+ */
+contract UpgradeAndClearStuckPosition is Script {
+    // Deployed contract addresses
+    address constant CLEARING_HOUSE_PROXY = 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6;
+    address constant AFFECTED_USER = 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406;
+    bytes32 constant H100_PERP_MARKET = 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937;
+
+    function run() external {
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        address deployer = vm.addr(deployerPrivateKey);
+
+        console.log("=== UPGRADE AND CLEAR STUCK POSITION ===");
+        console.log("Deployer:", deployer);
+        console.log("ClearingHouse Proxy:", CLEARING_HOUSE_PROXY);
+        console.log("");
+
+        vm.startBroadcast(deployerPrivateKey);
+
+        // Step 1: Deploy new implementation (V5)
+        console.log("Step 1: Deploying ClearingHouse V5 implementation...");
+        ClearingHouse newImpl = new ClearingHouse();
+        console.log("New Implementation deployed at:", address(newImpl));
+        console.log("");
+
+        // Step 2: Upgrade proxy to use new implementation
+        console.log("Step 2: Upgrading proxy to V5...");
+        ClearingHouse ch = ClearingHouse(CLEARING_HOUSE_PROXY);
+        ch.upgradeToAndCall(address(newImpl), "");
+        console.log("Proxy upgraded successfully");
+        console.log("");
+
+        // Step 3: Verify current stuck state
+        console.log("Step 3: Checking stuck position state...");
+        uint256 reservedMarginBefore = ch._totalReservedMargin(AFFECTED_USER);
+        int256 accountValueBefore = ch.getAccountValue(AFFECTED_USER);
+        (int256 size, uint256 margin, uint256 entryPrice, int256 fundingIndex, uint256 realizedPnL) =
+            ch.getPosition(AFFECTED_USER, H100_PERP_MARKET);
+
+        console.log("BEFORE CLEARING:");
+        console.log("  Reserved Margin:", reservedMarginBefore / 1e18, "USDC (1e18)");
+        console.log("  Account Value:", uint256(accountValueBefore >= 0 ? accountValueBefore : -accountValueBefore) / 1e18);
+        console.log("  Account Value Sign:", accountValueBefore < 0 ? "NEGATIVE" : "positive");
+        console.log("  Position Size:", uint256(size >= 0 ? size : -size));
+        console.log("  Position Margin:", margin / 1e18, "USDC (1e18)");
+        console.log("");
+
+        // Step 4: Clear stuck position
+        console.log("Step 4: Clearing stuck position...");
+        ch.adminClearStuckPosition(AFFECTED_USER, H100_PERP_MARKET);
+        console.log("Position cleared successfully");
+        console.log("");
+
+        // Step 5: Verify fix
+        console.log("Step 5: Verifying fix...");
+        uint256 reservedMarginAfter = ch._totalReservedMargin(AFFECTED_USER);
+        int256 accountValueAfter = ch.getAccountValue(AFFECTED_USER);
+        (int256 sizeAfter, uint256 marginAfter, uint256 entryPriceAfter, int256 fundingIndexAfter, uint256 realizedPnLAfter) =
+            ch.getPosition(AFFECTED_USER, H100_PERP_MARKET);
+
+        console.log("AFTER CLEARING:");
+        console.log("  Reserved Margin:", reservedMarginAfter / 1e18, "USDC (1e18)");
+        console.log("  Account Value:", uint256(accountValueAfter >= 0 ? accountValueAfter : -accountValueAfter) / 1e18);
+        console.log("  Account Value Sign:", accountValueAfter < 0 ? "NEGATIVE" : "positive");
+        console.log("  Position Size:", uint256(sizeAfter >= 0 ? sizeAfter : -sizeAfter));
+        console.log("  Position Margin:", marginAfter / 1e18, "USDC (1e18)");
+        console.log("");
+
+        // Step 6: Verify expected values
+        console.log("Step 6: Validating fix...");
+        require(sizeAfter == 0, "Position size should be 0");
+        require(marginAfter == 0, "Position margin should be 0");
+        require(entryPriceAfter == 0, "Entry price should be 0");
+        require(fundingIndexAfter == 0, "Funding index should be 0");
+        require(realizedPnLAfter == 0, "Realized PnL should be 0");
+
+        // The user should now have reduced reserved margin
+        // It won't be 0 if there are other markets with positions, but it should be much less
+        console.log("Reserved margin reduced by:", (reservedMarginBefore - reservedMarginAfter) / 1e18, "USDC (1e18)");
+        console.log("Account value improved by:", uint256((accountValueAfter - accountValueBefore) >= 0 ? (accountValueAfter - accountValueBefore) : -(accountValueAfter - accountValueBefore)) / 1e18);
+
+        console.log("");
+        console.log("=== SUCCESS ===");
+        console.log("ClearingHouse upgraded to V5");
+        console.log("Stuck position cleared for user:", AFFECTED_USER);
+        console.log("Portfolio should now show correct values in frontend");
+
+        vm.stopBroadcast();
+    }
+}
