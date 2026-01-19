@@ -111,6 +111,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(initialPriceX18 > 0, "price=0");
 		require(initialBaseReserve > 0, "baseRes=0");
 		require(liquidity_ > 0, "L=0");
+		require(feeBps_ <= 300, "Fee too high"); // Max 3% (matches setParams validation)
 
 		owner = msg.sender;
 		clearinghouse = _clearinghouse;
@@ -400,6 +401,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 	/// @notice Updates the cumulative funding index using the latest TWAP and oracle index prices.
 	/// @dev Funding rate is clamped by frMaxBpsPerHour and accumulated into _cumulativeFundingPerUnitX18.
+	/// @dev Gracefully handles oracle failures by skipping the funding update (does not block trades).
 	function pokeFunding() external {
 		uint64 nowTs = uint64(block.timestamp);
 		uint64 lastTs = lastFundingTimestamp;
@@ -407,9 +409,22 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 			return; // Funding already up to date
 		}
 
-		// Fetch prices
+		// Fetch prices with oracle safety checks
 		uint256 twapX18 = getTwap(observationWindow);
-		uint256 indexPriceX18 = IOracle(oracle).getPrice();
+
+		// Safe oracle fetch - skip funding update if oracle fails or returns zero
+		uint256 indexPriceX18;
+		try IOracle(oracle).getPrice() returns (uint256 price) {
+			indexPriceX18 = price;
+		} catch {
+			// Oracle reverted - skip funding update to avoid blocking trades
+			return;
+		}
+
+		// Skip funding update if oracle returns invalid price
+		if (indexPriceX18 == 0) {
+			return;
+		}
 
 		// Calculate funding rate
 		// premium = (markTwap - index)

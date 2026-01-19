@@ -259,10 +259,21 @@ contract CollateralVault is ICollateralVault, AccessControl {
     }
 
     /// @notice Value a token amount in USD 1e18 using oracleSymbol and baseUnit, applying haircut.
+    /// @dev Returns 0 if oracle call fails to prevent blocking critical operations.
     function getTokenValueX18(address token, uint256 amount) external view override returns (uint256 usdX18) {
         CollateralConfig memory cfg = collateralConfigs[token];
         if (!cfg.enabled || amount == 0) return 0;
-    uint256 pxX18 = Oracle(oracle).getPrice(cfg.oracleSymbol);
+
+        // Safe oracle call - return 0 if oracle fails to prevent blocking operations
+        uint256 pxX18;
+        try Oracle(oracle).getPrice(cfg.oracleSymbol) returns (uint256 price) {
+            pxX18 = price;
+        } catch {
+            return 0; // Oracle failed - treat as valueless rather than reverting
+        }
+
+        if (pxX18 == 0) return 0;
+
         // Normalize by base unit and apply haircut
         usdX18 = (pxX18 * amount) / cfg.baseUnit;
         if (cfg.haircutBps != 0) {
@@ -271,6 +282,7 @@ contract CollateralVault is ICollateralVault, AccessControl {
     }
 
     /// @notice Sum haircut-adjusted USD value across all enabled collaterals for a user.
+    /// @dev Skips tokens whose oracle fails to prevent blocking critical operations.
     function getAccountCollateralValueX18(address user) external view override returns (uint256 usdX18) {
         address[] memory tokens = registeredTokens;
         for (uint256 i = 0; i < tokens.length; i++) {
@@ -278,7 +290,17 @@ contract CollateralVault is ICollateralVault, AccessControl {
             if (!cfg.enabled) continue;
             uint256 bal = userBalances[user][tokens[i]];
             if (bal == 0) continue;
-            uint256 pxX18 = Oracle(oracle).getPrice(cfg.oracleSymbol);
+
+            // Safe oracle call - skip token if oracle fails to prevent blocking operations
+            uint256 pxX18;
+            try Oracle(oracle).getPrice(cfg.oracleSymbol) returns (uint256 price) {
+                pxX18 = price;
+            } catch {
+                continue; // Skip this token if oracle fails
+            }
+
+            if (pxX18 == 0) continue;
+
             uint256 v = (pxX18 * bal) / cfg.baseUnit;
             if (cfg.haircutBps != 0) {
                 v = (v * (10_000 - cfg.haircutBps)) / 10_000;

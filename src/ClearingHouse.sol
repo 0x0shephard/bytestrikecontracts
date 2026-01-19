@@ -471,11 +471,12 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         }
 
         // Calculate penalty - reuse variables to save stack
+        // Use oracle price (via _getRiskPrice) to prevent mark price manipulation
         uint256 notional;
         uint256 penalty;
         {
-            uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
-            notional = Calculations.mulDiv(uint256(size), markPrice, 1e18);
+            uint256 riskPrice = _getRiskPrice(m);
+            notional = Calculations.mulDiv(uint256(size), riskPrice, 1e18);
             penalty = Calculations.mulDiv(notional, marketRiskParams[marketId].liquidationPenaltyBps, BPS_DENOMINATOR);
             if (penalty > marketRiskParams[marketId].penaltyCap) {
                 penalty = marketRiskParams[marketId].penaltyCap;
@@ -659,13 +660,31 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             } else if (fundingPayment < 0) {
                 uint256 debit = uint256(-fundingPayment);
                 if (debit >= position.margin) {
-                    // Clamp at zero; reserved margin reduced by available margin only
+                    // First, drain position margin completely
                     uint256 shortfall = debit - position.margin;
                     _totalReservedMargin[account] = (_totalReservedMargin[account] > position.margin)
                         ? (_totalReservedMargin[account] - position.margin)
                         : 0;
                     position.margin = 0;
-                    emit BadDebtRecorded(account, marketId, shortfall);
+
+                    // Attempt to recover shortfall from free collateral before recording bad debt
+                    if (shortfall > 0) {
+                        uint256 collateralValue = ICollateralVault(vault).getAccountCollateralValueX18(account);
+                        uint256 freeCollateral = collateralValue > _totalReservedMargin[account]
+                            ? collateralValue - _totalReservedMargin[account]
+                            : 0;
+                        uint256 recovered = shortfall > freeCollateral ? freeCollateral : shortfall;
+
+                        if (recovered > 0) {
+                            // Reserve the recovered amount from free collateral
+                            _totalReservedMargin[account] += recovered;
+                        }
+
+                        uint256 finalBadDebt = shortfall - recovered;
+                        if (finalBadDebt > 0) {
+                            emit BadDebtRecorded(account, marketId, finalBadDebt);
+                        }
+                    }
                 } else {
                     position.margin -= debit;
                     _totalReservedMargin[account] -= debit;
@@ -757,10 +776,30 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         } else {
             uint256 debit = uint256(-marginChange);
             if (debit > position.margin) {
-                // This would mean a bad debt. The IMR check should prevent this.
-                // For safety, we clamp at zero.
-                _totalReservedMargin[account] -= position.margin;
+                // Realized loss exceeds position margin - attempt recovery from free collateral
+                uint256 shortfall = debit - position.margin;
+                _totalReservedMargin[account] = (_totalReservedMargin[account] > position.margin)
+                    ? (_totalReservedMargin[account] - position.margin)
+                    : 0;
                 position.margin = 0;
+
+                // Attempt to recover shortfall from free collateral
+                if (shortfall > 0) {
+                    uint256 collateralValue = ICollateralVault(vault).getAccountCollateralValueX18(account);
+                    uint256 freeCollateral = collateralValue > _totalReservedMargin[account]
+                        ? collateralValue - _totalReservedMargin[account]
+                        : 0;
+                    uint256 recovered = shortfall > freeCollateral ? freeCollateral : shortfall;
+
+                    if (recovered > 0) {
+                        _totalReservedMargin[account] += recovered;
+                    }
+
+                    uint256 finalBadDebt = shortfall - recovered;
+                    if (finalBadDebt > 0) {
+                        emit BadDebtRecorded(account, marketId, finalBadDebt);
+                    }
+                }
             } else {
                 position.margin -= debit;
                 _totalReservedMargin[account] -= debit;
