@@ -146,8 +146,8 @@ contract InsuranceFundTest is BaseTest {
         uint256 totalReceivedBefore = insuranceFund.totalReceived();
 
         vm.startPrank(alice);
-        // Transfer tokens directly (donate() is accounting-only)
-        usdc.transfer(address(insuranceFund), donationAmount);
+        // Approve InsuranceFund to pull tokens (donate uses safeTransferFrom)
+        usdc.approve(address(insuranceFund), donationAmount);
         insuranceFund.donate(donationAmount);
         vm.stopPrank();
 
@@ -163,12 +163,12 @@ contract InsuranceFundTest is BaseTest {
         usdc.mint(bob, bobDonation);
 
         vm.startPrank(alice);
-        usdc.transfer(address(insuranceFund), aliceDonation);
+        usdc.approve(address(insuranceFund), aliceDonation);
         insuranceFund.donate(aliceDonation);
         vm.stopPrank();
 
         vm.startPrank(bob);
-        usdc.transfer(address(insuranceFund), bobDonation);
+        usdc.approve(address(insuranceFund), bobDonation);
         insuranceFund.donate(bobDonation);
         vm.stopPrank();
 
@@ -274,7 +274,7 @@ contract InsuranceFundTest is BaseTest {
         uint256 donationAmount = 2000 * USDC_UNIT;
         usdc.mint(alice, donationAmount);
         vm.startPrank(alice);
-        usdc.transfer(address(insuranceFund), donationAmount);
+        usdc.approve(address(insuranceFund), donationAmount);
         insuranceFund.donate(donationAmount);
         vm.stopPrank();
 

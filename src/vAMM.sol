@@ -111,7 +111,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(initialPriceX18 > 0, "price=0");
 		require(initialBaseReserve > 0, "baseRes=0");
 		require(liquidity_ > 0, "L=0");
-		require(feeBps_ <= 300, "Fee too high"); // Max 3% (matches setParams validation)
+		require(feeBps_ <= 300, "Fee too high"); 
 
 		owner = msg.sender;
 		clearinghouse = _clearinghouse;

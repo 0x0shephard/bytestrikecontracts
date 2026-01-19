@@ -3,7 +3,7 @@ pragma solidity 0.8.28;
 
 //@dev - having same stale time period for uptime and price staleness check
 
-import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
+import {AggregatorV3Interface, AggregatorInterface} from "./interfaces/AggregatorV3Interface.sol";
 
 // --- Errors ---
 error ChainlinkOracle_NoPriceFeed();
@@ -11,6 +11,8 @@ error ChainlinkOracle_ZeroPrice();
 error Oracle_InvalidAddress();
 error SequencerDown();
 error PriceIsStale();
+error GracePeriodNotOver();
+error PriceOutOfBounds();
 
 /**
  * @title Oracle
@@ -25,6 +27,10 @@ contract Oracle {
     mapping(string => uint256) public priceStalePeriods;
     AggregatorV3Interface public sequencerUptimeFeed;
     uint256 public priceStalePeriod; // Maximum age of a price update
+
+    /// @notice Grace period to wait after sequencer comes back online before trusting prices
+    /// @dev Recommended by Chainlink to avoid stale prices right after sequencer restarts
+    uint256 public constant SEQUENCER_GRACE_PERIOD = 3600; // 1 hour
 
     // --- Events ---
     event PriceFeedSet(string indexed tokenSymbol, address indexed priceFeedAddress);
@@ -137,7 +143,7 @@ contract Oracle {
 
     /**
      * @dev Internal function to get the latest price and timestamp from a Chainlink feed.
-     * It includes checks for L2 sequencer status and price staleness.
+     * It includes checks for L2 sequencer status, grace period, price staleness, and price bounds.
      * @param symbol The token symbol to query.
      * @return uPrice The latest price as a uint256.
      * @return timeStamp The timestamp of the price update.
@@ -154,12 +160,21 @@ contract Oracle {
                 uint80 /*roundID*/,
                 int256 answer,
                 uint256 sequencerStartedAt,
-                uint256 sequencerUpdatedAt,
+                uint256 /*sequencerUpdatedAt*/,
                 uint80 /*answeredInRound*/
             ) {
-                if (answer == 0) revert SequencerDown();
+                // FIX #1: Corrected sequencer check
+                // answer == 0: Sequencer is UP (healthy)
+                // answer == 1: Sequencer is DOWN
+                if (answer != 0) revert SequencerDown();
+
+                // FIX #2: Grace period check after sequencer comes back online
+                // Prices may be stale/manipulated right after sequencer restarts
                 if (sequencerStartedAt == 0) revert PriceIsStale();
-                if (block.timestamp - sequencerUpdatedAt > stalePeriod) revert PriceIsStale();
+                uint256 timeSinceUp = block.timestamp - sequencerStartedAt;
+                if (timeSinceUp <= SEQUENCER_GRACE_PERIOD) {
+                    revert GracePeriodNotOver();
+                }
             } catch {
                 revert SequencerDown();
             }
@@ -177,6 +192,22 @@ contract Oracle {
             if (startedAt == 0 || block.timestamp < startedAt) revert PriceIsStale();
             if (answeredInRound < roundID) revert PriceIsStale();
             if (block.timestamp - updatedAt > stalePeriod) revert PriceIsStale();
+
+            // FIX #3: Check price is within Chainlink's min/max bounds
+            // During flash crashes, oracle may return minAnswer even if actual price is lower
+            try priceFeed.aggregator() returns (address aggregatorAddr) {
+                if (aggregatorAddr != address(0)) {
+                    AggregatorInterface aggregator = AggregatorInterface(aggregatorAddr);
+                    int192 minAnswer = aggregator.minAnswer();
+                    int192 maxAnswer = aggregator.maxAnswer();
+
+                    if (price <= int256(int192(minAnswer)) || price >= int256(int192(maxAnswer))) {
+                        revert PriceOutOfBounds();
+                    }
+                }
+            } catch {
+                // If aggregator() call fails, skip bounds check (some feeds may not support it)
+            }
 
             uPrice = uint256(price);
             timeStamp = updatedAt;

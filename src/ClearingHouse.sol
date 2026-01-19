@@ -668,23 +668,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
                     position.margin = 0;
 
                     // Attempt to recover shortfall from free collateral before recording bad debt
-                    if (shortfall > 0) {
-                        uint256 collateralValue = ICollateralVault(vault).getAccountCollateralValueX18(account);
-                        uint256 freeCollateral = collateralValue > _totalReservedMargin[account]
-                            ? collateralValue - _totalReservedMargin[account]
-                            : 0;
-                        uint256 recovered = shortfall > freeCollateral ? freeCollateral : shortfall;
-
-                        if (recovered > 0) {
-                            // Reserve the recovered amount from free collateral
-                            _totalReservedMargin[account] += recovered;
-                        }
-
-                        uint256 finalBadDebt = shortfall - recovered;
-                        if (finalBadDebt > 0) {
-                            emit BadDebtRecorded(account, marketId, finalBadDebt);
-                        }
-                    }
+                    _recoverShortfall(account, marketId, shortfall);
                 } else {
                     position.margin -= debit;
                     _totalReservedMargin[account] -= debit;
@@ -784,22 +768,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
                 position.margin = 0;
 
                 // Attempt to recover shortfall from free collateral
-                if (shortfall > 0) {
-                    uint256 collateralValue = ICollateralVault(vault).getAccountCollateralValueX18(account);
-                    uint256 freeCollateral = collateralValue > _totalReservedMargin[account]
-                        ? collateralValue - _totalReservedMargin[account]
-                        : 0;
-                    uint256 recovered = shortfall > freeCollateral ? freeCollateral : shortfall;
-
-                    if (recovered > 0) {
-                        _totalReservedMargin[account] += recovered;
-                    }
-
-                    uint256 finalBadDebt = shortfall - recovered;
-                    if (finalBadDebt > 0) {
-                        emit BadDebtRecorded(account, marketId, finalBadDebt);
-                    }
-                }
+                _recoverShortfall(account, marketId, shortfall);
             } else {
                 position.margin -= debit;
                 _totalReservedMargin[account] -= debit;
@@ -951,7 +920,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             bytes32[] storage markets = _userActiveMarkets[user];
             for (uint256 i = 0; i < markets.length; i++) {
                 if (markets[i] == marketId) {
-                    // Swap with last element and pop
+                    
                     markets[i] = markets[markets.length - 1];
                     markets.pop();
                     break;
@@ -964,6 +933,30 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     /// @notice Returns user's active market IDs.
     function getUserActiveMarkets(address user) external view returns (bytes32[] memory) {
         return _userActiveMarkets[user];
+    }
+
+    // ===== Internal helpers (Bad Debt Recovery) =====
+    /// @notice Attempts to recover a shortfall from user's free collateral before recording bad debt.
+    /// @param account The user's address.
+    /// @param marketId The market ID for the bad debt event.
+    /// @param shortfall The amount that needs to be recovered.
+    function _recoverShortfall(address account, bytes32 marketId, uint256 shortfall) internal {
+        if (shortfall == 0) return;
+
+        uint256 collateralValue = ICollateralVault(vault).getAccountCollateralValueX18(account);
+        uint256 freeCollateral = collateralValue > _totalReservedMargin[account]
+            ? collateralValue - _totalReservedMargin[account]
+            : 0;
+        uint256 recovered = shortfall > freeCollateral ? freeCollateral : shortfall;
+
+        if (recovered > 0) {
+            _totalReservedMargin[account] += recovered;
+        }
+
+        uint256 finalBadDebt = shortfall - recovered;
+        if (finalBadDebt > 0) {
+            emit BadDebtRecorded(account, marketId, finalBadDebt);
+        }
     }
 
     // ===== Internal helpers (Fees) =====
@@ -983,7 +976,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         uint256 baseUnit = ICollateralVault(vault).getConfig(m.quoteToken).baseUnit;
         uint256 feeInQuoteDecimals = Calculations.mulDivRoundingUp(fee, baseUnit, 1e18);
 
-        // Skip if fee rounds to zero even with rounding up
+        
         if (feeInQuoteDecimals == 0) return;
 
         (, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, feeInQuoteDecimals, true);
@@ -1020,7 +1013,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         uint256 baseUnit = ICollateralVault(vault).getConfig(m.quoteToken).baseUnit;
         uint256 penaltyInQuoteDecimals = Calculations.mulDivRoundingUp(amount, baseUnit, 1e18);
 
-        // Skip if penalty rounds to zero even with rounding up
+        
         if (penaltyInQuoteDecimals == 0) return;
 
         (, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, penaltyInQuoteDecimals, true);

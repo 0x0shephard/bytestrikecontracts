@@ -17,4 +17,13 @@ interface AggregatorV3Interface {
             uint256 updatedAt,
             uint80 answeredInRound
         );
+
+    /// @notice Returns the address of the underlying aggregator
+    function aggregator() external view returns (address);
+}
+
+/// @notice Interface for the underlying Chainlink aggregator to get min/max answer bounds
+interface AggregatorInterface {
+    function minAnswer() external view returns (int192);
+    function maxAnswer() external view returns (int192);
 }

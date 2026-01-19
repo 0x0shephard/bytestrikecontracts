@@ -211,7 +211,7 @@ contract CollateralVaultTest is BaseTest {
         usdc.approve(address(vault), amount);
         vm.stopPrank();
 
-        vm.expectRevert("Deposits paused");
+        vm.expectRevert("CV: deposits paused");
         vm.prank(address(clearingHouse));
         vault.deposit(address(usdc), amount, alice);
     }
@@ -240,7 +240,7 @@ contract CollateralVaultTest is BaseTest {
         vm.prank(alice);
         dai.approve(address(vault), amount);
 
-        vm.expectRevert("Token not enabled");
+        vm.expectRevert("CV: token disabled");
         vm.prank(address(clearingHouse));
         vault.deposit(address(dai), amount, alice);
     }
@@ -274,7 +274,7 @@ contract CollateralVaultTest is BaseTest {
         vm.prank(admin);
         vault.setPause(address(usdc), false, true);
 
-        vm.expectRevert("Withdrawals paused");
+        vm.expectRevert("CV: withdrawals paused");
         vm.prank(address(clearingHouse));
         vault.withdrawFor(alice, address(usdc), 500 * USDC_UNIT, alice);
     }
@@ -282,7 +282,7 @@ contract CollateralVaultTest is BaseTest {
     function test_RevertWhen_WithdrawFor_InsufficientBalance() public {
         fundAndDeposit(alice, 1000 * USDC_UNIT);
 
-        vm.expectRevert("Insufficient balance");
+        vm.expectRevert("CV: insufficient balance");
         vm.prank(address(clearingHouse));
         vault.withdrawFor(alice, address(usdc), 2000 * USDC_UNIT, alice);
     }
@@ -312,7 +312,7 @@ contract CollateralVaultTest is BaseTest {
     function test_RevertWhen_Seize_InsufficientBalance() public {
         fundAndDeposit(alice, 1000 * USDC_UNIT);
 
-        vm.expectRevert("Insufficient balance");
+        vm.expectRevert("CV: insufficient balance");
         vm.prank(address(clearingHouse));
         vault.seize(alice, bob, address(usdc), 2000 * USDC_UNIT);
     }
