@@ -471,8 +471,14 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(newBaseReserve >= minReserveBase, "base < min");
 		require(newQuoteReserve >= minReserveQuote, "quote < min");
 
+		// Snapshot old price into TWAP before changing reserves
+		_accumulatePrice();
+
 		reserveBase = newBaseReserve;
 		reserveQuote = newQuoteReserve;
+
+		// Start new observation from the updated price
+		_writeObservation();
 
 		emit ReservesReset(newPriceX18, newBaseReserve, newQuoteReserve);
 	}
