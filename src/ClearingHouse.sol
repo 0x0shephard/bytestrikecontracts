@@ -603,7 +603,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         return m;
     }
 
-    /// @notice Returns the preferred risk price for margin checks, preferring oracle/index price with mark fallback.
+    /// @notice Returns the preferred risk price for margin checks, preferring oracle/index price with TWAP fallback.
     function _getRiskPrice(IMarketRegistry.Market memory m) internal view returns (uint256) {
         if (m.oracle != address(0)) {
             try IOracle(m.oracle).getPrice() returns (uint256 indexPrice) {
@@ -614,7 +614,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         }
 
         require(m.vamm != address(0), "CH: market not found");
-        return IVAMM(m.vamm).getMarkPrice();
+        return IVAMM(m.vamm).getTwap(0);
     }
 
 
