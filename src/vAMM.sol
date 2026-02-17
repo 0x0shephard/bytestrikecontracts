@@ -331,6 +331,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	/// @dev Restricted to the owner; reverts if set to zero.
 	function setLiquidity(uint128 newLiquidity) external onlyOwner {
 		require(newLiquidity > 0, "L=0");
+		require(_feeGrowthGlobalX128 == 0, "Fees already accruing");
 		_liquidity = newLiquidity; // does not change price; used for fee index scaling
 		emit LiquiditySet(newLiquidity);
 	}
