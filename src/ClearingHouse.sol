@@ -614,7 +614,13 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         }
 
         require(m.vamm != address(0), "CH: market not found");
-        return IVAMM(m.vamm).getTwap(0);
+        try IVAMM(m.vamm).getTwap(0) returns (uint256 twapPrice) {
+            if (twapPrice > 0) {
+                return twapPrice;
+            }
+        } catch {}
+
+        return IVAMM(m.vamm).getMarkPrice();
     }
 
 

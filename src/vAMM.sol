@@ -271,9 +271,9 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	/// @param window Number of seconds to look back; defaults to configured observationWindow when zero.
 	/// @return twapX18 TWAP mark price in 1e18 precision.
 	function getTwap(uint32 window) public view returns (uint256) {
-		if (!_obsInit) return getMarkPrice();
+		if (!_obsInit) revert("TWAP: not initialized");
 		if (window == 0) window = observationWindow;
-		if (window == 0) return getMarkPrice();
+		require(window > 0, "TWAP: window=0");
 
 		(uint256 cumNow, uint32 tsNow) = _peekCumulative();
 		if (window >= tsNow) {
@@ -300,16 +300,15 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 			scanned++;
 		}
 
-		if (!found && obsPast.timestamp == 0) {
-			return getMarkPrice();
-		}
+		require(obsPast.timestamp != 0, "TWAP: no observations");
+		require(tsNow > obsPast.timestamp, "TWAP: same timestamp");
 
-		if (tsNow <= obsPast.timestamp) {
-			return getMarkPrice();
-		}
+		// Require actual span covers at least half the requested window
+		uint32 actualSpan = tsNow - uint32(obsPast.timestamp);
+		require(actualSpan >= window / 2, "TWAP: insufficient history");
 
 		uint256 deltaCum = cumNow - obsPast.priceCumulativeX128;
-		uint256 twapX128 = deltaCum / (tsNow - obsPast.timestamp);
+		uint256 twapX128 = deltaCum / actualSpan;
 		return (twapX128 * 1e18) >> 128;
 	}
 
@@ -365,8 +364,13 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 			return; // Funding already up to date
 		}
 
-		// Fetch prices with oracle safety checks
-		uint256 twapX18 = getTwap(observationWindow);
+		// Fetch TWAP - skip funding update if TWAP has insufficient history
+		uint256 twapX18;
+		try this.getTwap(observationWindow) returns (uint256 twap) {
+			twapX18 = twap;
+		} catch {
+			return; // TWAP unreliable - skip funding update
+		}
 
 		// Safe oracle fetch - skip funding update if oracle fails or returns zero
 		uint256 indexPriceX18;
