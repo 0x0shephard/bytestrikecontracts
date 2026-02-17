@@ -576,7 +576,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
 
             // Route protocol share of penalty
             if (routeAmount > 0) {
-                _routeLiqPenalty(account, routeAmount, m);
+                _routeLiqPenalty(account, marketId, routeAmount, m);
             }
         }
 
@@ -1068,6 +1068,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     /// @param m The market struct.
     function _routeLiqPenalty(
         address account,
+        bytes32 marketId,
         uint256 amount,
         IMarketRegistry.Market memory m
     ) internal {
@@ -1083,13 +1084,21 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
 
         (uint256 actualReceived, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, penaltyInQuoteDecimals, true);
         uint256 insuranceCovered = 0;
-        if (shortfall > 0) {
-            address insuranceFund = m.insuranceFund;
-            if (insuranceFund == address(0)) {
-                revert("CH: insurance fund missing");
+        if (shortfall > 0 && m.insuranceFund != address(0)) {
+            uint256 fundBalance = IInsuranceFund(m.insuranceFund).balance();
+            uint256 actualPayout = shortfall > fundBalance ? fundBalance : shortfall;
+            if (actualPayout > 0) {
+                IInsuranceFund(m.insuranceFund).payout(m.feeRouter, actualPayout);
+                insuranceCovered = actualPayout;
             }
-            IInsuranceFund(insuranceFund).payout(m.feeRouter, shortfall);
-            insuranceCovered = shortfall;
+            uint256 uncovered = shortfall - actualPayout;
+            if (uncovered > 0) {
+                totalBadDebt += uncovered;
+                emit BadDebtRecorded(account, marketId, uncovered);
+            }
+        } else if (shortfall > 0) {
+            totalBadDebt += shortfall;
+            emit BadDebtRecorded(account, marketId, shortfall);
         }
 
         IFeeRouter(m.feeRouter).onLiquidationPenalty(actualReceived + insuranceCovered);
