@@ -413,6 +413,13 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	/// @notice Toggles the swap execution flag, enabling or disabling all trading through the vAMM.
 	/// @param paused True to pause swaps, false to resume.
 	function pauseSwaps(bool paused) external onlyOwner {
+		if (paused) {
+			// Snapshot current price into TWAP so pause duration isn't credited later
+			_accumulatePrice();
+		} else {
+			// Reset observation timestamp to now so the pause gap is excluded
+			_obs[_obsIndex].timestamp = uint32(block.timestamp);
+		}
 		swapsPaused = paused;
 		emit SwapsPaused(paused);
 	}
