@@ -1026,16 +1026,8 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         if (feeInQuoteDecimals == 0) return;
 
         (uint256 actualReceived, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, feeInQuoteDecimals, true);
-        uint256 insuranceCovered = 0;
-        if (shortfall > 0) {
-            address insuranceFund = m.insuranceFund;
-            if (insuranceFund == address(0)) {
-                revert("CH: insurance fund missing");
-            }
-            IInsuranceFund(insuranceFund).payout(m.feeRouter, shortfall);
-            insuranceCovered = shortfall;
-        }
-        IFeeRouter(m.feeRouter).onTradeFee(actualReceived + insuranceCovered);
+        require(shortfall == 0, "CH: insufficient quote token for fee");
+        IFeeRouter(m.feeRouter).onTradeFee(actualReceived);
     }
 
     /// @notice Ensures the account has sufficient free collateral to cover additional reservations.
