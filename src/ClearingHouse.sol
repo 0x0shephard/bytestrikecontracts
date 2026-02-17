@@ -451,6 +451,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     /// @param priceLimitX18 The price limit for the trade (slippage protection).
     function closePosition(bytes32 marketId, uint128 size, uint256 priceLimitX18) external override nonReentrant {
         _settleFundingInternal(marketId, msg.sender);
+        require(!this.isLiquidatable(msg.sender, marketId), "CH: position liquidatable");
         require(IMarketRegistry(marketRegistry).isActive(marketId), "CH: market not active");
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         require(m.vamm != address(0), "CH: market not found");
