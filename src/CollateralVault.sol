@@ -210,6 +210,24 @@ contract CollateralVault is ICollateralVault, AccessControl {
         emit FeeAccumulated(token, amount);
     }
 
+    /// @notice Settle realized PnL by adjusting a user's internal balance.
+    /// @dev Positive amount credits (profit), negative debits (loss). No token transfer occurs.
+    /// Credits are backed by debits from other traders' losses, maintaining vault solvency.
+    /// @param user Account whose balance is adjusted.
+    /// @param token Collateral token for the settlement.
+    /// @param amount Signed PnL in token's native decimals. Positive = profit, negative = loss.
+    function settlePnL(address user, address token, int256 amount) external onlyClearingHouse override {
+        require(user != address(0), "CV: zero address");
+        if (amount > 0) {
+            userBalances[user][token] += uint256(amount);
+        } else if (amount < 0) {
+            uint256 debit = uint256(-amount);
+            require(userBalances[user][token] >= debit, "CV: insufficient balance");
+            userBalances[user][token] -= debit;
+        }
+        emit PnLSettled(user, token, amount);
+    }
+
     /// @notice Credits a user's internal balance after funds have been transferred in from a liquidity pool.
     /// @param pool Address of the liquidity pool that sourced the funds.
     /// @param token Collateral token being credited.

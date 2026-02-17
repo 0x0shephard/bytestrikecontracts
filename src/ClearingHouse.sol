@@ -763,43 +763,27 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             _removeActiveMarket(account, marketId);
         }
 
-        // Margin allocation logic:
-        // 1. When opening or increasing position: allocate margin from available collateral
-        // 2. When closing/reducing position: realized PnL affects margin
-        int256 marginChange = realized;
+        // === Settle realized PnL in collateral ===
+        // Credits profit to user's vault balance; debits loss from it.
+        // This ensures PnL is reflected in withdrawable collateral, not just margin accounting.
+        if (realized != 0) {
+            _settlePnLInVault(account, marketId, realized);
+        }
 
-        // Auto-allocate margin when opening new position or increasing existing one
+        // === Margin management (independent of PnL) ===
         if (s0 == 0 || ((s0 > 0 && baseDelta > 0) || (s0 < 0 && baseDelta < 0))) {
-            // Calculate notional value of the trade
+            // Opening or increasing: allocate IMR margin from available collateral
             uint256 tradeNotional = Calculations.mulDiv(absBaseDelta, execPxX18, 1e18);
-
-            // Get IMR requirement for this trade
             uint256 imrBps = marketRiskParams[marketId].imrBps;
             uint256 marginRequired = Calculations.mulDiv(tradeNotional, imrBps, BPS_DENOMINATOR);
-
-            // Allocate margin from available collateral
-            marginChange += int256(marginRequired);
-        }
-        if (marginChange > 0) {
-            uint256 credit = uint256(marginChange);
-            position.margin += credit;
-            _totalReservedMargin[account] += credit;
+            position.margin += marginRequired;
+            _totalReservedMargin[account] += marginRequired;
         } else {
-            uint256 debit = uint256(-marginChange);
-            if (debit > position.margin) {
-                // Realized loss exceeds position margin - attempt recovery from free collateral
-                uint256 shortfall = debit - position.margin;
-                _totalReservedMargin[account] = (_totalReservedMargin[account] > position.margin)
-                    ? (_totalReservedMargin[account] - position.margin)
-                    : 0;
-                position.margin = 0;
-
-                // Attempt to recover shortfall from free collateral
-                _recoverShortfall(account, marketId, shortfall);
-            } else {
-                position.margin -= debit;
-                _totalReservedMargin[account] -= debit;
-            }
+            // Reducing or closing: release margin proportionally to size reduction
+            uint256 reduceAmt = absBaseDelta <= absS0 ? absBaseDelta : absS0;
+            uint256 marginRelease = (position.margin * reduceAmt) / absS0;
+            position.margin -= marginRelease;
+            _totalReservedMargin[account] -= marginRelease;
         }
 
         // Protocol trading fee for perps: charge on this trade's notional at execPx
@@ -985,6 +969,39 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         uint256 finalBadDebt = shortfall - recovered;
         if (finalBadDebt > 0) {
             emit BadDebtRecorded(account, marketId, finalBadDebt);
+        }
+    }
+
+    // ===== Internal helpers (PnL Settlement) =====
+    /// @notice Settles realized PnL by crediting or debiting the user's vault balance.
+    /// @dev On profit, credits the user's vault (backed by counterparty losses in the vAMM).
+    ///      On loss, debits the user's vault; any shortfall is recorded as bad debt.
+    /// @param account The user's address.
+    /// @param marketId The market ID (for quote token lookup and bad debt events).
+    /// @param realized The realized PnL in 1e18 precision (positive = profit, negative = loss).
+    function _settlePnLInVault(address account, bytes32 marketId, int256 realized) internal {
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        uint256 baseUnit = ICollateralVault(vault).getConfig(m.quoteToken).baseUnit;
+
+        if (realized > 0) {
+            uint256 profitInQuote = Calculations.mulDiv(uint256(realized), baseUnit, 1e18);
+            if (profitInQuote > 0) {
+                ICollateralVault(vault).settlePnL(account, m.quoteToken, int256(profitInQuote));
+            }
+        } else {
+            uint256 lossInQuote = Calculations.mulDivRoundingUp(uint256(-realized), baseUnit, 1e18);
+            if (lossInQuote > 0) {
+                uint256 available = ICollateralVault(vault).balanceOf(account, m.quoteToken);
+                if (lossInQuote > available) {
+                    uint256 badDebt = lossInQuote - available;
+                    lossInQuote = available;
+                    totalBadDebt += badDebt;
+                    emit BadDebtRecorded(account, marketId, badDebt);
+                }
+                if (lossInQuote > 0) {
+                    ICollateralVault(vault).settlePnL(account, m.quoteToken, -int256(lossInQuote));
+                }
+            }
         }
     }
 

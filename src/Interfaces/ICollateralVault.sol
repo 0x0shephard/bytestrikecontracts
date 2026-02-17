@@ -76,6 +76,7 @@ interface ICollateralVault {
     event ExternalCredit(address indexed pool, address indexed user, address indexed token, uint256 amount);
     event FeeSwept(address indexed token, address indexed to, uint256 amount);
     event FeeAccumulated(address indexed token, uint256 amount);
+    event PnLSettled(address indexed user, address indexed token, int256 amount);
 
     // ===== Admin wiring =====
     /// @notice Set the global Oracle used for valuation helpers.
@@ -115,6 +116,13 @@ interface ICollateralVault {
 
     /// @notice Get accumulated fees for a token.
     function getAccumulatedFees(address token) external view returns (uint256);
+
+    /// @notice Settle realized PnL by crediting (profit) or debiting (loss) a user's balance (CH only).
+    /// @dev No token transfer occurs. Credits are backed by other traders' debited losses.
+    /// @param user Account whose balance is adjusted.
+    /// @param token Collateral token for the settlement.
+    /// @param amount Signed PnL in token's native decimals. Positive = profit, negative = loss.
+    function settlePnL(address user, address token, int256 amount) external;
 
     // ===== Views =====
     function balanceOf(address user, address token) external view returns (uint256);
