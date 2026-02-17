@@ -836,7 +836,9 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             uint256 imrBps = marketRiskParams[marketId].imrBps;
             IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
             uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
-            uint256 notional = absS1.mulDiv(markPrice, 1e18);
+            uint256 oraclePrice = _getRiskPrice(m);
+            uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
+            uint256 notional = absS1.mulDiv(imrPrice, 1e18);
             uint256 requiredMargin = notional.mulDiv(imrBps, BPS_DENOMINATOR);
             if (position.margin < requiredMargin) {
                 uint256 shortfall = requiredMargin - position.margin;
