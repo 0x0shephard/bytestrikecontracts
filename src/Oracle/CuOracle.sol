@@ -138,13 +138,13 @@ contract CuOracle {
         delete priceCommits[_assetId];
         delete commitTimestamps[_assetId];
 
-        // Update the price
+        // Update the price using commit time (when price was observed, not reveal time)
         latestPrices[_assetId] = PriceData({
             price: _price,
-            lastUpdatedAt: block.timestamp
+            lastUpdatedAt: commitTime
         });
 
-        emit PriceUpdated(_assetId, _price, block.timestamp);
+        emit PriceUpdated(_assetId, _price, commitTime);
     }
 
     /**
