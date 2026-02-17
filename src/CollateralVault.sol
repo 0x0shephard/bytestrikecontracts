@@ -30,9 +30,6 @@ contract CollateralVault is ICollateralVault, AccessControl {
     mapping(address user => mapping(address token => uint256 amount)) public userBalances;
     /// @notice List of registered collateral token addresses for iteration in views.
     address[] public registeredTokens;
-    /// @notice Accumulated protocol fees per token (only these can be swept).
-    mapping(address token => uint256 amount) public accumulatedFees;
-
     /// @notice Additional admin role besides DEFAULT_ADMIN_ROLE.
     bytes32 public constant VAULT_ADMIN_ROLE = keccak256("VAULT_ADMIN_ROLE");
 
@@ -185,31 +182,6 @@ contract CollateralVault is ICollateralVault, AccessControl {
         emit Seize(from, to, token, amount);
     }
 
-    /// @notice Sweep protocol fees held by the vault. CH only.
-    /// @dev Only allows sweeping tracked accumulated fees, not user balances.
-    /// @param token ERC20 token to sweep fees for.
-    /// @param to Destination address for the fees.
-    /// @param amount Amount of fees to sweep.
-    function sweepFees(address token, address to, uint256 amount) external onlyClearingHouse override {
-        require(amount > 0, "CV: amount=0");
-        require(to != address(0), "CV: zero address");
-        require(amount <= accumulatedFees[token], "Exceeds accumulated fees");
-
-        accumulatedFees[token] -= amount;
-        IERC20(token).safeTransfer(to, amount);
-        emit FeeSwept(token, to, amount);
-    }
-
-    /// @notice Accumulate protocol fees for a token. CH only.
-    /// @dev Called by ClearingHouse when fees are collected.
-    /// @param token ERC20 token the fees are denominated in.
-    /// @param amount Amount of fees to accumulate.
-    function accumulateFee(address token, uint256 amount) external onlyClearingHouse override {
-        require(amount > 0, "CV: amount=0");
-        accumulatedFees[token] += amount;
-        emit FeeAccumulated(token, amount);
-    }
-
     /// @notice Settle realized PnL by adjusting a user's internal balance.
     /// @dev Positive amount credits (profit), negative debits (loss). No token transfer occurs.
     /// Credits are backed by debits from other traders' losses, maintaining vault solvency.
@@ -228,31 +200,6 @@ contract CollateralVault is ICollateralVault, AccessControl {
         emit PnLSettled(user, token, amount);
     }
 
-    /// @notice Credits a user's internal balance after funds have been transferred in from a liquidity pool.
-    /// @param pool Address of the liquidity pool that sourced the funds.
-    /// @param token Collateral token being credited.
-    /// @param user Account receiving the credit.
-    /// @param amount Amount of collateral to credit.
-    function creditFromPool(address pool, address token, address user, uint256 amount) external onlyClearingHouse override {
-        require(pool != address(0), "Pool addr(0)");
-        require(user != address(0), "User addr(0)");
-        require(amount > 0, "CV: amount=0");
-
-        CollateralConfig memory cfg = collateralConfigs[token];
-        require(cfg.enabled, "CV: token disabled");
-
-        if (cfg.accountCap != 0) {
-            require(userBalances[user][token] + amount <= cfg.accountCap, "CV: account cap");
-        }
-
-        if (cfg.cap != 0) {
-            require(IERC20(token).balanceOf(address(this)) <= cfg.cap, "CV: token cap");
-        }
-
-        userBalances[user][token] += amount;
-        emit ExternalCredit(pool, user, token, amount);
-    }
-    
     /////////////////////////////////////////////
     //////////External View Functions////////////
     /////////////////////////////////////////////
@@ -348,10 +295,4 @@ contract CollateralVault is ICollateralVault, AccessControl {
         return collateralConfigs[token];
     }
 
-    /// @notice Get accumulated fees for a token.
-    /// @param token ERC20 token to query fees for.
-    /// @return The amount of accumulated fees available to sweep.
-    function getAccumulatedFees(address token) external view override returns (uint256) {
-        return accumulatedFees[token];
-    }
 }

@@ -73,9 +73,6 @@ interface ICollateralVault {
     event PauseUpdated(address indexed token, bool depositsPaused, bool withdrawalsPaused);
     event OracleSet(address indexed oracle);
     event ClearinghouseSet(address indexed clearinghouse);
-    event ExternalCredit(address indexed pool, address indexed user, address indexed token, uint256 amount);
-    event FeeSwept(address indexed token, address indexed to, uint256 amount);
-    event FeeAccumulated(address indexed token, uint256 amount);
     event PnLSettled(address indexed user, address indexed token, int256 amount);
 
     // ===== Admin wiring =====
@@ -97,9 +94,6 @@ interface ICollateralVault {
     /// @return received The amount accounted after fee-on-transfer adjustments.
     function deposit(address token, uint256 amount, address onBehalfOf) external returns (uint256 received);
 
-    /// @notice Credit a user's balance after collateral has been transferred in externally (e.g., from a liquidity pool).
-    function creditFromPool(address pool, address token, address user, uint256 amount) external;
-
     // ===== CH-gated outflows =====
     /// @notice Withdraw collateral on behalf of user to a destination address (CH only).
     /// @return received Actual amount received by destination (may be less due to transfer fees).
@@ -107,15 +101,6 @@ interface ICollateralVault {
 
     /// @notice Seize collateral from a user to a recipient (e.g., liquidator) (CH only).
     function seize(address from, address to, address token, uint256 amount) external;
-
-    /// @notice Sweep accumulated fees (CH only). Only sweeps tracked fees, not user balances.
-    function sweepFees(address token, address to, uint256 amount) external;
-
-    /// @notice Accumulate protocol fees for a token (CH only).
-    function accumulateFee(address token, uint256 amount) external;
-
-    /// @notice Get accumulated fees for a token.
-    function getAccumulatedFees(address token) external view returns (uint256);
 
     /// @notice Settle realized PnL by crediting (profit) or debiting (loss) a user's balance (CH only).
     /// @dev No token transfer occurs. Credits are backed by other traders' debited losses.

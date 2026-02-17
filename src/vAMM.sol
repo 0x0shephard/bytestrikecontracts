@@ -184,51 +184,6 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		emit Swap(msg.sender, baseDelta, quoteDelta, avgPriceX18);
 	}
 
-	/// @notice Buy base asset by paying a specific quote amount. Trader pays quoteAmount of quote.
-	/// @param quoteAmount Amount of quote to pay.
-	/// @param priceLimitX18 Maximum acceptable price (quote per base, 1e18). 0 = no limit.
-	/// @return baseDelta Positive base received by trader.
-	/// @return quoteDelta Negative quote paid by trader.
-	/// @return avgPriceX18 Effective execution price.
-	function buyBaseWithQuote(
-		uint128 quoteAmount,
-		uint256 priceLimitX18
-	) external onlyCH returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18) {
-		require(!swapsPaused, "Swaps paused");
-		require(quoteAmount > 0, "amount=0");
-		uint256 X = reserveBase;
-		uint256 Y = reserveQuote;
-
-		_accumulatePrice();
-
-		uint256 grossIn = uint256(quoteAmount);
-		uint256 inWithFeeScaled = grossIn * (10_000 - feeBps); // scaled by 10000
-
-		// amountOut = X * inWithFeeScaled / (Y*10000 + inWithFeeScaled)
-		uint256 denom = Y * 10_000 + inWithFeeScaled;
-		uint256 baseOut = Calculations.mulDiv(X, inWithFeeScaled, denom);
-		require(baseOut > 0, "no out");
-
-		avgPriceX18 = Calculations.mulDiv(grossIn, 1e18, baseOut);
-		require(priceLimitX18 == 0 || avgPriceX18 <= priceLimitX18, "slippage");
-
-		uint256 newReserveBase = X - baseOut;
-		require(newReserveBase >= minReserveBase, "Reserve base depleted");
-
-		reserveQuote = Y + grossIn;
-		reserveBase = newReserveBase;
-
-		uint256 fee = Calculations.mulDiv(grossIn, feeBps, 10_000);
-		if (_liquidity > 0 && fee > 0) {
-			_feeGrowthGlobalX128 += (fee << 128) / _liquidity;
-		}
-
-		baseDelta = int256(baseOut);     // +base to trader
-		quoteDelta = -int256(grossIn);   // -quote from trader
-		_writeObservation();
-		emit Swap(msg.sender, baseDelta, quoteDelta, avgPriceX18);
-	}
-
 	/// @notice Sell base asset to receive quote. Used for shorting or closing longs.
 	/// @param baseAmount Amount of base asset to sell.
 	/// @param priceLimitX18 Minimum acceptable price (quote per base, 1e18). 0 = no limit.
