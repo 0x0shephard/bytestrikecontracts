@@ -158,7 +158,6 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
 
     function _authorizeUpgrade(address newImplementation) internal override onlyAdmin {}
 
-    uint256[50] private __gap;
 
     /// @notice Deposits collateral into the vault for the caller.
     /// @param token The address of the ERC20 token to deposit.

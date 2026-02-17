@@ -522,5 +522,4 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 	function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-	uint256[50] private __gap;
 }
