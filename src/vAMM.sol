@@ -356,7 +356,10 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 	/// @notice Updates the cumulative funding index using the latest TWAP and oracle index prices.
 	/// @dev Funding rate is clamped by frMaxBpsPerHour and accumulated into _cumulativeFundingPerUnitX18.
-	/// @dev Gracefully handles oracle failures by skipping the funding update (does not block trades).
+	/// @dev Gracefully handles oracle failures by advancing the timestamp (preventing accumulation of outage time).
+	/// @dev Caps timeElapsed to 1 hour so a single update never covers more than one funding interval.
+	uint256 public constant MAX_FUNDING_ELAPSED = 3600; // 1 hour cap per update
+
 	function pokeFunding() external {
 		uint64 nowTs = uint64(block.timestamp);
 		uint64 lastTs = lastFundingTimestamp;
@@ -364,35 +367,37 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 			return; // Funding already up to date
 		}
 
-		// Fetch TWAP - skip funding update if TWAP has insufficient history
+		// Fetch TWAP - skip funding calc if TWAP has insufficient history
 		uint256 twapX18;
 		try this.getTwap(observationWindow) returns (uint256 twap) {
 			twapX18 = twap;
 		} catch {
-			return; // TWAP unreliable - skip funding update
+			lastFundingTimestamp = nowTs; // Advance timestamp to prevent accumulation
+			return;
 		}
 
-		// Safe oracle fetch - skip funding update if oracle fails or returns zero
+		// Safe oracle fetch - skip funding calc if oracle fails or returns zero
 		uint256 indexPriceX18;
 		try IOracle(oracle).getPrice() returns (uint256 price) {
 			indexPriceX18 = price;
 		} catch {
-			// Oracle reverted - skip funding update to avoid blocking trades
+			lastFundingTimestamp = nowTs; // Advance timestamp to prevent accumulation
 			return;
 		}
 
-		// Skip funding update if oracle returns invalid price
 		if (indexPriceX18 == 0) {
+			lastFundingTimestamp = nowTs; // Advance timestamp to prevent accumulation
 			return;
+		}
+
+		// Cap timeElapsed so a single update never covers more than one funding interval
+		uint256 timeElapsed = nowTs - lastTs;
+		if (timeElapsed > MAX_FUNDING_ELAPSED) {
+			timeElapsed = MAX_FUNDING_ELAPSED;
 		}
 
 		// Calculate funding rate
-		// premium = (markTwap - index)
-		// fundingRate = premium / 24h (simplified)
 		int256 premiumX18 = int256(twapX18) - int256(indexPriceX18);
-		uint256 timeElapsed = nowTs - lastTs;
-		
-		// fundingRate = premium * k * dt / (24h * 1e18)
 		int256 fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (24 * 3600 * 1e18);
 
 		// Clamp funding rate
