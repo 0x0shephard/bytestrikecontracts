@@ -230,6 +230,13 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         int256 effectiveMarginAfter = int256(position.margin - amount) + unrealizedPnL;
         require(effectiveMarginAfter >= int256(maintenanceMargin), "CH: would be liquidatable");
 
+        // Enforce minimum margin floor: position margin must always cover the liquidation penalty
+        // so that the penalty can be paid from the user's reserved margin and not the insurance fund.
+        if (position.size != 0) {
+            uint256 minMargin = _getLiquidationPenalty(msg.sender, marketId);
+            require(position.margin - amount >= minMargin, "CH: margin below liquidation penalty");
+        }
+
         position.margin -= amount;
         _totalReservedMargin[msg.sender] -= amount;
         emit MarginRemoved(msg.sender, marketId, amount);
@@ -313,6 +320,24 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         uint256 riskPrice = _getRiskPrice(m);
         uint256 notionalValue = positionSize.mulDiv(riskPrice, 1e18);
         return notionalValue.mulDiv(mmrBps, BPS_DENOMINATOR);
+    }
+
+    /// @notice Computes the liquidation penalty for a position using the same formula as liquidate().
+    /// @dev penalty = min(notional * liquidationPenaltyBps / 10000, penaltyCap)
+    function _getLiquidationPenalty(address account, bytes32 marketId) internal view returns (uint256) {
+        PositionView storage position = positions[account][marketId];
+        if (position.size == 0) return 0;
+
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        uint256 riskPrice = _getRiskPrice(m);
+        uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
+        uint256 notional = Calculations.mulDiv(absSize, riskPrice, 1e18);
+        uint256 penalty = Calculations.mulDiv(notional, marketRiskParams[marketId].liquidationPenaltyBps, BPS_DENOMINATOR);
+        uint256 cap = marketRiskParams[marketId].penaltyCap;
+        if (cap > 0 && penalty > cap) {
+            penalty = cap;
+        }
+        return penalty;
     }
 
     /// @notice Internal function to calculate unrealized PnL for a position using mark price.
