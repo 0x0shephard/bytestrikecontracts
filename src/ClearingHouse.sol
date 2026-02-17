@@ -406,6 +406,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         }
 
         require(IMarketRegistry(marketRegistry).isActive(marketId), "CH: market not active");
+        require(marketRiskParams[marketId].mmrBps > 0, "CH: risk params not set");
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         require(m.vamm != address(0), "CH: market not found");
         require(size > 0, "CH: size=0");
