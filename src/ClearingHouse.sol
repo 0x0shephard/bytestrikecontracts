@@ -975,9 +975,11 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         uint256 oldMargin = position.margin;
         uint256 oldReservedMargin = _totalReservedMargin[user];
 
-        // Clear the position's reserved margin
+        // Clear the position's reserved margin (clamp to avoid underflow in inconsistent state)
         if (position.margin > 0) {
-            _totalReservedMargin[user] -= position.margin;
+            _totalReservedMargin[user] = _totalReservedMargin[user] >= position.margin
+                ? _totalReservedMargin[user] - position.margin
+                : 0;
             position.margin = 0;
         }
 
