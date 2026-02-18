@@ -517,7 +517,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     /// @param account The address of the user whose position is being liquidated.
     /// @param marketId The ID of the market.
     /// @param size The amount of the position to liquidate.
-    function liquidate(address account, bytes32 marketId, uint128 size) external override nonReentrant onlyWhitelistedLiquidator {
+    function liquidate(address account, bytes32 marketId, uint128 size, uint256 priceLimitX18) external override nonReentrant onlyWhitelistedLiquidator {
         // Settle funding first to ensure accurate liquidation check
         _settleFundingInternal(marketId, account);
         require(this.isLiquidatable(account, marketId), "CH: not liquidatable");
@@ -541,8 +541,8 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         {
             IVAMM vamm = IVAMM(m.vamm);
             (int256 baseDelta, int256 quoteDelta, ) = position.size > 0
-                ? vamm.sellBase(size, 0)
-                : vamm.buyBase(size, 0);
+                ? vamm.sellBase(size, priceLimitX18)
+                : vamm.buyBase(size, priceLimitX18);
             _applyTrade(account, marketId, baseDelta, quoteDelta, true);
         }
 

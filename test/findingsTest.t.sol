@@ -390,7 +390,7 @@ contract AuditFindingsTest is BaseTest {
         uint128 sizeToLiquidate = uint128(uint256(posBefore.size > 0 ? posBefore.size : -posBefore.size));
 
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, sizeToLiquidate);
+        clearingHouse.liquidate(alice, ETH_PERP, sizeToLiquidate, 0);
 
         console.log("Liquidation executed using manipulated mark price for penalty calculation");
     }

@@ -35,7 +35,7 @@ interface IClearingHouse {
     function closePosition(bytes32 marketId, uint128 size, uint256 priceLimitX18) external;
 
     /// @notice Liquidate a portion or full position if below maintenance margin.
-    function liquidate(address account, bytes32 marketId, uint128 size) external;
+    function liquidate(address account, bytes32 marketId, uint128 size, uint256 priceLimitX18) external;
 
     /// @notice Settle funding up to latest index for a given account on a market.
     function settleFunding(bytes32 marketId, address account) external;

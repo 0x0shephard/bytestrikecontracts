@@ -40,7 +40,7 @@ contract LiquidationTest is BaseTest {
 
         // Liquidate
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, size);
+        clearingHouse.liquidate(alice, ETH_PERP, size, 0);
 
         // Position should be closed
         IClearingHouse.PositionView memory pos = getPosition(alice);
@@ -71,7 +71,7 @@ contract LiquidationTest is BaseTest {
 
         // Liquidate
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, size);
+        clearingHouse.liquidate(alice, ETH_PERP, size, 0);
 
         IClearingHouse.PositionView memory pos = getPosition(alice);
         assertEq(pos.size, 0, "Short position should be liquidated");
@@ -87,7 +87,7 @@ contract LiquidationTest is BaseTest {
         // Try to liquidate healthy position - should fail
         vm.expectRevert();
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, size);
+        clearingHouse.liquidate(alice, ETH_PERP, size, 0);
     }
 
     function test_RevertWhen_Liquidation_NotWhitelisted() public {
@@ -104,7 +104,7 @@ contract LiquidationTest is BaseTest {
         address randomUser = makeAddr("randomUser");
         vm.expectRevert();
         vm.prank(randomUser);
-        clearingHouse.liquidate(alice, ETH_PERP, size);
+        clearingHouse.liquidate(alice, ETH_PERP, size, 0);
     }
 
     // ============ Partial Liquidation ============
@@ -128,7 +128,7 @@ contract LiquidationTest is BaseTest {
 
         // Partial liquidation
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, liquidateSize);
+        clearingHouse.liquidate(alice, ETH_PERP, liquidateSize, 0);
 
         IClearingHouse.PositionView memory pos = getPosition(alice);
 
@@ -156,7 +156,7 @@ contract LiquidationTest is BaseTest {
 
         // Liquidate
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, size);
+        clearingHouse.liquidate(alice, ETH_PERP, size, 0);
 
         // Alice should have lost margin (penalty + losses)
         IClearingHouse.PositionView memory pos = getPosition(alice);
@@ -185,7 +185,7 @@ contract LiquidationTest is BaseTest {
 
         // Liquidate
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, size);
+        clearingHouse.liquidate(alice, ETH_PERP, size, 0);
 
         uint256 liquidatorBalanceAfter = getCollateralBalance(liquidator);
         uint256 reward = liquidatorBalanceAfter - liquidatorBalanceBefore;
@@ -217,7 +217,7 @@ contract LiquidationTest is BaseTest {
 
         // Liquidate (might need insurance fund to cover shortfall)
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, size);
+        clearingHouse.liquidate(alice, ETH_PERP, size, 0);
 
         uint256 insuranceBalanceAfter = usdc.balanceOf(address(insuranceFund));
 
@@ -263,7 +263,7 @@ contract LiquidationTest is BaseTest {
 
         vm.expectRevert();
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, liquidateSize);
+        clearingHouse.liquidate(alice, ETH_PERP, liquidateSize, 0);
     }
 
     function test_MultipleLiquidations_DifferentUsers() public {
@@ -290,8 +290,8 @@ contract LiquidationTest is BaseTest {
 
         // Liquidate both
         vm.startPrank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, size);
-        clearingHouse.liquidate(bob, ETH_PERP, size);
+        clearingHouse.liquidate(alice, ETH_PERP, size, 0);
+        clearingHouse.liquidate(bob, ETH_PERP, size, 0);
         vm.stopPrank();
 
         // Both should be liquidated
@@ -367,7 +367,7 @@ contract LiquidationTest is BaseTest {
 
         // Liquidate
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, size);
+        clearingHouse.liquidate(alice, ETH_PERP, size, 0);
 
         // Alice might have zero or negative "value"
         IClearingHouse.PositionView memory pos = getPosition(alice);
@@ -390,7 +390,7 @@ contract LiquidationTest is BaseTest {
         uint256 gasBefore = gasleft();
 
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, size);
+        clearingHouse.liquidate(alice, ETH_PERP, size, 0);
 
         uint256 gasUsed = gasBefore - gasleft();
 
