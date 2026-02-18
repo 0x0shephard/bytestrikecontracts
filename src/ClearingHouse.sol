@@ -854,6 +854,19 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
                 _totalReservedMargin[account] += shortfall;
             }
             require(position.margin >= requiredMargin, "CH: IMR breach");
+
+            // Post-trade health check: ensure position is NOT immediately liquidatable.
+            // IMR only checks raw margin vs required margin. But unrealized PnL (from the
+            // trade's price impact) can make effective margin fall below maintenance margin,
+            // leaving the position immediately liquidatable after opening.
+            // Use oracle/risk price for consistency with isLiquidatable().
+            {
+                int256 unrealizedPnL = _computeUnrealizedPnL(position, oraclePrice);
+                int256 effectiveMargin = int256(position.margin) + unrealizedPnL;
+                uint256 riskNotional = absS1.mulDiv(oraclePrice, 1e18);
+                uint256 maintenanceMargin = riskNotional.mulDiv(marketRiskParams[marketId].mmrBps, BPS_DENOMINATOR);
+                require(effectiveMargin >= int256(maintenanceMargin), "CH: immediately liquidatable");
+            }
         }
         
         // Emit trade executed event

@@ -615,4 +615,26 @@ contract AuditFindingsTest is BaseTest {
         console.log("");
         console.log("With 50+ markets, gas cost becomes prohibitive.");
     }
+
+    /// @notice PoC: Self-skew should no longer allow opening a position that is immediately liquidatable.
+    /// After the post-trade health check fix, this trade should revert.
+    function test_POC_SelfSkew_AllowsOpenThatIsImmediatelyLiquidatable() public {
+        // Oracle stays constant; Alice alone creates a mark/oracle divergence with her own trade.
+
+        uint256 oracleBefore = oracle.getPrice();
+        uint256 markBefore   = getMarkPrice();
+
+        // Give Alice some collateral
+        fundAndDeposit(alice, 5_000 * USDC_UNIT);
+
+        // Alice opens a LARGE SHORT.
+        // This both (a) moves mark down and (b) makes her entry price worse vs oracle.
+        uint128 size = ethQty(80);
+
+        vm.startPrank(alice);
+        // Should revert with "CH: immediately liquidatable" due to the post-trade health check
+        vm.expectRevert("CH: immediately liquidatable");
+        clearingHouse.openPosition(ETH_PERP, false, size, 0);
+        vm.stopPrank();
+    }
 }
