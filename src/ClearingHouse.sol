@@ -732,6 +732,10 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
                     _totalReservedMargin[account] -= debit;
                 }
             }
+            // Settle funding in vault: credit profit / debit loss from actual collateral.
+            // Without this, funding only adjusts margin accounting and never moves real balances.
+            _settlePnLInVault(account, marketId, fundingPayment);
+
             emit FundingSettled(marketId, account, fundingPayment);
         }
 
