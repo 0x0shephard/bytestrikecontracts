@@ -56,6 +56,9 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     /// @notice Total uncompensated bad debt accumulated across all liquidations
     uint256 public totalBadDebt;
 
+    /// @notice Set of legacy vaults from prior migrations, allowing users to withdraw stranded balances.
+    mapping(address => bool) public legacyVaults;
+
     /// @notice Modifier to restrict access to admin roles.
     modifier onlyAdmin() {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "CH: not admin");
@@ -85,6 +88,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     event MarketPaused(bytes32 indexed marketId, bool isPaused);
     event LiquidatorWhitelistUpdated(address indexed liquidator, bool isWhitelisted);
     event VaultUpdated(address indexed oldVault, address indexed newVault);
+    event LegacyVaultWithdrawal(address indexed user, address indexed legacyVault, address indexed token, uint256 amount, uint256 received);
     event LiquidationExecuted(
         bytes32 indexed marketId,
         address indexed liquidator,
@@ -152,6 +156,9 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     function setVault(address _newVault) external onlyAdmin {
         require(_newVault != address(0), "CH: invalid vault");
         address oldVault = vault;
+        if (oldVault != address(0)) {
+            legacyVaults[oldVault] = true;
+        }
         vault = _newVault;
         emit VaultUpdated(oldVault, _newVault);
     }
@@ -197,6 +204,29 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         }
 
         emit collateralWithdrawn(msg.sender, token, amount, received);
+    }
+
+    /// @notice Migrate a user's stranded collateral from a legacy vault into the current vault.
+    /// @dev Admin-only. Withdraws tokens from the legacy vault directly to the current vault,
+    ///      then credits the user's balance in the current vault via settlePnL.
+    /// @param legacyVault The address of the previous vault contract.
+    /// @param user The user whose balance is being migrated.
+    /// @param token The ERC20 token to migrate.
+    /// @param amount The amount to migrate.
+    function withdrawFromLegacyVault(address legacyVault, address user, address token, uint256 amount) external onlyAdmin nonReentrant {
+        require(legacyVaults[legacyVault], "CH: not a legacy vault");
+        require(amount > 0, "CH: amount=0");
+        require(user != address(0), "CH: zero address");
+
+        // Withdraw from legacy vault, sending tokens directly to the current vault
+        uint256 received = ICollateralVault(legacyVault).withdrawFor(user, token, amount, vault);
+
+        // Credit the user's balance in the current vault
+        if (received > 0) {
+            ICollateralVault(vault).settlePnL(user, token, int256(received));
+        }
+
+        emit LegacyVaultWithdrawal(user, legacyVault, token, amount, received);
     }
 
     /// @notice Adds margin to a specific position from the user's available collateral.
