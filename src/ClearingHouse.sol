@@ -282,9 +282,14 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         PositionView storage position = positions[account][marketId];
         if (position.size == 0) return false;
 
+        // Include unsettled funding in effective margin so off-chain callers
+        // (keepers, UIs) see accurate liquidation status without requiring
+        // a prior settleFunding transaction.
+        int256 pendingFunding = _getPendingFunding(account, marketId);
+
         // Calculate effective margin including unrealized PnL at oracle (risk) price
         int256 unrealizedPnL = _getUnrealizedPnLAtOracle(account, marketId);
-        int256 effectiveMargin = int256(position.margin) + unrealizedPnL;
+        int256 effectiveMargin = int256(position.margin) + pendingFunding + unrealizedPnL;
 
         // Position is liquidatable if effective margin falls below maintenance margin
         uint256 maintenanceMargin = _getMaintenanceMargin(account, marketId);
@@ -395,6 +400,23 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
 
         uint256 riskPrice = _getRiskPrice(m);
         return _computeUnrealizedPnL(position, riskPrice);
+    }
+
+    /// @notice View-safe helper to compute unsettled funding for a position.
+    /// @dev Reads the current cumulative funding index from the vAMM and computes
+    ///      the delta against the position's last settled index. Does not modify state.
+    function _getPendingFunding(address account, bytes32 marketId) internal view returns (int256) {
+        PositionView storage position = positions[account][marketId];
+        if (position.size == 0) return 0;
+
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        if (m.vamm == address(0)) return 0;
+
+        int256 currentIndex = IVAMM(m.vamm).cumulativeFundingPerUnitX18();
+        int256 deltaIndex = currentIndex - position.lastFundingIndex;
+        if (deltaIndex == 0) return 0;
+
+        return -(deltaIndex * position.size) / int256(1e18);
     }
 
     /// @notice Shared helper to compute unrealized PnL from a provided price.
