@@ -94,6 +94,9 @@ contract CollateralVault is ICollateralVault, AccessControl {
     /// @param token Collateral token address to update.
     /// @param cfg New configuration values.
     function setCollateralParams(address token, CollateralConfig calldata cfg) external onlyAllowed override {
+        if (collateralConfigs[token].token == address(0)) {
+            registeredTokens.push(token);
+        }
         collateralConfigs[token] = cfg;
         emit CollateralParamsUpdated(
             token,
