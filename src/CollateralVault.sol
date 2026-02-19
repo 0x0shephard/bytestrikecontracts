@@ -232,14 +232,7 @@ contract CollateralVault is ICollateralVault, AccessControl {
         CollateralConfig memory cfg = collateralConfigs[token];
         if (!cfg.enabled || amount == 0) return 0;
 
-        // Safe oracle call - return 0 if oracle fails to prevent blocking operations
-        uint256 pxX18;
-        try Oracle(oracle).getPrice(cfg.oracleSymbol) returns (uint256 price) {
-            pxX18 = price;
-        } catch {
-            return 0; // Oracle failed - treat as valueless rather than reverting
-        }
-
+        uint256 pxX18 = Oracle(oracle).getPrice(cfg.oracleSymbol);
         if (pxX18 == 0) return 0;
 
         // Normalize by base unit and apply haircut
@@ -259,14 +252,7 @@ contract CollateralVault is ICollateralVault, AccessControl {
             uint256 bal = userBalances[user][tokens[i]];
             if (bal == 0) continue;
 
-            // Safe oracle call - skip token if oracle fails to prevent blocking operations
-            uint256 pxX18;
-            try Oracle(oracle).getPrice(cfg.oracleSymbol) returns (uint256 price) {
-                pxX18 = price;
-            } catch {
-                continue; // Skip this token if oracle fails
-            }
-
+            uint256 pxX18 = Oracle(oracle).getPrice(cfg.oracleSymbol);
             if (pxX18 == 0) continue;
 
             uint256 v = (pxX18 * bal) / cfg.baseUnit;

@@ -195,7 +195,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         if (userTotalReserveMargin > 0) {
             uint256 quoteCollateralValue = _getQuoteCollateralValueX18(msg.sender);
             uint256 withdrawQuoteImpact = _isQuoteTokenInActiveMarkets(msg.sender, token)
-                ? ICollateralVault(vault).getTokenValueX18(token, amount)
+                ? _quoteValueX18(token, amount)
                 : 0;
             require(quoteCollateralValue >= userTotalReserveMargin + withdrawQuoteImpact, "CH: insufficient quote collateral");
         }
@@ -244,7 +244,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         require(IMarketRegistry(marketRegistry).isActive(marketId), "CH: market not active");
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         uint256 quoteBalance = ICollateralVault(vault).balanceOf(msg.sender, m.quoteToken);
-        uint256 quoteValueX18 = ICollateralVault(vault).getTokenValueX18(m.quoteToken, quoteBalance);
+        uint256 quoteValueX18 = _quoteValueX18(m.quoteToken, quoteBalance);
         uint256 userTotalReserveMargin = _totalReservedMargin[msg.sender];
         require(amount <= quoteValueX18 - userTotalReserveMargin, "CH: insufficient quote balance");
         positions[msg.sender][marketId].margin += amount;
@@ -1092,7 +1092,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
                 seen[seenCount++] = qt;
                 uint256 bal = ICollateralVault(vault).balanceOf(account, qt);
                 if (bal > 0) {
-                    totalValue += ICollateralVault(vault).getTokenValueX18(qt, bal);
+                    totalValue += _quoteValueX18(qt, bal);
                 }
             }
         }
@@ -1201,8 +1201,23 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     function _ensureAvailableCollateral(address account, uint256 amount, address quoteToken) internal view {
         if (amount == 0) return;
         uint256 quoteBalance = ICollateralVault(vault).balanceOf(account, quoteToken);
-        uint256 quoteValueX18 = ICollateralVault(vault).getTokenValueX18(quoteToken, quoteBalance);
+        uint256 quoteValueX18 = _quoteValueX18(quoteToken, quoteBalance);
         require(quoteValueX18 >= _totalReservedMargin[account] + amount, "CH: insufficient quote collateral");
+    }
+
+    /// @notice Oracle-resilient valuation for a quote token amount.
+    /// @dev Tries the vault's oracle-based valuation first. If the oracle reverts
+    ///      (sequencer down, stale feed, etc.), falls back to baseUnit normalization
+    ///      assuming the quote token ≈ $1. This prevents false bad debt and frozen
+    ///      positions during temporary oracle outages.
+    function _quoteValueX18(address quoteToken, uint256 amount) internal view returns (uint256) {
+        if (amount == 0) return 0;
+        try ICollateralVault(vault).getTokenValueX18(quoteToken, amount) returns (uint256 v) {
+            return v;
+        } catch {
+            uint256 baseUnit = ICollateralVault(vault).getConfig(quoteToken).baseUnit;
+            return (amount * 1e18) / baseUnit;
+        }
     }
 
     /// @notice Internal function to route liquidation penalties.
