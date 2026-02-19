@@ -262,8 +262,16 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         require(IMarketRegistry(marketRegistry).isActive(marketId), "CH: market not active");
         PositionView storage position = positions[msg.sender][marketId];
         require(position.margin >= amount, "CH: insufficient margin");
+        // Use the less favorable price between oracle and mark to prevent
+        // margin extraction when mark diverges from oracle.
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        uint256 riskPrice = _getRiskPrice(m);
+        uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
+        uint256 conservativePrice = position.size > 0
+            ? (riskPrice < markPrice ? riskPrice : markPrice)
+            : (riskPrice > markPrice ? riskPrice : markPrice);
+        int256 unrealizedPnL = _computeUnrealizedPnL(position, conservativePrice);
         uint256 maintenanceMargin = _getMaintenanceMargin(msg.sender, marketId);
-        int256 unrealizedPnL = _getUnrealizedPnLAtOracle(msg.sender, marketId);
         int256 effectiveMarginAfter = int256(position.margin - amount) + unrealizedPnL;
         require(effectiveMarginAfter >= int256(maintenanceMargin), "CH: would be liquidatable");
 
