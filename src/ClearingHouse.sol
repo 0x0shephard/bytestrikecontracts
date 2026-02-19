@@ -189,10 +189,16 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             _settleFundingInternal(markets[i], msg.sender);
         }
 
-        uint256 userVaultBalance = ICollateralVault(vault).getAccountCollateralValueX18(msg.sender);
+        // Ensure reserved margin remains backed by quote-token collateral after withdrawal.
+        // Non-quote tokens don't back margin, so only quote token withdrawals can breach this.
         uint256 userTotalReserveMargin = _totalReservedMargin[msg.sender];
-        uint256 withdrawValue = ICollateralVault(vault).getTokenValueX18(token, amount);
-        require(withdrawValue <= userVaultBalance - userTotalReserveMargin, "CH: insufficient balance");
+        if (userTotalReserveMargin > 0) {
+            uint256 quoteCollateralValue = _getQuoteCollateralValueX18(msg.sender);
+            uint256 withdrawQuoteImpact = _isQuoteTokenInActiveMarkets(msg.sender, token)
+                ? ICollateralVault(vault).getTokenValueX18(token, amount)
+                : 0;
+            require(quoteCollateralValue >= userTotalReserveMargin + withdrawQuoteImpact, "CH: insufficient quote collateral");
+        }
 
         // withdrawFor returns actual received amount (fee-on-transfer support)
         uint256 received = ICollateralVault(vault).withdrawFor(msg.sender, token, amount, msg.sender);
@@ -236,9 +242,11 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         _settleFundingInternal(marketId, msg.sender);
         require(amount > 0, "CH: amount=0");
         require(IMarketRegistry(marketRegistry).isActive(marketId), "CH: market not active");
-        uint256 userVaultBalance = ICollateralVault(vault).getAccountCollateralValueX18(msg.sender);
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        uint256 quoteBalance = ICollateralVault(vault).balanceOf(msg.sender, m.quoteToken);
+        uint256 quoteValueX18 = ICollateralVault(vault).getTokenValueX18(m.quoteToken, quoteBalance);
         uint256 userTotalReserveMargin = _totalReservedMargin[msg.sender];
-        require(amount <= userVaultBalance - userTotalReserveMargin, "CH: insufficient balance");   
+        require(amount <= quoteValueX18 - userTotalReserveMargin, "CH: insufficient quote balance");
         positions[msg.sender][marketId].margin += amount;
         _totalReservedMargin[msg.sender] += amount;
         emit MarginAdded(msg.sender, marketId, amount);
@@ -885,7 +893,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
                 if (notional2 > 0) {
                     tradeFee = Calculations.mulDiv(notional2, m2.feeBps, BPS_DENOMINATOR);
                     if (tradeFee > 0) {
-                        _ensureAvailableCollateral(account, tradeFee);
+                        _ensureAvailableCollateral(account, tradeFee, m2.quoteToken);
                         _routeTradeFee(account, tradeFee, m2);
                     }
                 }
@@ -905,7 +913,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             uint256 requiredMargin = notional.mulDiv(imrBps, BPS_DENOMINATOR);
             if (position.margin < requiredMargin) {
                 uint256 shortfall = requiredMargin - position.margin;
-                _ensureAvailableCollateral(account, shortfall);
+                _ensureAvailableCollateral(account, shortfall, m.quoteToken);
                 position.margin += shortfall;
                 _totalReservedMargin[account] += shortfall;
             }
@@ -1052,6 +1060,47 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         return _userActiveMarkets[user];
     }
 
+    // ===== Internal helpers (Quote Collateral Valuation) =====
+
+    /// @notice Returns the total USD value of quote-token-only collateral for a user.
+    /// @dev Iterates active markets to identify quote tokens. Only these tokens
+    ///      are counted for margin backing, preventing non-quote collateral from
+    ///      backing margin that can only be settled in the quote token.
+    function _getQuoteCollateralValueX18(address account) internal view returns (uint256 totalValue) {
+        bytes32[] memory markets = _userActiveMarkets[account];
+        uint256 numMarkets = markets.length;
+        if (numMarkets == 0) return 0;
+
+        address[] memory seen = new address[](numMarkets);
+        uint256 seenCount;
+
+        for (uint256 i = 0; i < numMarkets; i++) {
+            address qt = IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken;
+            bool isDuplicate;
+            for (uint256 j = 0; j < seenCount; j++) {
+                if (seen[j] == qt) { isDuplicate = true; break; }
+            }
+            if (!isDuplicate) {
+                seen[seenCount++] = qt;
+                uint256 bal = ICollateralVault(vault).balanceOf(account, qt);
+                if (bal > 0) {
+                    totalValue += ICollateralVault(vault).getTokenValueX18(qt, bal);
+                }
+            }
+        }
+    }
+
+    /// @notice Checks if a token is the quote token of any of the user's active markets.
+    function _isQuoteTokenInActiveMarkets(address account, address token) internal view returns (bool) {
+        bytes32[] memory markets = _userActiveMarkets[account];
+        for (uint256 i = 0; i < markets.length; i++) {
+            if (IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken == token) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ===== Internal helpers (Bad Debt Recovery) =====
     /// @notice Attempts to recover a shortfall from user's free collateral before recording bad debt.
     /// @param account The user's address.
@@ -1060,9 +1109,9 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     function _recoverShortfall(address account, bytes32 marketId, uint256 shortfall) internal {
         if (shortfall == 0) return;
 
-        uint256 collateralValue = ICollateralVault(vault).getAccountCollateralValueX18(account);
-        uint256 freeCollateral = collateralValue > _totalReservedMargin[account]
-            ? collateralValue - _totalReservedMargin[account]
+        uint256 quoteCollateralValue = _getQuoteCollateralValueX18(account);
+        uint256 freeCollateral = quoteCollateralValue > _totalReservedMargin[account]
+            ? quoteCollateralValue - _totalReservedMargin[account]
             : 0;
         uint256 recovered = shortfall > freeCollateral ? freeCollateral : shortfall;
 
@@ -1135,11 +1184,17 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         IFeeRouter(m.feeRouter).onTradeFee(actualReceived);
     }
 
-    /// @notice Ensures the account has sufficient free collateral to cover additional reservations.
-    function _ensureAvailableCollateral(address account, uint256 amount) internal view {
+    /// @notice Ensures the account has sufficient free quote-token collateral to cover additional reservations.
+    /// @dev Only counts the specified quote token's balance, preventing non-quote tokens
+    ///      from backing margin that can only be settled in the quote token.
+    /// @param account The user's address.
+    /// @param amount The additional amount to reserve (1e18 precision).
+    /// @param quoteToken The market's quote token to check balance of.
+    function _ensureAvailableCollateral(address account, uint256 amount, address quoteToken) internal view {
         if (amount == 0) return;
-        uint256 collateralValue = ICollateralVault(vault).getAccountCollateralValueX18(account);
-        require(collateralValue >= _totalReservedMargin[account] + amount, "CH: insufficient collateral");
+        uint256 quoteBalance = ICollateralVault(vault).balanceOf(account, quoteToken);
+        uint256 quoteValueX18 = ICollateralVault(vault).getTokenValueX18(quoteToken, quoteBalance);
+        require(quoteValueX18 >= _totalReservedMargin[account] + amount, "CH: insufficient quote collateral");
     }
 
     /// @notice Internal function to route liquidation penalties.

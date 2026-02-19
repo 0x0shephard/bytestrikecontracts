@@ -115,7 +115,7 @@ contract PositionTest is BaseTest {
         vm.startPrank(alice);
     clearingHouse.addMargin(ETH_PERP, depositAmount); // Add entire (insufficient) deposit
 
-        vm.expectRevert("CH: insufficient collateral");
+        vm.expectRevert("CH: insufficient quote collateral");
         clearingHouse.openPosition(ETH_PERP, true, size, 0);
         vm.stopPrank();
     }
