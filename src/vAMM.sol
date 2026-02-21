@@ -220,6 +220,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		reserveBase = X + grossBaseIn;
 		reserveQuote = newReserveQuote;
 
+		require(getMarkPrice() > 0, "Mark price zero");
+
 		// Fee accounting
 		uint256 feeInBase = Calculations.mulDiv(grossBaseIn, feeBps, 10_000);
 		if (_liquidity > 0 && feeInBase > 0) {
