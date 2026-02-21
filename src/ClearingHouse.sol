@@ -539,7 +539,16 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         // Store realized PnL before applying trade
         int256 oldRealizedPnL = position.realizedPnL;
         _applyTrade(msg.sender, marketId, baseDelta, quoteDelta, false);
-        
+
+        // Enforce minPositionSize on remaining position to prevent dust
+        {
+            uint256 remainingSize = uint256(position.size > 0 ? position.size : -position.size);
+            uint256 minSize = marketRiskParams[marketId].minPositionSize;
+            if (minSize > 0 && remainingSize > 0) {
+                require(remainingSize >= minSize, "CH: remaining below min, close full");
+            }
+        }
+
         // Emit position closed event
         emit PositionClosed(
             msg.sender,
