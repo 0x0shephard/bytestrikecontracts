@@ -575,6 +575,12 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
 
         IMarketRegistry.Market memory m = _getMarketInfo(marketId);
 
+        // Snapshot risk price before the vAMM trade so the penalty is computed
+        // against the pre-trade price.  When the oracle is available it is
+        // unaffected anyway; when only mark/TWAP remain the trade's own price
+        // impact would otherwise distort the penalty calculation.
+        uint256 riskPrice = _getRiskPrice(m);
+
         // Close position via vAMM - scope to free stack
         {
             IVAMM vamm = IVAMM(m.vamm);
@@ -584,12 +590,10 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             _applyTrade(account, marketId, baseDelta, quoteDelta, true);
         }
 
-        // Calculate penalty - reuse variables to save stack
-        // Use oracle price (via _getRiskPrice) to prevent mark price manipulation
+        // Calculate penalty using the pre-trade risk price snapshot
         uint256 notional;
         uint256 penalty;
         {
-            uint256 riskPrice = _getRiskPrice(m);
             notional = Calculations.mulDiv(uint256(size), riskPrice, 1e18);
             penalty = Calculations.mulDiv(notional, marketRiskParams[marketId].liquidationPenaltyBps, BPS_DENOMINATOR);
             if (penalty > marketRiskParams[marketId].penaltyCap) {
