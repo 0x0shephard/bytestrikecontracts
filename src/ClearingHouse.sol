@@ -518,7 +518,15 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     /// @param size The amount of base asset to trade for closing the position.
     /// @param priceLimitX18 The price limit for the trade (slippage protection).
     function closePosition(bytes32 marketId, uint128 size, uint256 priceLimitX18) external override nonReentrant {
-        _settleFundingInternal(marketId, msg.sender);
+        // Settle funding for all active markets so vault balances and
+        // _totalReservedMargin are current before any shortfall recovery.
+        bytes32[] memory activeMarkets = _userActiveMarkets[msg.sender];
+        for (uint256 i = 0; i < activeMarkets.length; i++) {
+            _settleFundingInternal(activeMarkets[i], msg.sender);
+        }
+        if (activeMarkets.length == 0 || !_isMarketActive[msg.sender][marketId]) {
+            _settleFundingInternal(marketId, msg.sender);
+        }
         require(!this.isLiquidatable(msg.sender, marketId), "CH: position liquidatable");
         require(IMarketRegistry(marketRegistry).isActive(marketId), "CH: market not active");
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
@@ -565,8 +573,15 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     /// @param marketId The ID of the market.
     /// @param size The amount of the position to liquidate.
     function liquidate(address account, bytes32 marketId, uint128 size, uint256 priceLimitX18) external override nonReentrant onlyWhitelistedLiquidator {
-        // Settle funding first to ensure accurate liquidation check
-        _settleFundingInternal(marketId, account);
+        // Settle funding for all active markets so vault balances and
+        // _totalReservedMargin are current before any shortfall recovery.
+        bytes32[] memory userMarkets = _userActiveMarkets[account];
+        for (uint256 i = 0; i < userMarkets.length; i++) {
+            _settleFundingInternal(userMarkets[i], account);
+        }
+        if (userMarkets.length == 0 || !_isMarketActive[account][marketId]) {
+            _settleFundingInternal(marketId, account);
+        }
         require(this.isLiquidatable(account, marketId), "CH: not liquidatable");
         require(IMarketRegistry(marketRegistry).isActive(marketId), "CH: market not active");
         PositionView storage position = positions[account][marketId];
