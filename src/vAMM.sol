@@ -348,6 +348,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		uint256 kFundingX18_,
 		uint32 observationWindow_
 	) external onlyOwner {
+		// Settle accumulated funding under current parameters before applying new ones
+		_pokeFundingInternal();
 		require(feeBps_ <= 300, "Fee too high"); // Max 3% (matches MarketRegistry.MAX_FEE_BPS)
 		feeBps = feeBps_;
 		frMaxBpsPerHour = frMaxBpsPerHour_;
@@ -363,6 +365,11 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	uint256 public constant MAX_FUNDING_ELAPSED = 3600; // 1 hour cap per update
 
 	function pokeFunding() external {
+		_pokeFundingInternal();
+	}
+
+	/// @dev Settle accumulated funding using the current parameters before they change.
+	function _pokeFundingInternal() internal {
 		uint64 nowTs = uint64(block.timestamp);
 		uint64 lastTs = lastFundingTimestamp;
 		if (nowTs <= lastTs) {
