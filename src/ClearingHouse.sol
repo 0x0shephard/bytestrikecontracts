@@ -1166,6 +1166,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
 
         uint256 finalBadDebt = shortfall - recovered;
         if (finalBadDebt > 0) {
+            totalBadDebt += finalBadDebt;
             emit BadDebtRecorded(account, marketId, finalBadDebt);
         }
     }
