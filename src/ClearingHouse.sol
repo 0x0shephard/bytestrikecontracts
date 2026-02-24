@@ -677,6 +677,14 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             }
         }
 
+        // After partial liquidation, the remaining position must no longer be
+        // liquidatable.  This forces the liquidator to close enough of the
+        // position to restore health (or liquidate it entirely), preventing
+        // repeated small liquidations that bypass the penaltyCap.
+        if (position.size != 0) {
+            require(!this.isLiquidatable(account, marketId), "CH: must liquidate more");
+        }
+
         emit LiquidationExecuted(
             marketId,
             msg.sender,
