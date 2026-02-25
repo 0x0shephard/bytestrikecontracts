@@ -916,6 +916,13 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             uint256 tradeNotional = Calculations.mulDiv(absBaseDelta, execPxX18, 1e18);
             uint256 imrBps = marketRiskParams[marketId].imrBps;
             uint256 marginRequired = Calculations.mulDiv(tradeNotional, imrBps, BPS_DENOMINATOR);
+            // Verify the user has sufficient collateral to back this margin before reserving it.
+            // Without this check, _totalReservedMargin can exceed actual collateral when feeBps = 0
+            // and the post-trade IMR check is satisfied by the margin allocated here.
+            if (!isLiquidation && marginRequired > 0) {
+                IMarketRegistry.Market memory mq = IMarketRegistry(marketRegistry).getMarket(marketId);
+                _ensureAvailableCollateral(account, marginRequired, mq.quoteToken);
+            }
             position.margin += marginRequired;
             _totalReservedMargin[account] += marginRequired;
         } else {
