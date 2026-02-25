@@ -395,8 +395,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		int256 premiumX18 = int256(twapX18) - int256(indexPriceX18);
 		int256 fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (24 * 3600 * 1e18);
 
-		// Clamp funding rate
-		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * 1e18) / (3600 * 10000);
+		// Clamp funding rate — scale by indexPrice so cap is in USDC/base like fundingRateX18
+		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (3600 * 10000);
 		if (fundingRateX18 > 0 && uint256(fundingRateX18) > maxRateAbs) {
 			fundingRateX18 = int256(maxRateAbs);
 		}
