@@ -1021,7 +1021,26 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             return (0, 0);
         }
 
-        uint256 available = ICollateralVault(vault).balanceOf(account, quoteToken);
+        // Only seize from free collateral (vault balance minus what is reserved
+        // for the account's other positions) to prevent a liquidation penalty
+        // from creating account-level insolvency.  Uses _quoteValueX18 for
+        // consistency with _ensureAvailableCollateral, then maps the free
+        // portion back to quote-token decimals proportionally.
+        uint256 balance = ICollateralVault(vault).balanceOf(account, quoteToken);
+        uint256 available;
+        {
+            uint256 quoteValueX18 = _quoteValueX18(quoteToken, balance);
+            if (quoteValueX18 == 0) {
+                available = 0;
+            } else if (quoteValueX18 <= _totalReservedMargin[account]) {
+                available = 0;
+            } else {
+                uint256 freeX18 = quoteValueX18 - _totalReservedMargin[account];
+                available = freeX18 >= quoteValueX18
+                    ? balance
+                    : Calculations.mulDiv(balance, freeX18, quoteValueX18);
+            }
+        }
         uint256 seized = amount <= available ? amount : available;
         actualReceived = seized; // Default: internal transfer, no fee
 
