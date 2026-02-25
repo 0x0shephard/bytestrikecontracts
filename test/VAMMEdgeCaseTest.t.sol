@@ -157,9 +157,13 @@ contract VAMMEdgeCaseTest is BaseTest {
         // Skip time
         skipTime(1 hours);
 
-        // Make another swap to update TWAP
+        // Make another swap — pokeFunding takes a new checkpoint here
         fundAndDeposit(bob, 10000 * USDC_UNIT);
         openLongPosition(bob, ethQty(1), 0);
+
+        // With two-checkpoint TWAP, need time to elapse after the last
+        // checkpoint (taken during pokeFunding above) before querying.
+        skipTime(1 hours);
 
         uint32 window = 3600;
         uint256 twap = vamm.getTwap(window);
@@ -170,17 +174,25 @@ contract VAMMEdgeCaseTest is BaseTest {
     function test_TWAP_MultipleObservations() public {
         fundAndDeposit(alice, 50000 * USDC_UNIT);
 
-        // Create multiple observations over time
-        for (uint i = 0; i < 5; i++) {
-            vm.startPrank(alice);
-            clearingHouse.addMargin(ETH_PERP, 250 * USDC_UNIT);
-            clearingHouse.openPosition(ETH_PERP, true, ethQty(1), 0);
-            vm.stopPrank();
+        // First swap — initializes the position
+        vm.startPrank(alice);
+        clearingHouse.addMargin(ETH_PERP, 250 * USDC_UNIT);
+        clearingHouse.openPosition(ETH_PERP, true, ethQty(1), 0);
+        vm.stopPrank();
 
-            skipTime(30 minutes);
-        }
+        // Advance past observationWindow/2 so pokeFunding can take a checkpoint
+        skipTime(1 hours);
 
-        uint32 window = 2 hours;
+        // Second swap triggers pokeFunding which takes a TWAP checkpoint
+        vm.startPrank(alice);
+        clearingHouse.addMargin(ETH_PERP, 250 * USDC_UNIT);
+        clearingHouse.openPosition(ETH_PERP, true, ethQty(1), 0);
+        vm.stopPrank();
+
+        // Advance again so we can query TWAP from the new checkpoint
+        skipTime(1 hours);
+
+        uint32 window = 30 minutes;
         uint256 twap = vamm.getTwap(window);
 
         assertTrue(twap > 0, "TWAP should be calculated");
