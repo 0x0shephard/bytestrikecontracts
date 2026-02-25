@@ -353,6 +353,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 	/// @dev Settle accumulated funding using the current parameters before they change.
 	function _pokeFundingInternal() internal {
+		if (swapsPaused) return; // Funding frozen while market is paused
+
 		uint64 nowTs = uint64(block.timestamp);
 		uint64 lastTs = lastFundingTimestamp;
 		if (nowTs <= lastTs) {
@@ -416,13 +418,18 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 	/// @notice Toggles the swap execution flag, enabling or disabling all trading through the vAMM.
 	/// @param paused True to pause swaps, false to resume.
-	function pauseSwaps(bool paused) external onlyOwner {
+	function pauseSwaps(bool paused) external {
+		require(msg.sender == owner || msg.sender == clearinghouse, "Not owner or CH");
 		if (paused) {
+			// Flush any accumulated funding under the current price before pausing
+			_pokeFundingInternal();
 			// Snapshot current price into cumulative so pause duration isn't credited later
 			_accumulatePrice();
 		} else {
 			// Reset accumulation timestamp to now so the pause gap is excluded
 			_lastAccumulateTs = uint32(block.timestamp);
+			// Skip the paused interval for funding so it doesn't retroactively accrue
+			lastFundingTimestamp = uint64(block.timestamp);
 		}
 		swapsPaused = paused;
 		emit SwapsPaused(paused);

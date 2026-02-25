@@ -782,8 +782,11 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     /// @param marketId The ID of the market.
     /// @param paused True to pause, false to unpause.
     function pauseMarket(bytes32 marketId, bool paused) external override onlyAdmin {
-        // Thin wrapper to MarketRegistry
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        require(m.vamm != address(0), "CH: market not found");
         IMarketRegistry(marketRegistry).pauseMarket(marketId, paused);
+        // Freeze/unfreeze funding on the vAMM: flushes on pause, resets timestamp on unpause
+        IVAMM(m.vamm).pauseSwaps(paused);
         emit MarketPaused(marketId, paused);
     }
 
