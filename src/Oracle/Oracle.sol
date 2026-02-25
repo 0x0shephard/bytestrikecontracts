@@ -36,12 +36,13 @@ contract Oracle {
     event PriceFeedSet(string indexed tokenSymbol, address indexed priceFeedAddress);
     event BaseUnitSet(string indexed tokenSymbol, uint256 baseUnit);
     event SequencerUptimeFeedSet(address indexed uptimeFeedAddress);
-    event PriceStalePeriodSet(uint256 newStalePeriod);
     event PriceStalePeriodSetForToken(string indexed tokenSymbol, uint256 newStalePeriod);
+    event PriceStalePeriodSet(uint256 indexed newStalePeriod);
 
     constructor() {
         owner = msg.sender;
         priceStalePeriod = 3600; // Default to 1 hour
+        emit PriceStalePeriodSet(priceStalePeriod);
     }
 
     // --- Modifiers ---

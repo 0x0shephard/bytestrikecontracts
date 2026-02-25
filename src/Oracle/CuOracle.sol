@@ -44,6 +44,11 @@ contract CuOracle {
     event RoleGranted(address indexed role);
     event RoleRevoked(address indexed role);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event MinTimeIntervalSet(uint256 indexed minTimeInterval);
+    event MaxCommitAgeSet(uint256 indexed maxCommitAge);
+    event MinCommitRevealDelaySet(uint256 indexed minCommitRevealDelay);
+    
+
 
     struct PriceData {
         uint256 price; // Price scaled by 1e18
@@ -82,6 +87,10 @@ contract CuOracle {
         minTimeInterval = _minTimeInterval;
         minCommitRevealDelay = 1; // Default: at least 1 second between commit and reveal
         maxCommitAge = 1 hours; // Default: commits expire after 1 hour
+        emit OwnershipTransferred(address(0), _owner);
+        emit MinTimeIntervalSet(_minTimeInterval);
+        emit MaxCommitAgeSet(maxCommitAge);
+        emit MinCommitRevealDelaySet(minCommitRevealDelay);
     }
 
     /**
