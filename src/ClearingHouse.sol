@@ -72,8 +72,8 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     }
 
     event MarginAdded(address indexed user, bytes32 indexed marketId, uint256 amount);
-    event collateralDeposited(address indexed user, address indexed token, uint256 amount);
-    event collateralWithdrawn(address indexed user, address indexed token, uint256 amount, uint256 received);
+    event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
+    event CollateralWithdrawn(address indexed user, address indexed token, uint256 amount, uint256 received);
     event MarginRemoved(address indexed user, bytes32 indexed marketId, uint256 amount);
     event RiskParamsSet(
         bytes32 indexed marketId,
@@ -172,7 +172,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
     function deposit(address token, uint256 amount) external override nonReentrant {
         require(amount > 0, "CH: amount=0");
         ICollateralVault(vault).deposit(token, amount, msg.sender);
-        emit collateralDeposited(msg.sender, token, amount);
+        emit CollateralDeposited(msg.sender, token, amount);
     }
 
     /// @notice Withdraws collateral from the vault for the caller.
@@ -209,7 +209,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             require(!this.isLiquidatable(msg.sender, activeMarkets[i]), "CH: would be liquidatable");
         }
 
-        emit collateralWithdrawn(msg.sender, token, amount, received);
+        emit CollateralWithdrawn(msg.sender, token, amount, received);
     }
 
     /// @notice Migrate a user's stranded collateral from a legacy vault into the current vault.
