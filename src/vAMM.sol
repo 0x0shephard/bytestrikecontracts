@@ -361,15 +361,9 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 			return; // Funding already up to date
 		}
 
-		// Fetch TWAP from the last checkpoint to now.
-		// Reverts (caught below) if span < observationWindow / 2.
-		uint256 twapX18;
-		try this.getTwap(observationWindow) returns (uint256 twap) {
-			twapX18 = twap;
-		} catch {
-			lastFundingTimestamp = nowTs; // Advance timestamp to prevent accumulation
-			return;
-		}
+		// Use current spot mark price so funding incentives respond immediately
+		// to skew changes rather than lagging behind a TWAP average.
+		uint256 markX18 = getMarkPrice();
 
 		// Safe oracle fetch - skip funding calc if oracle fails or returns zero
 		uint256 indexPriceX18;
@@ -392,7 +386,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		}
 
 		// Calculate funding rate
-		int256 premiumX18 = int256(twapX18) - int256(indexPriceX18);
+		int256 premiumX18 = int256(markX18) - int256(indexPriceX18);
 		int256 fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (24 * 3600 * 1e18);
 
 		// Clamp funding rate — scale by indexPrice so cap is in USDC/base like fundingRateX18
