@@ -1359,14 +1359,9 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         if (penaltyInQuoteDecimals == 0) return;
 
         (uint256 actualReceived, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, penaltyInQuoteDecimals, true);
-        uint256 insuranceCovered = 0;
         if (shortfall > 0 && m.insuranceFund != address(0)) {
             uint256 fundBalance = IInsuranceFund(m.insuranceFund).balance();
             uint256 actualPayout = shortfall > fundBalance ? fundBalance : shortfall;
-            if (actualPayout > 0) {
-                IInsuranceFund(m.insuranceFund).payout(m.feeRouter, actualPayout);
-                insuranceCovered = actualPayout;
-            }
             uint256 uncovered = shortfall - actualPayout;
             if (uncovered > 0) {
                 totalBadDebt += uncovered;
@@ -1377,6 +1372,10 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             emit BadDebtRecorded(account, marketId, shortfall);
         }
 
-        IFeeRouter(m.feeRouter).onLiquidationPenalty(actualReceived + insuranceCovered);
+        // Only route the user-collected portion through FeeRouter.
+        // The insurance fund should not subsidize treasury revenue from uncollectable penalties.
+        if (actualReceived > 0) {
+            IFeeRouter(m.feeRouter).onLiquidationPenalty(actualReceived);
+        }
     }
 }
