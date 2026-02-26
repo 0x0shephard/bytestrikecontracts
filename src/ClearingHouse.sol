@@ -272,7 +272,20 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             : (riskPrice > markPrice ? riskPrice : markPrice);
         int256 unrealizedPnL = _computeUnrealizedPnL(position, conservativePrice);
         uint256 maintenanceMargin = _getMaintenanceMargin(msg.sender, marketId);
-        int256 effectiveMarginAfter = int256(position.margin - amount) + unrealizedPnL;
+        // Use real-time collateral value for the margin component
+        uint256 nominalAfter = position.margin - amount;
+        uint256 marginValueAfter = nominalAfter;
+        {
+            uint256 reserved = _totalReservedMargin[msg.sender];
+            if (reserved > 0) {
+                uint256 vaultBal = ICollateralVault(vault).balanceOf(msg.sender, m.quoteToken);
+                uint256 vaultValX18 = _quoteValueX18(m.quoteToken, vaultBal);
+                if (vaultValX18 < reserved) {
+                    marginValueAfter = Calculations.mulDiv(nominalAfter, vaultValX18, reserved);
+                }
+            }
+        }
+        int256 effectiveMarginAfter = int256(marginValueAfter) + unrealizedPnL;
         require(effectiveMarginAfter >= int256(maintenanceMargin), "CH: would be liquidatable");
 
         // Enforce minimum margin floor: position margin must always cover the liquidation penalty
@@ -303,9 +316,25 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         // a prior settleFunding transaction.
         int256 pendingFunding = _getPendingFunding(account, marketId);
 
+        // Use real-time collateral value for the margin component so that a
+        // depeg of the quote token triggers liquidation instead of being masked
+        // by a stale nominal position.margin value.
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        uint256 marginValue = position.margin;
+        {
+            uint256 reserved = _totalReservedMargin[account];
+            if (reserved > 0) {
+                uint256 vaultBal = ICollateralVault(vault).balanceOf(account, m.quoteToken);
+                uint256 vaultValX18 = _quoteValueX18(m.quoteToken, vaultBal);
+                if (vaultValX18 < reserved) {
+                    marginValue = Calculations.mulDiv(position.margin, vaultValX18, reserved);
+                }
+            }
+        }
+
         // Calculate effective margin including unrealized PnL at oracle (risk) price
         int256 unrealizedPnL = _getUnrealizedPnLAtOracle(account, marketId);
-        int256 effectiveMargin = int256(position.margin) + pendingFunding + unrealizedPnL;
+        int256 effectiveMargin = int256(marginValue) + pendingFunding + unrealizedPnL;
 
         // Position is liquidatable if effective margin falls below maintenance margin
         uint256 maintenanceMargin = _getMaintenanceMargin(account, marketId);
