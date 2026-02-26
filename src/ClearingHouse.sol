@@ -457,7 +457,10 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         if (m.vamm == address(0)) return 0;
 
-        int256 currentIndex = IVAMM(m.vamm).cumulativeFundingPerUnitX18();
+        // Use real-time cumulative index (includes pending accrual for elapsed time)
+        // so that view functions like isLiquidatable and getMarginRatio reflect
+        // accurate funding without requiring a preceding pokeFunding transaction.
+        int256 currentIndex = IVAMM(m.vamm).currentCumulativeFundingPerUnitX18();
         int256 deltaIndex = currentIndex - position.lastFundingIndex;
         if (deltaIndex == 0) return 0;
 

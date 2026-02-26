@@ -41,8 +41,11 @@ interface IVAMM {
     /// @notice Global fee growth index per unit liquidity in Q128 (for LP accounting).
     function feeGrowthGlobalX128() external view returns (uint256);
 
-    /// @notice Cumulative funding per unit (1e18) since inception (signed).
+    /// @notice Stored cumulative funding per unit (1e18) since inception (signed).
     function cumulativeFundingPerUnitX18() external view returns (int256);
+
+    /// @notice Real-time cumulative funding including pending accrual for elapsed time.
+    function currentCumulativeFundingPerUnitX18() external view returns (int256);
 
     /// @notice Cached oracle index price used for continuous funding accrual.
     function cachedIndexPrice() external view returns (uint256);

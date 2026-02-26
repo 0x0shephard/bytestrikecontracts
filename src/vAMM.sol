@@ -265,10 +265,48 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		return _feeGrowthGlobalX128;
 	}
 
-	/// @notice Returns the cumulative funding index per unit position size.
-	/// @dev Clearinghouse snapshots this value to calculate per-trader funding payments.
+	/// @notice Returns the stored cumulative funding index per unit position size.
+	/// @dev Does not include funding for time elapsed since lastFundingTimestamp.
+	/// Use currentCumulativeFundingPerUnitX18() for a real-time view.
 	function cumulativeFundingPerUnitX18() external view returns (int256) {
 		return _cumulativeFundingPerUnitX18;
+	}
+
+	/// @notice Returns the real-time cumulative funding index including pending accrual.
+	/// @dev Simulates what _accrueFunding() would produce for the elapsed time since
+	/// lastFundingTimestamp, without modifying state. Used by off-chain callers and
+	/// view functions that need accurate funding without a preceding transaction.
+	function currentCumulativeFundingPerUnitX18() external view returns (int256) {
+		if (swapsPaused || _cachedIndexPriceX18 == 0) {
+			return _cumulativeFundingPerUnitX18;
+		}
+
+		uint64 nowTs = uint64(block.timestamp);
+		uint64 lastTs = lastFundingTimestamp;
+		if (nowTs <= lastTs) {
+			return _cumulativeFundingPerUnitX18;
+		}
+
+		uint256 markX18 = getMarkPrice();
+		uint256 indexPriceX18 = _cachedIndexPriceX18;
+
+		uint256 timeElapsed = nowTs - lastTs;
+		if (timeElapsed > MAX_FUNDING_ELAPSED) {
+			timeElapsed = MAX_FUNDING_ELAPSED;
+		}
+
+		int256 premiumX18 = int256(markX18) - int256(indexPriceX18);
+		int256 fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (24 * 3600 * 1e18);
+
+		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (3600 * 10000);
+		if (fundingRateX18 > 0 && uint256(fundingRateX18) > maxRateAbs) {
+			fundingRateX18 = int256(maxRateAbs);
+		}
+		if (fundingRateX18 < 0 && uint256(-fundingRateX18) > maxRateAbs) {
+			fundingRateX18 = -int256(maxRateAbs);
+		}
+
+		return _cumulativeFundingPerUnitX18 + fundingRateX18;
 	}
 
 	/// @notice Returns the cached oracle index price used for continuous funding accrual.
