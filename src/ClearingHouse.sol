@@ -276,7 +276,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         uint256 nominalAfter = position.margin - amount;
         uint256 marginValueAfter = nominalAfter;
         {
-            uint256 reserved = _totalReservedMargin[msg.sender];
+            uint256 reserved = _reservedMarginForToken(msg.sender, m.quoteToken);
             if (reserved > 0) {
                 uint256 vaultBal = ICollateralVault(vault).balanceOf(msg.sender, m.quoteToken);
                 uint256 vaultValX18 = _quoteValueX18(m.quoteToken, vaultBal);
@@ -322,7 +322,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         uint256 marginValue = position.margin;
         {
-            uint256 reserved = _totalReservedMargin[account];
+            uint256 reserved = _reservedMarginForToken(account, m.quoteToken);
             if (reserved > 0) {
                 uint256 vaultBal = ICollateralVault(vault).balanceOf(account, m.quoteToken);
                 uint256 vaultValX18 = _quoteValueX18(m.quoteToken, vaultBal);
@@ -1051,20 +1051,21 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         }
 
         // Only seize from free collateral (vault balance minus what is reserved
-        // for the account's other positions) to prevent a liquidation penalty
-        // from creating account-level insolvency.  Uses _quoteValueX18 for
-        // consistency with _ensureAvailableCollateral, then maps the free
-        // portion back to quote-token decimals proportionally.
+        // for positions using this specific quote token) to prevent a liquidation
+        // penalty from creating account-level insolvency.  Uses per-token reserved
+        // margin so positions backed by a different quote token do not inflate the
+        // reservation.
         uint256 balance = ICollateralVault(vault).balanceOf(account, quoteToken);
         uint256 available;
         {
+            uint256 reservedForToken = _reservedMarginForToken(account, quoteToken);
             uint256 quoteValueX18 = _quoteValueX18(quoteToken, balance);
             if (quoteValueX18 == 0) {
                 available = 0;
-            } else if (quoteValueX18 <= _totalReservedMargin[account]) {
+            } else if (quoteValueX18 <= reservedForToken) {
                 available = 0;
             } else {
-                uint256 freeX18 = quoteValueX18 - _totalReservedMargin[account];
+                uint256 freeX18 = quoteValueX18 - reservedForToken;
                 available = freeX18 >= quoteValueX18
                     ? balance
                     : Calculations.mulDiv(balance, freeX18, quoteValueX18);
@@ -1285,6 +1286,19 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         (uint256 actualReceived, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, feeInQuoteDecimals, true);
         require(shortfall == 0, "CH: insufficient quote token for fee");
         IFeeRouter(m.feeRouter).onTradeFee(actualReceived);
+    }
+
+    /// @dev Sums position.margin for all active positions whose market uses the
+    ///      given quote token.  This gives the per-token reservation instead of the
+    ///      aggregate _totalReservedMargin, which may include other quote tokens.
+    function _reservedMarginForToken(address account, address quoteToken) internal view returns (uint256 reserved) {
+        bytes32[] memory markets = _userActiveMarkets[account];
+        for (uint256 i = 0; i < markets.length; i++) {
+            IMarketRegistry.Market memory mkt = IMarketRegistry(marketRegistry).getMarket(markets[i]);
+            if (mkt.quoteToken == quoteToken) {
+                reserved += positions[account][markets[i]].margin;
+            }
+        }
     }
 
     /// @notice Ensures the account has sufficient free quote-token collateral to cover additional reservations.
