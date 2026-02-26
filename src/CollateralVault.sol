@@ -7,6 +7,7 @@ import {Oracle} from "./Oracle/Oracle.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Calculations} from "./Libraries/Calculations.sol";
 
 
 /// @title CollateralVault
@@ -235,10 +236,10 @@ contract CollateralVault is ICollateralVault, AccessControl {
         uint256 pxX18 = Oracle(oracle).getPrice(cfg.oracleSymbol);
         if (pxX18 == 0) return 0;
 
-        // Normalize by base unit and apply haircut
-        usdX18 = (pxX18 * amount) / cfg.baseUnit;
+        // Normalize by base unit and apply haircut (mulDiv avoids uint256 overflow)
+        usdX18 = Calculations.mulDiv(pxX18, amount, cfg.baseUnit);
         if (cfg.haircutBps != 0) {
-            usdX18 = (usdX18 * (10_000 - cfg.haircutBps)) / 10_000;
+            usdX18 = Calculations.mulDiv(usdX18, 10_000 - cfg.haircutBps, 10_000);
         }
     }
 
@@ -255,9 +256,9 @@ contract CollateralVault is ICollateralVault, AccessControl {
             uint256 pxX18 = Oracle(oracle).getPrice(cfg.oracleSymbol);
             if (pxX18 == 0) continue;
 
-            uint256 v = (pxX18 * bal) / cfg.baseUnit;
+            uint256 v = Calculations.mulDiv(pxX18, bal, cfg.baseUnit);
             if (cfg.haircutBps != 0) {
-                v = (v * (10_000 - cfg.haircutBps)) / 10_000;
+                v = Calculations.mulDiv(v, 10_000 - cfg.haircutBps, 10_000);
             }
             usdX18 += v;
         }
