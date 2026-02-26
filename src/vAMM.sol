@@ -447,8 +447,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(newBaseReserve >= minReserveBase, "base < min");
 		require(newQuoteReserve >= minReserveQuote, "quote < min");
 
-		// Accrue funding at current (pre-reset) mark price before reserves change
-		_accrueFunding();
+		// Flush funding at current (pre-reset) mark price and refresh oracle cache
+		_pokeFundingInternal();
 
 		reserveBase = newBaseReserve;
 		reserveQuote = newQuoteReserve;
