@@ -44,6 +44,9 @@ interface IVAMM {
     /// @notice Cumulative funding per unit (1e18) since inception (signed).
     function cumulativeFundingPerUnitX18() external view returns (int256);
 
+    /// @notice Cached oracle index price used for continuous funding accrual.
+    function cachedIndexPrice() external view returns (uint256);
+
     /// @notice Get current virtual reserves
     function getReserves() external view returns (uint256 base, uint256 quote);
 

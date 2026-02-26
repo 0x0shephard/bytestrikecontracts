@@ -46,6 +46,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 	bool public swapsPaused;
 
+	uint256 private _cachedIndexPriceX18; // Cached oracle price for funding between pokeFunding calls
+
 	// ========= Price Change Protection =========
 	/// @notice Maximum allowed price change per resetReserves call (10% = 1000 bps)
 	uint256 public constant MAX_PRICE_CHANGE_BPS = 1000;
@@ -112,6 +114,13 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		kFundingX18 = kFundingX18_;
 		lastFundingTimestamp = uint64(block.timestamp);
 
+		// Seed cached oracle price for continuous funding accrual
+		try IOracle(_oracle).getPrice() returns (uint256 price) {
+			_cachedIndexPriceX18 = price > 0 ? price : initialPriceX18;
+		} catch {
+			_cachedIndexPriceX18 = initialPriceX18;
+		}
+
 		emit Initialized(owner, clearinghouse, initialPriceX18, reserveBase, reserveQuote);
 		emit ParamsSet(feeBps, frMaxBpsPerHour, kFundingX18);
 		emit LiquiditySet(_liquidity);
@@ -143,6 +152,9 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 		avgPriceX18 = Calculations.mulDiv(grossQuoteIn, 1e18, uint256(baseAmount));
 		require(priceLimitX18 == 0 || avgPriceX18 <= priceLimitX18, "slippage");
+
+		// Accrue funding at current (pre-trade) mark price before reserves change
+		_accrueFunding();
 
 		// Update reserves (v2 style: reserves add gross input, subtract output)
 		uint256 newReserveBase = X - uint256(baseAmount);
@@ -188,6 +200,9 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 		avgPriceX18 = Calculations.mulDiv(quoteOut, 1e18, grossBaseIn);
 		require(priceLimitX18 == 0 || avgPriceX18 >= priceLimitX18, "slippage");
+
+		// Accrue funding at current (pre-trade) mark price before reserves change
+		_accrueFunding();
 
 		// Update reserves with protection
 		uint256 newReserveQuote = Y - quoteOut;
@@ -256,6 +271,11 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		return _cumulativeFundingPerUnitX18;
 	}
 
+	/// @notice Returns the cached oracle index price used for continuous funding accrual.
+	function cachedIndexPrice() external view returns (uint256) {
+		return _cachedIndexPriceX18;
+	}
+
 	// ========= Admin / Keepers =========
 
 	/// @notice Updates the virtual liquidity scalar used for fee growth accounting.
@@ -295,45 +315,28 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		_pokeFundingInternal();
 	}
 
-	/// @dev Settle accumulated funding using the current parameters before they change.
-	function _pokeFundingInternal() internal {
-		if (swapsPaused) return; // Funding frozen while market is paused
+	/// @dev Accrue funding for the elapsed period using current mark price and cached oracle price.
+	/// Called before every reserve change to make the cumulative index a true time-integral.
+	/// No external oracle call — uses the cached value to keep swap gas costs low.
+	function _accrueFunding() internal {
+		if (swapsPaused) return;
 
 		uint64 nowTs = uint64(block.timestamp);
 		uint64 lastTs = lastFundingTimestamp;
-		if (nowTs <= lastTs) {
-			return; // Funding already up to date
-		}
+		if (nowTs <= lastTs) return;
+		if (_cachedIndexPriceX18 == 0) return;
 
-		// Use current spot mark price so funding incentives respond immediately
-		// to skew changes rather than lagging behind an average.
 		uint256 markX18 = getMarkPrice();
+		uint256 indexPriceX18 = _cachedIndexPriceX18;
 
-		// Safe oracle fetch - skip funding calc if oracle fails or returns zero
-		uint256 indexPriceX18;
-		try IOracle(oracle).getPrice() returns (uint256 price) {
-			indexPriceX18 = price;
-		} catch {
-			lastFundingTimestamp = nowTs; // Advance timestamp to prevent accumulation
-			return;
-		}
-
-		if (indexPriceX18 == 0) {
-			lastFundingTimestamp = nowTs; // Advance timestamp to prevent accumulation
-			return;
-		}
-
-		// Cap timeElapsed so a single update never covers more than one funding interval
 		uint256 timeElapsed = nowTs - lastTs;
 		if (timeElapsed > MAX_FUNDING_ELAPSED) {
 			timeElapsed = MAX_FUNDING_ELAPSED;
 		}
 
-		// Calculate funding rate
 		int256 premiumX18 = int256(markX18) - int256(indexPriceX18);
 		int256 fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (24 * 3600 * 1e18);
 
-		// Clamp funding rate — scale by indexPrice so cap is in USDC/base like fundingRateX18
 		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (3600 * 10000);
 		if (fundingRateX18 > 0 && uint256(fundingRateX18) > maxRateAbs) {
 			fundingRateX18 = int256(maxRateAbs);
@@ -344,8 +347,26 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 		_cumulativeFundingPerUnitX18 += fundingRateX18;
 		lastFundingTimestamp = nowTs;
+	}
 
-		emit FundingPoked(_cumulativeFundingPerUnitX18, nowTs, fundingRateX18);
+	/// @dev Accrue funding at the current cached oracle price, then refresh the oracle cache.
+	function _pokeFundingInternal() internal {
+		if (swapsPaused) return;
+
+		// Snapshot cumulative before accrual to compute the delta for the event
+		int256 cumBefore = _cumulativeFundingPerUnitX18;
+
+		// Accrue any pending funding at the current cached oracle price
+		_accrueFunding();
+
+		// Refresh cached oracle price for future accruals
+		try IOracle(oracle).getPrice() returns (uint256 price) {
+			if (price > 0) _cachedIndexPriceX18 = price;
+		} catch {
+			// Keep old cached price; timestamp already advanced by _accrueFunding
+		}
+
+		emit FundingPoked(_cumulativeFundingPerUnitX18, uint64(block.timestamp), _cumulativeFundingPerUnitX18 - cumBefore);
 	}
 
 	/// @notice Toggles the swap execution flag, enabling or disabling all trading through the vAMM.
@@ -380,10 +401,15 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	}
 
 	/// @notice Sets the oracle used to retrieve index prices for funding calculations.
+	/// @dev Flushes pending funding at the old oracle price, then refreshes the cache with the new oracle.
 	/// @param newOracle Address of the oracle contract; must not be zero.
 	function setOracle(address newOracle) external onlyOwner {
 		require(newOracle != address(0), "oracle=0");
+		_accrueFunding(); // Flush funding at old oracle price
 		oracle = newOracle;
+		try IOracle(newOracle).getPrice() returns (uint256 price) {
+			if (price > 0) _cachedIndexPriceX18 = price;
+		} catch {}
 		emit OracleChanged(newOracle);
 	}
 
@@ -420,6 +446,9 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		// Ensure new reserves meet minimum requirements
 		require(newBaseReserve >= minReserveBase, "base < min");
 		require(newQuoteReserve >= minReserveQuote, "quote < min");
+
+		// Accrue funding at current (pre-reset) mark price before reserves change
+		_accrueFunding();
 
 		reserveBase = newBaseReserve;
 		reserveQuote = newQuoteReserve;

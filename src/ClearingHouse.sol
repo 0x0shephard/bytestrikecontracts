@@ -784,7 +784,8 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         uint256 notional = this.getNotional(account, marketId);
         if (notional == 0) return type(uint256).max;
         int256 unrealizedPnL = _getUnrealizedPnLAtOracle(account, marketId);
-        int256 effectiveMargin = int256(p.margin) + unrealizedPnL;
+        int256 pendingFunding = _getPendingFunding(account, marketId);
+        int256 effectiveMargin = int256(p.margin) + unrealizedPnL + pendingFunding;
         if (effectiveMargin <= 0) return 0;
         return uint256(effectiveMargin).mulDiv(1e18, notional);
     }
