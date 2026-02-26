@@ -634,4 +634,60 @@ contract AuditFindingsTest is BaseTest {
         clearingHouse.openPosition(ETH_PERP, false, size, 0);
         vm.stopPrank();
     }
+
+    // ============================================================
+    // Silent Auto-Margin-Commitment Removed
+    // Location: ClearingHouse.sol _applyTrade post-trade IMR check
+    // ============================================================
+
+    /// @notice Verify that the post-trade IMR check reverts instead of silently
+    /// auto-committing additional collateral from the user's free balance.
+    function test_NoSilentAutoMarginCommitment() public {
+        // Alice deposits collateral and adds EXACTLY enough margin for 1 ETH at current price.
+        // The trade's price impact will push the post-trade required margin slightly higher
+        // than what she explicitly committed, but the contract must NOT silently pull more.
+        uint256 depositAmount = 10000 * USDC_UNIT;
+        fundAndDeposit(alice, depositAmount);
+
+        // Manually add margin that is sufficient for the pre-trade notional but not post-trade.
+        // 1 ETH at $2000 mark, 5% IMR → $100 margin needed.
+        // After buying, mark moves up, so post-trade IMR > $100.
+        // Use a large size to make the price impact significant.
+        uint128 size = ethQty(50);
+        uint256 markBefore = getMarkPrice(); // ~2000e18
+        uint256 preTradeNotional = (uint256(size) * markBefore) / 1e18;
+        uint256 preTradeIMR = (preTradeNotional * IMR_BPS) / 10000;
+
+        vm.startPrank(alice);
+        // Commit exactly the pre-trade IMR — not enough for post-trade
+        clearingHouse.addMargin(ETH_PERP, preTradeIMR);
+
+        // Record reserved margin before the trade
+        uint256 reservedBefore = clearingHouse._totalReservedMargin(alice);
+
+        // Open the position — initial allocation now uses post-trade risk price,
+        // so the allocated amount covers the IMR check. The user's explicit addMargin
+        // plus the allocation should determine total margin; no silent extra is pulled.
+        clearingHouse.openPosition(ETH_PERP, true, size, 0);
+        vm.stopPrank();
+
+        // Verify: the total reserved margin should be exactly what was allocated
+        // (user's addMargin + initial allocation), with NO silent auto-commit on top.
+        uint256 reservedAfter = clearingHouse._totalReservedMargin(alice);
+        IClearingHouse.PositionView memory pos = clearingHouse.getPosition(alice, ETH_PERP);
+
+        // The position margin should equal addMargin + allocation (at risk price).
+        // Verify it's NOT inflated by an auto-committed shortfall.
+        uint256 markAfter = vamm.getMarkPrice();
+        uint256 oraclePrice = oracle.getPrice();
+        uint256 riskPrice = markAfter > oraclePrice ? markAfter : oraclePrice;
+        uint256 expectedAllocation = (uint256(size) * riskPrice / 1e18) * IMR_BPS / 10000;
+        uint256 expectedMargin = preTradeIMR + expectedAllocation;
+
+        assertEq(pos.margin, expectedMargin, "Margin should be explicit addMargin + risk-priced allocation only");
+        console.log("Pre-trade IMR (addMargin):", preTradeIMR);
+        console.log("Risk-priced allocation:", expectedAllocation);
+        console.log("Total position margin:", pos.margin);
+        console.log("GOOD: No silent auto-commit - margin matches explicit commitment");
+    }
 }

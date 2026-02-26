@@ -938,26 +938,46 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         }
 
         // === Margin management (independent of PnL) ===
+        // Use the post-trade risk price (max of mark, oracle) for margin allocation so that
+        // the allocated amount matches the post-trade IMR check. This prevents the contract
+        // from needing to silently auto-commit additional collateral after the trade.
         if (s0 == 0 || ((s0 > 0 && baseDelta > 0) || (s0 < 0 && baseDelta < 0))) {
             // Opening or increasing: allocate IMR margin from available collateral
-            uint256 tradeNotional = Calculations.mulDiv(absBaseDelta, execPxX18, 1e18);
+            IMarketRegistry.Market memory mq = IMarketRegistry(marketRegistry).getMarket(marketId);
+            uint256 markPrice = IVAMM(mq.vamm).getMarkPrice();
+            uint256 oraclePrice = _getRiskPrice(mq);
+            uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
+            uint256 tradeNotional = absBaseDelta.mulDiv(imrPrice, 1e18);
             uint256 imrBps = marketRiskParams[marketId].imrBps;
-            uint256 marginRequired = Calculations.mulDiv(tradeNotional, imrBps, BPS_DENOMINATOR);
-            // Verify the user has sufficient collateral to back this margin before reserving it.
-            // Without this check, _totalReservedMargin can exceed actual collateral when feeBps = 0
-            // and the post-trade IMR check is satisfied by the margin allocated here.
+            uint256 marginRequired = tradeNotional.mulDiv(imrBps, BPS_DENOMINATOR);
             if (!isLiquidation && marginRequired > 0) {
-                IMarketRegistry.Market memory mq = IMarketRegistry(marketRegistry).getMarket(marketId);
                 _ensureAvailableCollateral(account, marginRequired, mq.quoteToken);
             }
             position.margin += marginRequired;
             _totalReservedMargin[account] += marginRequired;
         } else {
-            // Reducing or closing: release margin proportionally to size reduction
+            // Reducing, closing, or flipping: release margin proportionally to size reduction
             uint256 reduceAmt = absBaseDelta <= absS0 ? absBaseDelta : absS0;
             uint256 marginRelease = (position.margin * reduceAmt) / absS0;
             position.margin -= marginRelease;
             _totalReservedMargin[account] -= marginRelease;
+
+            // If flipping (trade exceeds current position), allocate margin for the new direction
+            if (absBaseDelta > absS0) {
+                uint256 openAmt = absBaseDelta - absS0;
+                IMarketRegistry.Market memory mq = IMarketRegistry(marketRegistry).getMarket(marketId);
+                uint256 markPrice = IVAMM(mq.vamm).getMarkPrice();
+                uint256 oraclePrice = _getRiskPrice(mq);
+                uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
+                uint256 openNotional = openAmt.mulDiv(imrPrice, 1e18);
+                uint256 imrBps = marketRiskParams[marketId].imrBps;
+                uint256 marginRequired = openNotional.mulDiv(imrBps, BPS_DENOMINATOR);
+                if (!isLiquidation && marginRequired > 0) {
+                    _ensureAvailableCollateral(account, marginRequired, mq.quoteToken);
+                }
+                position.margin += marginRequired;
+                _totalReservedMargin[account] += marginRequired;
+            }
         }
 
         // Protocol trading fee for perps: charge on this trade's notional at execPx
@@ -989,12 +1009,6 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
             uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
             uint256 notional = absS1.mulDiv(imrPrice, 1e18);
             uint256 requiredMargin = notional.mulDiv(imrBps, BPS_DENOMINATOR);
-            if (position.margin < requiredMargin) {
-                uint256 shortfall = requiredMargin - position.margin;
-                _ensureAvailableCollateral(account, shortfall, m.quoteToken);
-                position.margin += shortfall;
-                _totalReservedMargin[account] += shortfall;
-            }
             require(position.margin >= requiredMargin, "CH: IMR breach");
 
             // Post-trade health check: ensure position is NOT immediately liquidatable.
