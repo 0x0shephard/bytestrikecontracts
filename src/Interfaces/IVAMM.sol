@@ -38,9 +38,6 @@ interface IVAMM {
     /// @notice Active virtual liquidity used for price impact and slippage.
     function getLiquidity() external view returns (uint128);
 
-    /// @notice Time-weighted average mark price over a lookback window (seconds).
-    function getTwap(uint32 window) external view returns (uint256);
-
     /// @notice Global fee growth index per unit liquidity in Q128 (for LP accounting).
     function feeGrowthGlobalX128() external view returns (uint256);
 
@@ -58,12 +55,10 @@ interface IVAMM {
     /// @param feeBps Trade fee in basis points.
     /// @param frMaxBpsPerHour Funding clamp per hour in bps.
     /// @param kFundingX18 Funding scaling factor (1e18 = 1.0).
-    /// @param observationWindow TWAP window in seconds.
     function setParams(
         uint16 feeBps,
         uint256 frMaxBpsPerHour,
-        uint256 kFundingX18,
-        uint32 observationWindow
+        uint256 kFundingX18
     ) external;
 
     /// @notice Keeper/CH trigger to advance funding indices based on mark vs index.

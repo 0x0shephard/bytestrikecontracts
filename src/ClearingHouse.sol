@@ -630,7 +630,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
 
         // Snapshot risk price before the vAMM trade so the penalty is computed
         // against the pre-trade price.  When the oracle is available it is
-        // unaffected anyway; when only mark/TWAP remain the trade's own price
+        // unaffected anyway; when only spot mark remains the trade's own price
         // impact would otherwise distort the penalty calculation.
         uint256 riskPrice = _getRiskPrice(m);
 
@@ -736,7 +736,7 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         return m;
     }
 
-    /// @notice Returns the preferred risk price for margin checks, preferring oracle/index price with TWAP fallback.
+    /// @notice Returns the preferred risk price for margin checks, preferring oracle/index price with mark price fallback.
     function _getRiskPrice(IMarketRegistry.Market memory m) internal view returns (uint256) {
         if (m.oracle != address(0)) {
             try IOracle(m.oracle).getPrice() returns (uint256 indexPrice) {
@@ -747,12 +747,6 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         }
 
         require(m.vamm != address(0), "CH: market not found");
-        try IVAMM(m.vamm).getTwap(0) returns (uint256 twapPrice) {
-            if (twapPrice > 0) {
-                return twapPrice;
-            }
-        } catch {}
-
         return IVAMM(m.vamm).getMarkPrice();
     }
 

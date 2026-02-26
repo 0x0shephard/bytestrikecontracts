@@ -11,7 +11,6 @@ interface IOracle {
 interface IVAMM {
     function getMarkPrice() external view returns (uint256);
     function oracle() external view returns (address);
-    function getTwap(uint32 window) external view returns (uint256);
     function getReserves() external view returns (uint256 base, uint256 quote);
 }
 
@@ -38,15 +37,13 @@ contract VerifyNewVAMM is Script {
         // Check vAMM
         address vammOracle = vamm.oracle();
         uint256 markPrice = vamm.getMarkPrice();
-        uint256 twap = vamm.getTwap(900);
         (uint256 baseReserve, uint256 quoteReserve) = vamm.getReserves();
-        
+
         console.log("");
         console.log("vAMM Configuration:");
         console.log("  Address:", newVAMM);
         console.log("  Oracle:", vammOracle);
         console.log("  Mark Price: $", markPrice / 1e18);
-        console.log("  TWAP (15min): $", twap / 1e18);
         console.log("  Base Reserve:", baseReserve / 1e18);
         console.log("  Quote Reserve:", quoteReserve / 1e18);
         

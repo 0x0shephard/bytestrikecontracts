@@ -38,7 +38,6 @@ contract DeployWithMocks is Script {
     uint16 public tradeFeeBps;
     uint256 public fundingMaxBpsPerHour;
     uint256 public fundingKx18;
-    uint32 public observationWindow;
     uint16 public insuranceFundTradeFeeShareBps;
     uint16 public insuranceFundLiqShareBps;
     uint256 public imrBps;
@@ -56,7 +55,6 @@ contract DeployWithMocks is Script {
         tradeFeeBps = uint16(vm.envOr("TRADE_FEE_BPS", uint256(10))); // 0.1%
         fundingMaxBpsPerHour = vm.envOr("FUNDING_MAX_BPS_PER_HOUR", uint256(100)); // 1% max per hour
         fundingKx18 = vm.envOr("FUNDING_K_X18", uint256(1e18));
-        observationWindow = uint32(vm.envOr("OBSERVATION_WINDOW", uint256(3600))); // 1 hour
         insuranceFundTradeFeeShareBps = uint16(vm.envOr("FEE_ROUTER_TRADE_FEE_TO_INSURANCE_BPS", uint256(5000))); // 50%
         insuranceFundLiqShareBps = uint16(vm.envOr("FEE_ROUTER_LIQ_PENALTY_TO_INSURANCE_BPS", uint256(5000))); // 50%
         imrBps = vm.envOr("IMR_BPS", uint256(500)); // 5%
@@ -130,8 +128,7 @@ contract DeployWithMocks is Script {
                 liquidityIndex,
                 tradeFeeBps,
                 fundingMaxBpsPerHour,
-                fundingKx18,
-                observationWindow
+                fundingKx18
             )
         );
         ERC1967Proxy vammProxy = new ERC1967Proxy(address(vammImplementation), vammInitData);

@@ -469,8 +469,7 @@ contract AuditFindingsTest is BaseTest {
             LIQUIDITY_INDEX,
             invalidFeeBps,
             FUNDING_MAX_BPS_PER_HOUR,
-            FUNDING_K,
-            OBSERVATION_WINDOW
+            FUNDING_K
         );
 
         bool initSuccess;
@@ -496,7 +495,7 @@ contract AuditFindingsTest is BaseTest {
             // Verify setParams would reject it
             vm.prank(admin);
             vm.expectRevert("Fee too high");
-            badVamm.setParams(invalidFeeBps, FUNDING_MAX_BPS_PER_HOUR, FUNDING_K, OBSERVATION_WINDOW);
+            badVamm.setParams(invalidFeeBps, FUNDING_MAX_BPS_PER_HOUR, FUNDING_K);
             console.log("setParams() correctly rejects the same fee value");
         } else {
             console.log("GOOD: initialize() rejected invalid fee");
@@ -522,8 +521,7 @@ contract AuditFindingsTest is BaseTest {
             LIQUIDITY_INDEX,
             TRADE_FEE_BPS,
             FUNDING_MAX_BPS_PER_HOUR,
-            FUNDING_K,
-            OBSERVATION_WINDOW
+            FUNDING_K
         );
 
         vm.prank(admin);
@@ -532,9 +530,9 @@ contract AuditFindingsTest is BaseTest {
 
         skipTime(3600);
 
-        uint256 twap = zeroOracleVamm.getTwap(0);
+        uint256 markPrice = zeroOracleVamm.getMarkPrice();
         console.log("=== Zero Oracle Price Bug ===");
-        console.log("TWAP:", twap);
+        console.log("Mark Price:", markPrice);
         console.log("Index price from oracle:", zeroOracle.getPrice());
 
         int256 fundingBefore = zeroOracleVamm.cumulativeFundingPerUnitX18();
@@ -552,7 +550,7 @@ contract AuditFindingsTest is BaseTest {
         if (fundingAfter != fundingBefore) {
             console.log("");
             console.log("!!! BUG: Funding changed with zero oracle price !!!");
-            console.log("Premium = TWAP - 0 = TWAP, causing massive funding rate");
+            console.log("Premium = mark - 0 = mark, causing massive funding rate");
         }
     }
 
@@ -570,8 +568,7 @@ contract AuditFindingsTest is BaseTest {
             LIQUIDITY_INDEX,
             TRADE_FEE_BPS,
             FUNDING_MAX_BPS_PER_HOUR,
-            FUNDING_K,
-            OBSERVATION_WINDOW
+            FUNDING_K
         );
 
         vm.prank(admin);

@@ -136,68 +136,6 @@ contract VAMMEdgeCaseTest is BaseTest {
         assertTrue(priceDiff <= tolerance, "Price should return close to equilibrium");
     }
 
-    // ============ TWAP Tests ============
-
-    function test_TWAP_InitiallyZero() public {
-        uint32 window = 3600; // 1 hour
-
-        try vamm.getTwap(window) returns (uint256 twap) {
-            // If observations exist
-            assertTrue(twap >= 0, "TWAP should be non-negative");
-        } catch {
-            // Expected if no observations yet
-            assertTrue(true);
-        }
-    }
-
-    function test_TWAP_AfterSwap() public {
-        fundAndDeposit(alice, 10000 * USDC_UNIT);
-        openLongPosition(alice, ethQty(1), 0);
-
-        // Skip time
-        skipTime(1 hours);
-
-        // Make another swap — pokeFunding takes a new checkpoint here
-        fundAndDeposit(bob, 10000 * USDC_UNIT);
-        openLongPosition(bob, ethQty(1), 0);
-
-        // With two-checkpoint TWAP, need time to elapse after the last
-        // checkpoint (taken during pokeFunding above) before querying.
-        skipTime(1 hours);
-
-        uint32 window = 3600;
-        uint256 twap = vamm.getTwap(window);
-
-        assertTrue(twap > 0, "TWAP should be > 0");
-    }
-
-    function test_TWAP_MultipleObservations() public {
-        fundAndDeposit(alice, 50000 * USDC_UNIT);
-
-        // First swap — initializes the position
-        vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 250 * USDC_UNIT);
-        clearingHouse.openPosition(ETH_PERP, true, ethQty(1), 0);
-        vm.stopPrank();
-
-        // Advance past observationWindow/2 so pokeFunding can take a checkpoint
-        skipTime(1 hours);
-
-        // Second swap triggers pokeFunding which takes a TWAP checkpoint
-        vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 250 * USDC_UNIT);
-        clearingHouse.openPosition(ETH_PERP, true, ethQty(1), 0);
-        vm.stopPrank();
-
-        // Advance again so we can query TWAP from the new checkpoint
-        skipTime(1 hours);
-
-        uint32 window = 30 minutes;
-        uint256 twap = vamm.getTwap(window);
-
-        assertTrue(twap > 0, "TWAP should be calculated");
-    }
-
     // ============ Funding Rate Tests ============
 
     function test_PokeFunding_NoChange() public {

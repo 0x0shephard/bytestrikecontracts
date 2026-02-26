@@ -47,7 +47,6 @@ abstract contract BaseTest is Test {
     uint16 public constant TRADE_FEE_BPS = 10; // 0.1%
     uint256 public constant FUNDING_MAX_BPS_PER_HOUR = 100; // 1%
     uint256 public constant FUNDING_K = 1e18;
-    uint32 public constant OBSERVATION_WINDOW = 3600; // 1 hour
     uint16 public constant FEE_TO_INSURANCE_BPS = 5000; // 50%
 
     // Risk parameters
@@ -110,8 +109,7 @@ abstract contract BaseTest is Test {
             LIQUIDITY_INDEX,
             TRADE_FEE_BPS,
             FUNDING_MAX_BPS_PER_HOUR,
-            FUNDING_K,
-            OBSERVATION_WINDOW
+            FUNDING_K
         );
         ERC1967Proxy vammProxy = new ERC1967Proxy(address(vammImpl), vammInitData);
         vamm = vAMM(address(vammProxy));

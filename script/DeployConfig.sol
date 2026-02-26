@@ -72,7 +72,6 @@ contract DeployConfig is Script {
         uint16 feeBps;              // Trade fee in basis points
         uint256 frMaxBpsPerHour;    // Funding rate clamp per hour
         uint256 kFundingX18;        // Funding scaling factor
-        uint32 observationWindow;   // TWAP window in seconds
         uint16 tradeToFundBps;      // % of trade fees to insurance
         uint16 liqToFundBps;        // % of liq penalties to insurance
     }
@@ -82,7 +81,6 @@ contract DeployConfig is Script {
             feeBps: 10,                    // 0.1% trade fee
             frMaxBpsPerHour: 100,          // 1% max funding rate per hour
             kFundingX18: 1e18,             // 1.0 funding scaling
-            observationWindow: 3600,       // 1 hour TWAP
             tradeToFundBps: 5000,          // 50% of trade fees to insurance
             liqToFundBps: 3000             // 30% of liq penalties to insurance
         });

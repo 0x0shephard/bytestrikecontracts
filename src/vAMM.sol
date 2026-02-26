@@ -9,7 +9,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 
 
 /// @title vAMM (Uniswap v2-style, constant product, no ticks)
-/// @notice Virtual reserves X/Y, fee-on-input swaps, TWAP, and simple admin. CH-only entry.
+/// @notice Virtual reserves X/Y, fee-on-input swaps, funding, and simple admin. CH-only entry.
 contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	using Calculations for uint256;
 
@@ -35,8 +35,6 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	uint16 public feeBps;                // fee on input, in bps
 	uint256 public frMaxBpsPerHour;      // funding clamp per hour (bps)
 	uint256 public kFundingX18;          // funding scaling factor (1e18 = 1.0)
-	uint32 public observationWindow;     // minimum TWAP span for getTwap guard (s)
-
 	// ========= Reserve Protection =========
 	uint256 public minReserveBase;       // Minimum base reserve to prevent depletion (1e18)
 	uint256 public minReserveQuote;      // Minimum quote reserve to prevent depletion (1e18)
@@ -52,18 +50,6 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	/// @notice Maximum allowed price change per resetReserves call (10% = 1000 bps)
 	uint256 public constant MAX_PRICE_CHANGE_BPS = 1000;
 
-	// ========= TWAP (Uniswap V2-style two-checkpoint accumulator) =========
-	/// @dev Running sum of (priceX128 * dt), updated on every swap / accumulate call.
-	uint256 private _priceCumulativeX128;
-	/// @dev Timestamp of the last accumulation into _priceCumulativeX128.
-	uint32 private _lastAccumulateTs;
-	/// @dev Cumulative value captured at the end of the last successful pokeFunding.
-	uint256 private _twapCheckpointCumX128;
-	/// @dev Timestamp of the TWAP checkpoint.
-	uint32 private _twapCheckpointTs;
-	/// @dev Whether the TWAP system has been initialized.
-	bool private _twapInit;
-
 	// ========= Events =========
 	event Initialized(
 		address indexed owner,
@@ -74,7 +60,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	);
 	event Swap(address indexed sender, int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18);
 	event LiquiditySet(uint128 newLiquidity);
-	event ParamsSet(uint16 feeBps, uint256 frMaxBpsPerHour, uint256 kFundingX18, uint32 observationWindow);
+	event ParamsSet(uint16 feeBps, uint256 frMaxBpsPerHour, uint256 kFundingX18);
 	event SwapsPaused(bool paused);
 	event FundingPoked(int256 cumulativeFundingPerUnitX18, uint64 timestamp, int256 fundingRateX18);
 	event OwnerChanged(address indexed newOwner);
@@ -96,7 +82,6 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	/// @param feeBps_ trade fee bps (e.g., 10 = 0.1%).
 	/// @param frMaxBpsPerHour_ funding clamp per hour (bps).
 	/// @param kFundingX18_ funding scaling factor (1e18 = 1.0).
-	/// @param observationWindow_ minimum TWAP span (s).
 	function initialize(
 		address _clearinghouse,
 		address _oracle,
@@ -105,8 +90,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		uint128 liquidity_,
 		uint16 feeBps_,
 		uint256 frMaxBpsPerHour_,
-		uint256 kFundingX18_,
-		uint32 observationWindow_
+		uint256 kFundingX18_
 	) external initializer {
 		require(_clearinghouse != address(0), "CH=0");
 		require(_oracle != address(0), "Oracle=0");
@@ -126,18 +110,10 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		feeBps = feeBps_;
 		frMaxBpsPerHour = frMaxBpsPerHour_;
 		kFundingX18 = kFundingX18_;
-		observationWindow = observationWindow_;
 		lastFundingTimestamp = uint64(block.timestamp);
 
-		// Initialize two-checkpoint TWAP: set running cumulative to 0 at current time
-		_priceCumulativeX128 = 0;
-		_lastAccumulateTs = uint32(block.timestamp);
-		_twapCheckpointCumX128 = 0;
-		_twapCheckpointTs = uint32(block.timestamp);
-		_twapInit = true;
-
 		emit Initialized(owner, clearinghouse, initialPriceX18, reserveBase, reserveQuote);
-		emit ParamsSet(feeBps, frMaxBpsPerHour, kFundingX18, observationWindow);
+		emit ParamsSet(feeBps, frMaxBpsPerHour, kFundingX18);
 		emit LiquiditySet(_liquidity);
 	}
 
@@ -158,8 +134,6 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		uint256 X = reserveBase;
 		uint256 Y = reserveQuote;
 		require(uint256(baseAmount) < X, "insufficient X");
-
-		_accumulatePrice(); // update cumulative before price move
 
 		// Uniswap v2 inverse formula (solve for gross quote in given base out):
 		// inWithFeeScaled = dx * Y * 10000 / (X - dx)
@@ -202,8 +176,6 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(baseAmount > 0, "amount=0");
 		uint256 X = reserveBase;
 		uint256 Y = reserveQuote;
-
-		_accumulatePrice();
 
 		// Uniswap v2 formula (solve for quote out given base in):
 		// out = dy = Y * dx * (10000 - fee) / (X * 10000 + dx * (10000 - fee))
@@ -272,29 +244,6 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		return _liquidity;
 	}
 
-	/// @notice Computes the time-weighted average mark price from the last checkpoint to now.
-	/// @dev Two-checkpoint accumulator (Uniswap V2-style). The checkpoint is updated each
-	///      successful pokeFunding call, so the TWAP naturally covers the funding interval.
-	/// @param window Minimum acceptable span in seconds; defaults to observationWindow when zero.
-	///        Reverts if the actual span since the checkpoint is less than window / 2.
-	/// @return twapX18 TWAP mark price in 1e18 precision.
-	function getTwap(uint32 window) public view returns (uint256) {
-		require(_twapInit, "TWAP: not initialized");
-		if (window == 0) window = observationWindow;
-		require(window > 0, "TWAP: window=0");
-
-		(uint256 cumNow, uint32 tsNow) = _peekCumulative();
-		require(_twapCheckpointTs > 0, "TWAP: no checkpoint");
-		require(tsNow > _twapCheckpointTs, "TWAP: same timestamp");
-
-		uint32 actualSpan = tsNow - _twapCheckpointTs;
-		require(actualSpan >= window / 2, "TWAP: insufficient history");
-
-		uint256 deltaCum = cumNow - _twapCheckpointCumX128;
-		uint256 twapX128 = deltaCum / actualSpan;
-		return (twapX128 * 1e18) >> 128;
-	}
-
 	/// @notice Returns the global fee growth accumulator scaled by 2^128.
 	/// @dev Consumers can use this alongside their liquidity share to compute realized protocol fees.
 	function feeGrowthGlobalX128() external view returns (uint256) {
@@ -322,12 +271,10 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	/// @param feeBps_ New trade fee in basis points (max 3% to match MarketRegistry.MAX_FEE_BPS).
 	/// @param frMaxBpsPerHour_ Maximum allowed funding rate drift per hour in basis points.
 	/// @param kFundingX18_ Funding sensitivity scaling factor.
-	/// @param observationWindow_ Minimum TWAP span in seconds.
 	function setParams(
 		uint16 feeBps_,
 		uint256 frMaxBpsPerHour_,
-		uint256 kFundingX18_,
-		uint32 observationWindow_
+		uint256 kFundingX18_
 	) external onlyOwner {
 		// Settle accumulated funding under current parameters before applying new ones
 		_pokeFundingInternal();
@@ -335,16 +282,13 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		feeBps = feeBps_;
 		frMaxBpsPerHour = frMaxBpsPerHour_;
 		kFundingX18 = kFundingX18_;
-		observationWindow = observationWindow_;
-		emit ParamsSet(feeBps, frMaxBpsPerHour, kFundingX18, observationWindow);
+		emit ParamsSet(feeBps, frMaxBpsPerHour, kFundingX18);
 	}
 
-	/// @notice Updates the cumulative funding index using the latest TWAP and oracle index prices.
+	/// @notice Updates the cumulative funding index using the current mark price and oracle index price.
 	/// @dev Funding rate is clamped by frMaxBpsPerHour and accumulated into _cumulativeFundingPerUnitX18.
 	/// @dev Gracefully handles oracle failures by advancing the timestamp (preventing accumulation of outage time).
 	/// @dev Caps timeElapsed to 1 hour so a single update never covers more than one funding interval.
-	/// @dev After each successful computation, takes a new TWAP checkpoint so the next call
-	///      computes the average over the subsequent interval (Uniswap V2-style two-call pattern).
 	uint256 public constant MAX_FUNDING_ELAPSED = 3600; // 1 hour cap per update
 
 	function pokeFunding() external {
@@ -362,7 +306,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		}
 
 		// Use current spot mark price so funding incentives respond immediately
-		// to skew changes rather than lagging behind a TWAP average.
+		// to skew changes rather than lagging behind an average.
 		uint256 markX18 = getMarkPrice();
 
 		// Safe oracle fetch - skip funding calc if oracle fails or returns zero
@@ -401,12 +345,6 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		_cumulativeFundingPerUnitX18 += fundingRateX18;
 		lastFundingTimestamp = nowTs;
 
-		// Take a new TWAP checkpoint so the next call computes the average
-		// over the interval starting now (two-call pattern).
-		_accumulatePrice();
-		_twapCheckpointCumX128 = _priceCumulativeX128;
-		_twapCheckpointTs = uint32(block.timestamp);
-
 		emit FundingPoked(_cumulativeFundingPerUnitX18, nowTs, fundingRateX18);
 	}
 
@@ -417,11 +355,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		if (paused) {
 			// Flush any accumulated funding under the current price before pausing
 			_pokeFundingInternal();
-			// Snapshot current price into cumulative so pause duration isn't credited later
-			_accumulatePrice();
 		} else {
-			// Reset accumulation timestamp to now so the pause gap is excluded
-			_lastAccumulateTs = uint32(block.timestamp);
 			// Skip the paused interval for funding so it doesn't retroactively accrue
 			lastFundingTimestamp = uint64(block.timestamp);
 		}
@@ -487,39 +421,10 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(newBaseReserve >= minReserveBase, "base < min");
 		require(newQuoteReserve >= minReserveQuote, "quote < min");
 
-		// Snapshot old price into cumulative before changing reserves
-		_accumulatePrice();
-
 		reserveBase = newBaseReserve;
 		reserveQuote = newQuoteReserve;
 
 		emit ReservesReset(newPriceX18, newBaseReserve, newQuoteReserve);
-	}
-
-	// ========= Internal: TWAP accumulation =========
-
-	/// @dev Accumulates the current mark price into the running cumulative.
-	///      Called before every reserve change so the old price is weighted by elapsed time.
-	function _accumulatePrice() internal {
-		uint32 tsNow = uint32(block.timestamp);
-		if (tsNow == _lastAccumulateTs) return;
-
-		uint256 pxX18 = getMarkPrice();
-		uint256 pxX128 = (pxX18 << 128) / 1e18;
-		uint256 dt = tsNow - _lastAccumulateTs;
-
-		_priceCumulativeX128 += pxX128 * dt;
-		_lastAccumulateTs = tsNow;
-	}
-
-	/// @dev Returns the up-to-date cumulative price by simulating an accumulation at the current timestamp.
-	function _peekCumulative() internal view returns (uint256 cum, uint32 tsNow) {
-		tsNow = uint32(block.timestamp);
-		if (_lastAccumulateTs == 0) return (0, tsNow);
-		uint256 pxX18 = getMarkPrice();
-		uint256 pxX128 = (pxX18 << 128) / 1e18;
-		uint256 dt = tsNow - _lastAccumulateTs;
-		cum = _priceCumulativeX128 + pxX128 * dt;
 	}
 
 	// ========= Helpers =========

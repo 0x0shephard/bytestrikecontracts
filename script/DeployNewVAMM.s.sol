@@ -28,7 +28,6 @@ contract DeployNewVAMM is Script {
         uint16 feeBps = 10; // 0.1% fee
         uint256 frMaxBpsPerHour = 100; // 1% max funding per hour
         uint256 kFundingX18 = 1e18; // 1.0 funding coefficient
-        uint32 observationWindow = 3600; // 1 hour TWAP window
         
         console.log("=================================");
         console.log("Deploying New vAMM");
@@ -54,8 +53,7 @@ contract DeployNewVAMM is Script {
             liquidity,
             feeBps,
             frMaxBpsPerHour,
-            kFundingX18,
-            observationWindow
+            kFundingX18
         );
         
         // 3. Deploy proxy

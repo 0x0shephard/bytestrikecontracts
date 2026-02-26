@@ -11,7 +11,6 @@ interface IOracle {
 interface IVAMM {
     function getMarkPrice() external view returns (uint256);
     function oracle() external view returns (address);
-    function getTwap(uint32 window) external view returns (uint256);
 }
 
 /// @title CheckMarketPrices
@@ -39,13 +38,11 @@ contract CheckMarketPrices is Script {
         IVAMM vamm = IVAMM(vammAddress);
         address vammOracle = vamm.oracle();
         uint256 markPrice = vamm.getMarkPrice();
-        uint256 twap = vamm.getTwap(900); // 15 min TWAP
-        
+
         console.log("vAMM Address:", vammAddress);
         console.log("vAMM's Oracle:", vammOracle);
         console.log("Mark Price (wei):", markPrice);
         console.log("Mark Price (USD): $", markPrice / 1e18);
-        console.log("TWAP Price (USD): $", twap / 1e18);
         console.log("");
         
         // Check if they match

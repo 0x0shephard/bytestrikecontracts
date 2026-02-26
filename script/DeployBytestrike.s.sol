@@ -140,8 +140,7 @@ contract DeployBytestrike is Script, DeployConfig {
             vammParams.liquidity,
             tradingParams.feeBps,
             tradingParams.frMaxBpsPerHour,
-            tradingParams.kFundingX18,
-            tradingParams.observationWindow
+            tradingParams.kFundingX18
         );
 
         // Deploy proxy
