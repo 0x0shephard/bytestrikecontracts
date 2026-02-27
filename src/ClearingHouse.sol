@@ -7,16 +7,16 @@ import {IMarketRegistry} from "./Interfaces/IMarketRegistry.sol";
 import {IVAMM} from "./Interfaces/IVAMM.sol";
 import {IOracle} from "./Interfaces/IOracle.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {IInsuranceFund} from "./Interfaces/IInsuranceFund.sol";
 import {IFeeRouter} from "./Interfaces/IFeeRouter.sol";
 
 /// @notice The central contract for managing user positions, margin, and trade settlement for perpetual vAMM markets.
 /// @dev It interacts with various components like the CollateralVault, MarketRegistry, and vAMMs.
-contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, ReentrancyGuard, IClearingHouse {
+contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardTransient, IClearingHouse {
     using Calculations for uint256;
 
     /// @notice Address of the collateral vault contract.
@@ -144,6 +144,8 @@ contract ClearingHouse is Initializable, AccessControl, UUPSUpgradeable, Reentra
         require(_vault != address(0), "CH: invalid vault");
         require(_marketRegistry != address(0), "CH: invalid registry");
         require(admin != address(0), "CH: invalid admin");
+
+        __AccessControl_init();
 
         vault = _vault;
         marketRegistry = _marketRegistry;
