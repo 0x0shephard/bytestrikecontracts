@@ -77,6 +77,7 @@ abstract contract BaseTest is Test {
         weth = new MockERC20("Wrapped Ether", "WETH", 18);
         oracle = new MockOracle(INITIAL_ETH_PRICE, 18);
         oracle.setSymbol("ETH");
+        oracle.setSymbolPrice("USDC", 1e18);
 
         // 2. Deploy core infrastructure
         vault = new CollateralVault();

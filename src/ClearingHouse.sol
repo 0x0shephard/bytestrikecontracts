@@ -1093,17 +1093,9 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         uint256 available;
         {
             uint256 reservedForToken = _reservedMarginForToken(account, quoteToken);
-            uint256 quoteValueX18 = _quoteValueX18(quoteToken, balance);
-            if (quoteValueX18 == 0) {
-                available = 0;
-            } else if (quoteValueX18 <= reservedForToken) {
-                available = 0;
-            } else {
-                uint256 freeX18 = quoteValueX18 - reservedForToken;
-                available = freeX18 >= quoteValueX18
-                    ? balance
-                    : Calculations.mulDiv(balance, freeX18, quoteValueX18);
-            }
+            uint256 baseUnit = ICollateralVault(vault).getConfig(quoteToken).baseUnit;
+            uint256 reservedInTokenUnits = Calculations.mulDivRoundingUp(reservedForToken, baseUnit, 1e18);
+            available = balance > reservedInTokenUnits ? balance - reservedInTokenUnits : 0;
         }
         uint256 seized = amount <= available ? amount : available;
         actualReceived = seized; // Default: internal transfer, no fee

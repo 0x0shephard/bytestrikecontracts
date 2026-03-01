@@ -341,7 +341,8 @@ contract AuditFindingsTest is BaseTest {
     /// @notice Demonstrates liquidation penalty reduction via mark manipulation
     function test_MEDIUM_LiquidationPenaltyManipulation() public {
         // Setup: Alice opens a leveraged position
-        fundAndDeposit(alice, 1000 * USDC_UNIT);
+        // Deposit enough to cover addMargin (500) + auto-allocated IMR (~505) + fee (~10)
+        fundAndDeposit(alice, 2000 * USDC_UNIT);
 
         vm.startPrank(alice);
         clearingHouse.addMargin(ETH_PERP, 500 * USDC_UNIT);
@@ -621,8 +622,10 @@ contract AuditFindingsTest is BaseTest {
         uint256 oracleBefore = oracle.getPrice();
         uint256 markBefore   = getMarkPrice();
 
-        // Give Alice some collateral
-        fundAndDeposit(alice, 5_000 * USDC_UNIT);
+        // Give Alice enough collateral to pass the margin allocation check
+        // (80 ETH * $2000 * 5% = $8000 IMR + ~$148 fee) but the massive price
+        // impact makes the position immediately liquidatable at oracle price.
+        fundAndDeposit(alice, 10_000 * USDC_UNIT);
 
         // Alice opens a LARGE SHORT.
         // This both (a) moves mark down and (b) makes her entry price worse vs oracle.
@@ -646,7 +649,9 @@ contract AuditFindingsTest is BaseTest {
         // Alice deposits collateral and adds EXACTLY enough margin for 1 ETH at current price.
         // The trade's price impact will push the post-trade required margin slightly higher
         // than what she explicitly committed, but the contract must NOT silently pull more.
-        uint256 depositAmount = 10000 * USDC_UNIT;
+        // Deposit enough to cover addMargin (preTradeIMR ~5000) + risk-priced
+        // allocation (~5540 at post-trade mark) + trade fee (~105).
+        uint256 depositAmount = 15000 * USDC_UNIT;
         fundAndDeposit(alice, depositAmount);
 
         // Manually add margin that is sufficient for the pre-trade notional but not post-trade.

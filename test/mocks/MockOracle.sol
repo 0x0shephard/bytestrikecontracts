@@ -9,6 +9,7 @@ contract MockOracle is IOracle {
     uint256 private _price;
     uint8 private _decimals;
     string private _symbol;
+    mapping(string => uint256) private _symbolPrices;
 
     event PriceUpdated(uint256 oldPrice, uint256 newPrice);
 
@@ -23,14 +24,17 @@ contract MockOracle is IOracle {
         emit PriceUpdated(oldPrice, newPrice);
     }
 
+    function setSymbolPrice(string memory sym, uint256 price) external {
+        _symbolPrices[sym] = price;
+    }
+
     function getPrice() external view override returns (uint256) {
-        // Price returned in 1e18 format
         return _price;
     }
 
-    function getPrice(string memory /* symbol */) external view returns (uint256) {
-        // For testing, return same price regardless of symbol
-        // In production, different symbols would have different prices
+    function getPrice(string memory sym) external view returns (uint256) {
+        uint256 p = _symbolPrices[sym];
+        if (p != 0) return p;
         return _price;
     }
 
