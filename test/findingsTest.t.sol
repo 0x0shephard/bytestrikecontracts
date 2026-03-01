@@ -731,4 +731,70 @@ contract AuditFindingsTest is BaseTest {
         // which is a separate, intended mechanism.)
         console.log("GOOD: Insurance fund no longer subsidizes treasury via circular fee routing");
     }
+
+    // ============================================================
+    // Finding: Reserve Boundary Race Condition — buyBase/sellBase
+    // clamp to available capacity instead of reverting
+    // ============================================================
+
+    /// @notice Verify that buyBase clamps to available capacity when reserves
+    /// are near the minimum, instead of reverting and blocking liquidations.
+    function test_BuyBaseClampAtReserveBoundary() public {
+        // Set minimum base reserve close to current reserve so only a small
+        // amount of base can be bought before hitting the floor.
+        (uint256 baseBefore, ) = getReserves();
+        uint256 allowance = 5 ether; // only 5 ETH of capacity
+        vm.prank(admin);
+        vamm.setMinReserves(baseBefore - allowance, 0);
+
+        // Alice deposits and opens a long larger than the available capacity.
+        fundAndDeposit(alice, 500_000 * USDC_UNIT);
+        uint128 requestedSize = ethQty(20); // 20 ETH > 5 ETH available
+
+        vm.startPrank(alice);
+        clearingHouse.addMargin(ETH_PERP, 100_000 * USDC_UNIT);
+        // Should NOT revert — the vAMM clamps to the available 5 ETH.
+        clearingHouse.openPosition(ETH_PERP, true, requestedSize, 0);
+        vm.stopPrank();
+
+        IClearingHouse.PositionView memory pos = getPosition(alice);
+        // Position should be clamped to ~allowance, not the full 20 ETH
+        uint256 absSize = uint256(pos.size > 0 ? pos.size : -pos.size);
+        assertLe(absSize, allowance, "Position should be clamped to available capacity");
+        assertGt(absSize, 0, "Position should be non-zero");
+
+        console.log("Requested:", uint256(requestedSize));
+        console.log("Filled:   ", absSize);
+        console.log("GOOD: buyBase clamped at reserve boundary instead of reverting");
+    }
+
+    /// @notice Verify that sellBase clamps to available capacity when reserves
+    /// are near the minimum quote boundary.
+    function test_SellBaseClampAtReserveBoundary() public {
+        // Set minimum quote reserve close to current reserve.
+        (, uint256 quoteBefore) = getReserves();
+        uint256 allowedQuoteDrain = 5_000 ether; // ~$5000 worth of quote
+        vm.prank(admin);
+        vamm.setMinReserves(0, quoteBefore - allowedQuoteDrain);
+
+        // Alice deposits and opens a large short (sells base into the pool).
+        fundAndDeposit(alice, 500_000 * USDC_UNIT);
+        uint128 requestedSize = ethQty(50); // would drain far more than $5000 quote
+
+        vm.startPrank(alice);
+        clearingHouse.addMargin(ETH_PERP, 200_000 * USDC_UNIT);
+        // Should NOT revert — the vAMM clamps quoteOut to available capacity.
+        clearingHouse.openPosition(ETH_PERP, false, requestedSize, 0);
+        vm.stopPrank();
+
+        IClearingHouse.PositionView memory pos = getPosition(alice);
+        uint256 absSize = uint256(pos.size > 0 ? pos.size : -pos.size);
+        // The position should be smaller than requested because the quote drain was clamped
+        assertLt(absSize, uint256(requestedSize), "Position should be smaller than requested");
+        assertGt(absSize, 0, "Position should be non-zero");
+
+        console.log("Requested:", uint256(requestedSize));
+        console.log("Filled:   ", absSize);
+        console.log("GOOD: sellBase clamped at reserve boundary instead of reverting");
+    }
 }

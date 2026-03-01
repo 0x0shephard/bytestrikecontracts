@@ -144,6 +144,17 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		uint256 Y = reserveQuote;
 		require(uint256(baseAmount) < X, "insufficient X");
 
+		// Clamp to available capacity at the reserve boundary so that
+		// near-boundary trades are partially filled instead of reverting.
+		// This prevents front-running from blocking liquidations.
+		if (minReserveBase > 0) {
+			uint256 available = X > minReserveBase ? X - minReserveBase : 0;
+			require(available > 0, "Reserve base depleted");
+			if (uint256(baseAmount) > available) {
+				baseAmount = uint128(available);
+			}
+		}
+
 		// Uniswap v2 inverse formula (solve for gross quote in given base out):
 		// inWithFeeScaled = dx * Y * 10000 / (X - dx)
 		// grossIn = ceil(inWithFeeScaled / (10000 - feeBps))
@@ -157,11 +168,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		_accrueFunding();
 
 		// Update reserves (v2 style: reserves add gross input, subtract output)
-		uint256 newReserveBase = X - uint256(baseAmount);
-		require(newReserveBase >= minReserveBase, "Reserve base depleted");
-
 		reserveQuote = Y + grossQuoteIn;
-		reserveBase = newReserveBase;
+		reserveBase = X - uint256(baseAmount);
 
 		// Fee accounting
 		uint256 fee = grossQuoteIn - Calculations.mulDiv(grossQuoteIn, 10_000 - feeBps, 10_000);
@@ -196,6 +204,24 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		uint256 denominator = X * 10_000 + grossBaseIn * (10_000 - feeBps);
 		uint256 quoteOut = numerator / denominator;
 
+		// Clamp to available reserve capacity so that near-boundary trades
+		// are partially filled instead of reverting.
+		if (minReserveQuote > 0) {
+			uint256 newReserveQuote = Y - quoteOut;
+			if (newReserveQuote < minReserveQuote) {
+				uint256 maxQuoteOut = Y > minReserveQuote ? Y - minReserveQuote : 0;
+				require(maxQuoteOut > 0, "Reserve quote depleted");
+				quoteOut = maxQuoteOut;
+				// Reverse-solve for the actual base consumed:
+				// quoteOut = Y*dx*f / (X*10000 + dx*f)
+				//   → dx = quoteOut * X * 10000 / (f * (Y - quoteOut))
+				uint256 f = uint256(10_000 - feeBps);
+				grossBaseIn = Calculations.mulDivRoundingUp(maxQuoteOut, X * 10_000, f * minReserveQuote);
+				// Safety: never consume more base than the caller offered
+				if (grossBaseIn > uint256(baseAmount)) grossBaseIn = uint256(baseAmount);
+			}
+		}
+
 		require(quoteOut > 0, "no out");
 
 		avgPriceX18 = Calculations.mulDiv(quoteOut, 1e18, grossBaseIn);
@@ -204,12 +230,9 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		// Accrue funding at current (pre-trade) mark price before reserves change
 		_accrueFunding();
 
-		// Update reserves with protection
-		uint256 newReserveQuote = Y - quoteOut;
-		require(newReserveQuote >= minReserveQuote, "Reserve quote depleted");
-
+		// Update reserves
 		reserveBase = X + grossBaseIn;
-		reserveQuote = newReserveQuote;
+		reserveQuote = Y - quoteOut;
 
 		require(getMarkPrice() > 0, "Mark price zero");
 
