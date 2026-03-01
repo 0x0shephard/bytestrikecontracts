@@ -191,15 +191,15 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
             _settleFundingInternal(markets[i], msg.sender);
         }
 
-        // Ensure reserved margin remains backed by quote-token collateral after withdrawal.
-        // Non-quote tokens don't back margin, so only quote token withdrawals can breach this.
-        uint256 userTotalReserveMargin = _totalReservedMargin[msg.sender];
-        if (userTotalReserveMargin > 0) {
-            uint256 quoteCollateralValue = _getQuoteCollateralValueX18(msg.sender);
-            uint256 withdrawQuoteImpact = _isQuoteTokenInActiveMarkets(msg.sender, token)
-                ? _quoteValueX18(token, amount)
-                : 0;
-            require(quoteCollateralValue >= userTotalReserveMargin + withdrawQuoteImpact, "CH: insufficient quote collateral");
+        // Ensure the withdrawn token's remaining balance still covers all margin
+        // reserved against it.  Each quote token's margin is validated independently
+        // so that a surplus in one token cannot mask a deficit in another.
+        uint256 reservedForToken = _reservedMarginForToken(msg.sender, token);
+        if (reservedForToken > 0) {
+            uint256 balAfter = ICollateralVault(vault).balanceOf(msg.sender, token);
+            require(balAfter >= amount, "CH: insufficient balance");
+            uint256 valueAfter = _quoteValueX18(token, balAfter - amount);
+            require(valueAfter >= reservedForToken, "CH: insufficient quote collateral");
         }
 
         // withdrawFor returns actual received amount (fee-on-transfer support)
@@ -247,8 +247,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         uint256 quoteBalance = ICollateralVault(vault).balanceOf(msg.sender, m.quoteToken);
         uint256 quoteValueX18 = _quoteValueX18(m.quoteToken, quoteBalance);
-        uint256 userTotalReserveMargin = _totalReservedMargin[msg.sender];
-        require(amount <= quoteValueX18 - userTotalReserveMargin, "CH: insufficient quote balance");
+        uint256 reservedForToken = _reservedMarginForToken(msg.sender, m.quoteToken);
+        require(amount <= quoteValueX18 - reservedForToken, "CH: insufficient quote balance");
         positions[msg.sender][marketId].margin += amount;
         _totalReservedMargin[msg.sender] += amount;
         emit MarginAdded(msg.sender, marketId, amount);
@@ -1220,9 +1220,12 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     function _recoverShortfall(address account, bytes32 marketId, uint256 shortfall) internal {
         if (shortfall == 0) return;
 
-        uint256 quoteCollateralValue = _getQuoteCollateralValueX18(account);
-        uint256 freeCollateral = quoteCollateralValue > _totalReservedMargin[account]
-            ? quoteCollateralValue - _totalReservedMargin[account]
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        uint256 quoteBalance = ICollateralVault(vault).balanceOf(account, m.quoteToken);
+        uint256 quoteValueX18 = _quoteValueX18(m.quoteToken, quoteBalance);
+        uint256 reservedForToken = _reservedMarginForToken(account, m.quoteToken);
+        uint256 freeCollateral = quoteValueX18 > reservedForToken
+            ? quoteValueX18 - reservedForToken
             : 0;
         uint256 recovered = shortfall > freeCollateral ? freeCollateral : shortfall;
 
@@ -1319,7 +1322,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         if (amount == 0) return;
         uint256 quoteBalance = ICollateralVault(vault).balanceOf(account, quoteToken);
         uint256 quoteValueX18 = _quoteValueX18(quoteToken, quoteBalance);
-        require(quoteValueX18 >= _totalReservedMargin[account] + amount, "CH: insufficient quote collateral");
+        uint256 reservedForToken = _reservedMarginForToken(account, quoteToken);
+        require(quoteValueX18 >= reservedForToken + amount, "CH: insufficient quote collateral");
     }
 
     /// @notice Oracle-resilient valuation for a quote token amount.
