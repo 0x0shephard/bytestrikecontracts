@@ -784,7 +784,19 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         if (notional == 0) return type(uint256).max;
         int256 unrealizedPnL = _getUnrealizedPnLAtOracle(account, marketId);
         int256 pendingFunding = _getPendingFunding(account, marketId);
-        int256 effectiveMargin = int256(p.margin) + unrealizedPnL + pendingFunding;
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        uint256 marginValue = p.margin;
+        {
+            uint256 reserved = _reservedMarginForToken(account, m.quoteToken);
+            if (reserved > 0) {
+                uint256 vaultBal = ICollateralVault(vault).balanceOf(account, m.quoteToken);
+                uint256 vaultValX18 = _quoteValueX18(m.quoteToken, vaultBal);
+                if (vaultValX18 < reserved) {
+                    marginValue = Calculations.mulDiv(p.margin, vaultValX18, reserved);
+                }
+            }
+        }
+        int256 effectiveMargin = int256(marginValue) + unrealizedPnL + pendingFunding;
         if (effectiveMargin <= 0) return 0;
         return uint256(effectiveMargin).mulDiv(1e18, notional);
     }
@@ -1008,7 +1020,21 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
             uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
             uint256 notional = absS1.mulDiv(imrPrice, 1e18);
             uint256 requiredMargin = notional.mulDiv(imrBps, BPS_DENOMINATOR);
-            require(position.margin >= requiredMargin, "CH: IMR breach");
+
+            // Revalue margin against real collateral so a depegged quote token
+            // cannot mask an IMR breach.
+            uint256 marginValue = position.margin;
+            {
+                uint256 reserved = _reservedMarginForToken(account, m.quoteToken);
+                if (reserved > 0) {
+                    uint256 vaultBal = ICollateralVault(vault).balanceOf(account, m.quoteToken);
+                    uint256 vaultValX18 = _quoteValueX18(m.quoteToken, vaultBal);
+                    if (vaultValX18 < reserved) {
+                        marginValue = Calculations.mulDiv(position.margin, vaultValX18, reserved);
+                    }
+                }
+            }
+            require(marginValue >= requiredMargin, "CH: IMR breach");
 
             // Post-trade health check: ensure position is NOT immediately liquidatable.
             // IMR only checks raw margin vs required margin. But unrealized PnL (from the
@@ -1017,7 +1043,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
             // Use oracle/risk price for consistency with isLiquidatable().
             {
                 int256 unrealizedPnL = _computeUnrealizedPnL(position, oraclePrice);
-                int256 effectiveMargin = int256(position.margin) + unrealizedPnL;
+                int256 effectiveMargin = int256(marginValue) + unrealizedPnL;
                 uint256 riskNotional = absS1.mulDiv(oraclePrice, 1e18);
                 uint256 maintenanceMargin = riskNotional.mulDiv(marketRiskParams[marketId].mmrBps, BPS_DENOMINATOR);
                 require(effectiveMargin >= int256(maintenanceMargin), "CH: immediately liquidatable");
