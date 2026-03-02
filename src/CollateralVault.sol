@@ -181,8 +181,12 @@ contract CollateralVault is ICollateralVault, AccessControl {
         require(amount > 0, "CV: amount=0");
         require(from != address(0) && to != address(0), "CV: zero address");
         require(userBalances[from][token] >= amount, "CV: insufficient balance");
+        CollateralConfig memory cfg = collateralConfigs[token];
         userBalances[from][token] -= amount;
         userBalances[to][token] += amount;
+        if (cfg.accountCap != 0) {
+            require(userBalances[to][token] <= cfg.accountCap, "CV: account cap");
+        }
         emit Seize(from, to, token, amount);
     }
 
