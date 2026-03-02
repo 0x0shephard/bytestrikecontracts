@@ -422,19 +422,6 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     }
 
     /// @notice Internal function to calculate unrealized PnL for a position using mark price.
-    function _getUnrealizedPnL(address account, bytes32 marketId) internal view returns (int256) {
-        PositionView storage position = positions[account][marketId];
-        if (position.size == 0 || position.entryPriceX18 == 0) {
-            return 0;
-        }
-
-        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
-        if (m.vamm == address(0)) return 0;
-
-        uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
-        return _computeUnrealizedPnL(position, markPrice);
-    }
-
     /// @notice Internal function to calculate unrealized PnL for liquidation risk using oracle (index) price.
     function _getUnrealizedPnLAtOracle(address account, bytes32 marketId) internal view returns (int256) {
         PositionView storage position = positions[account][marketId];
