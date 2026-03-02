@@ -70,6 +70,7 @@ contract CollateralVault is ICollateralVault, AccessControl {
     /// Be mindful that changing baseUnit or oracleSymbol affects valuation.
     function registerCollateral(CollateralConfig calldata cfg) external onlyAllowed override {
         require(cfg.token != address(0), "CV: token=0");
+        _validateConfig(cfg);
 
         // Only add to array if this is a new token (prevents duplicates)
         if (collateralConfigs[cfg.token].token == address(0)) {
@@ -95,6 +96,7 @@ contract CollateralVault is ICollateralVault, AccessControl {
     /// @param token Collateral token address to update.
     /// @param cfg New configuration values.
     function setCollateralParams(address token, CollateralConfig calldata cfg) external onlyAllowed override {
+        _validateConfig(cfg);
         if (collateralConfigs[token].token == address(0)) {
             registeredTokens.push(token);
         }
@@ -206,6 +208,14 @@ contract CollateralVault is ICollateralVault, AccessControl {
             userBalances[user][token] -= debit;
         }
         emit PnLSettled(user, token, amount);
+    }
+
+    /// @dev Validate collateral config parameters to prevent division-by-zero
+    /// and underflow in valuation helpers.
+    function _validateConfig(CollateralConfig calldata cfg) internal pure {
+        require(cfg.baseUnit > 0, "CV: baseUnit zero");
+        require(cfg.haircutBps <= 10_000, "CV: haircutBps exceeds max");
+        require(cfg.liqIncentiveBps <= 10_000, "CV: liqIncentiveBps exceeds max");
     }
 
     /////////////////////////////////////////////
