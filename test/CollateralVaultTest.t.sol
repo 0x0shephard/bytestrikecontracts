@@ -30,7 +30,7 @@ contract CollateralVaultTest is BaseTest {
         vm.prank(admin);
         vault.setOracle(newOracle);
 
-        assertEq(vault.getOracle(), newOracle, "Oracle not updated");
+        assertEq(vault.oracle(), newOracle, "Oracle not updated");
     }
 
     function test_RevertWhen_SetOracle_NotAdmin() public {
@@ -49,7 +49,7 @@ contract CollateralVaultTest is BaseTest {
         vm.prank(admin);
         vault.setClearinghouse(newClearinghouse);
 
-        assertEq(vault.getClearinghouse(), newClearinghouse, "Clearinghouse not updated");
+        assertEq(vault.clearinghouse(), newClearinghouse, "Clearinghouse not updated");
     }
 
     function test_RevertWhen_SetClearinghouse_NotAdmin() public {

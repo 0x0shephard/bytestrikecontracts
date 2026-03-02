@@ -221,15 +221,6 @@ contract CollateralVault is ICollateralVault, AccessControl {
     /////////////////////////////////////////////
     //////////External View Functions////////////
     /////////////////////////////////////////////
-    /// @inheritdoc ICollateralVault
-    function getOracle() external view override returns (address) {
-        return oracle;
-    }
-
-    /// @inheritdoc ICollateralVault
-    function getClearinghouse() external view override returns (address) {
-        return clearinghouse;
-    }
 
     /// @notice Get user's internal balance for a token.
     function balanceOf(address user, address token) external view override returns (uint256) {

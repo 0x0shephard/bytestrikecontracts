@@ -42,8 +42,8 @@ contract AuthorizeNewClearingHouse is Script {
         CollateralVault vault = CollateralVault(COLLATERAL_VAULT_NEW);
         vault.setClearinghouse(newClearingHouse);
         console.log("CollateralVault updated to use new ClearingHouse");
-        console.log("Verification:", vault.getClearinghouse());
-        require(vault.getClearinghouse() == newClearingHouse, "Vault authorization failed");
+        console.log("Verification:", vault.clearinghouse());
+        require(vault.clearinghouse() == newClearingHouse, "Vault authorization failed");
         console.log("");
 
         // Step 2: Verify MarketRegistry connection

@@ -78,11 +78,13 @@ interface ICollateralVault {
     // ===== Admin wiring =====
     /// @notice Set the global Oracle used for valuation helpers.
     function setOracle(address oracle) external;
-    function getOracle() external view returns (address);
+    /// @notice Address of the price Oracle used for valuation helpers.
+    function oracle() external view returns (address);
 
     /// @notice Set the Clearinghouse allowed to call outflow functions.
     function setClearinghouse(address clearinghouse) external;
-    function getClearinghouse() external view returns (address);
+    /// @notice Clearinghouse contract allowed to execute outflows.
+    function clearinghouse() external view returns (address);
 
     // ===== Collateral admin =====
     function registerCollateral(CollateralConfig calldata cfg) external;

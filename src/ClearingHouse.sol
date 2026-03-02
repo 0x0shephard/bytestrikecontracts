@@ -1349,7 +1349,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         if (notionalX18 == 0) return 0;
         ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
         uint256 priceX18 = 1e18; // default: assume $1
-        try IOracle(ICollateralVault(vault).getOracle()).getPrice(cfg.oracleSymbol) returns (uint256 p) {
+        try IOracle(ICollateralVault(vault).oracle()).getPrice(cfg.oracleSymbol) returns (uint256 p) {
             if (p > 0) priceX18 = p;
         } catch {}
         return Calculations.mulDivRoundingUp(notionalX18, cfg.baseUnit, priceX18);
@@ -1360,7 +1360,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         if (notionalX18 == 0) return 0;
         ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
         uint256 priceX18 = 1e18;
-        try IOracle(ICollateralVault(vault).getOracle()).getPrice(cfg.oracleSymbol) returns (uint256 p) {
+        try IOracle(ICollateralVault(vault).oracle()).getPrice(cfg.oracleSymbol) returns (uint256 p) {
             if (p > 0) priceX18 = p;
         } catch {}
         return Calculations.mulDiv(notionalX18, cfg.baseUnit, priceX18);
