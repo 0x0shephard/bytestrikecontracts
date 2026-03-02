@@ -682,8 +682,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
             // Pay liquidator from collateral, insurance covers shortfall (up to available balance)
             insurancePayout = 0;
             uint256 uncompensatedBadDebt = 0;
-            uint256 baseUnit = ICollateralVault(vault).getConfig(m.quoteToken).baseUnit;
-            uint256 liqIncentiveInQuote = Calculations.mulDivRoundingUp(liqIncentive, baseUnit, 1e18);
+            uint256 liqIncentiveInQuote = _notionalToQuoteUnits(liqIncentive, m.quoteToken);
             (, uint256 liqShortfall) = _collectQuote(account, msg.sender, m.quoteToken, liqIncentiveInQuote, false);
             if (liqShortfall > 0) {
                 if (m.insuranceFund != address(0)) {
@@ -1093,8 +1092,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         uint256 available;
         {
             uint256 reservedForToken = _reservedMarginForToken(account, quoteToken);
-            uint256 baseUnit = ICollateralVault(vault).getConfig(quoteToken).baseUnit;
-            uint256 reservedInTokenUnits = Calculations.mulDivRoundingUp(reservedForToken, baseUnit, 1e18);
+            uint256 reservedInTokenUnits = _notionalToQuoteUnits(reservedForToken, quoteToken);
             available = balance > reservedInTokenUnits ? balance - reservedInTokenUnits : 0;
         }
         uint256 seized = amount <= available ? amount : available;
@@ -1268,15 +1266,14 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     /// @param realized The realized PnL in 1e18 precision (positive = profit, negative = loss).
     function _settlePnLInVault(address account, bytes32 marketId, int256 realized) internal {
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
-        uint256 baseUnit = ICollateralVault(vault).getConfig(m.quoteToken).baseUnit;
 
         if (realized > 0) {
-            uint256 profitInQuote = Calculations.mulDiv(uint256(realized), baseUnit, 1e18);
+            uint256 profitInQuote = _notionalToQuoteUnitsDown(uint256(realized), m.quoteToken);
             if (profitInQuote > 0) {
                 ICollateralVault(vault).settlePnL(account, m.quoteToken, int256(profitInQuote));
             }
         } else {
-            uint256 lossInQuote = Calculations.mulDivRoundingUp(uint256(-realized), baseUnit, 1e18);
+            uint256 lossInQuote = _notionalToQuoteUnits(uint256(-realized), m.quoteToken);
             if (lossInQuote > 0) {
                 uint256 available = ICollateralVault(vault).balanceOf(account, m.quoteToken);
                 if (lossInQuote > available) {
@@ -1304,10 +1301,9 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     ) internal {
         if (fee == 0 || m.feeRouter == address(0)) return;
 
-        // Convert fee from 1e18 to quote token's native decimals using rounding up
-        // to prevent precision loss for small fees (e.g., USDC with 6 decimals)
-        uint256 baseUnit = ICollateralVault(vault).getConfig(m.quoteToken).baseUnit;
-        uint256 feeInQuoteDecimals = Calculations.mulDivRoundingUp(fee, baseUnit, 1e18);
+        // Convert fee from 1e18 USD notional to quote token's native decimals
+        // using the live oracle price of the quote token.
+        uint256 feeInQuoteDecimals = _notionalToQuoteUnits(fee, m.quoteToken);
 
         
         if (feeInQuoteDecimals == 0) return;
@@ -1359,6 +1355,30 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         }
     }
 
+    /// @dev Convert a 1e18 USD-notional amount to quote-token native units using
+    ///      the live oracle price of the quote token.  Falls back to assuming $1
+    ///      if the oracle reverts or returns 0.
+    function _notionalToQuoteUnits(uint256 notionalX18, address quoteToken) internal view returns (uint256) {
+        if (notionalX18 == 0) return 0;
+        ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
+        uint256 priceX18 = 1e18; // default: assume $1
+        try IOracle(ICollateralVault(vault).getOracle()).getPrice(cfg.oracleSymbol) returns (uint256 p) {
+            if (p > 0) priceX18 = p;
+        } catch {}
+        return Calculations.mulDivRoundingUp(notionalX18, cfg.baseUnit, priceX18);
+    }
+
+    /// @dev Same as _notionalToQuoteUnits but rounds down (for crediting profit).
+    function _notionalToQuoteUnitsDown(uint256 notionalX18, address quoteToken) internal view returns (uint256) {
+        if (notionalX18 == 0) return 0;
+        ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
+        uint256 priceX18 = 1e18;
+        try IOracle(ICollateralVault(vault).getOracle()).getPrice(cfg.oracleSymbol) returns (uint256 p) {
+            if (p > 0) priceX18 = p;
+        } catch {}
+        return Calculations.mulDiv(notionalX18, cfg.baseUnit, priceX18);
+    }
+
     /// @notice Internal function to route liquidation penalties.
     /// @param account The user's address.
     /// @param amount The penalty amount in 1e18 precision.
@@ -1371,10 +1391,9 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     ) internal {
         if (amount == 0 || m.feeRouter == address(0)) return;
 
-        // Convert penalty from 1e18 to quote token's native decimals using rounding up
-        // to prevent precision loss for small amounts (e.g., USDC with 6 decimals)
-        uint256 baseUnit = ICollateralVault(vault).getConfig(m.quoteToken).baseUnit;
-        uint256 penaltyInQuoteDecimals = Calculations.mulDivRoundingUp(amount, baseUnit, 1e18);
+        // Convert penalty from 1e18 USD notional to quote token's native decimals
+        // using the live oracle price of the quote token.
+        uint256 penaltyInQuoteDecimals = _notionalToQuoteUnits(amount, m.quoteToken);
 
         
         if (penaltyInQuoteDecimals == 0) return;

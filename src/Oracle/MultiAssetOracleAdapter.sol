@@ -46,7 +46,7 @@ contract MultiAssetOracleAdapter is IOracle {
 
     /// @inheritdoc IOracle
     /// @notice Returns the price for this adapter's asset in 1e18 format
-    function getPrice() external view override returns (uint256) {
+    function getPrice() public view override returns (uint256) {
         (uint256 price, uint256 updatedAt) = oracle.getPriceData(assetId);
 
         if (price == 0) revert MultiAssetOracleAdapter_PriceZero();
@@ -57,6 +57,11 @@ contract MultiAssetOracleAdapter is IOracle {
         }
 
         return price;
+    }
+
+    /// @inheritdoc IOracle
+    function getPrice(string memory) external view override returns (uint256) {
+        return getPrice();
     }
 
     // --- View Functions ---

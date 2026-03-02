@@ -18,7 +18,10 @@ contract MockOracle is IOracle {
     }
 
     function getPrice() external view override returns (uint256) {
-        // Price returned in 1e18 format
+        return _price;
+    }
+
+    function getPrice(string memory) external view override returns (uint256) {
         return _price;
     }
 

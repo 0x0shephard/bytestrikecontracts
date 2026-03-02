@@ -34,6 +34,11 @@ contract UpdatableETHOracle is IOracle {
         return ethPrice;
     }
 
+    /// @inheritdoc IOracle
+    function getPrice(string memory) external view override returns (uint256) {
+        return ethPrice;
+    }
+
     /// @notice Update the ETH price (owner only)
     /// @param _newPrice New price in 1e18 format (e.g., 3.79e18 for $3.79)
     function updatePrice(uint256 _newPrice) external onlyOwner {

@@ -32,7 +32,7 @@ contract MockOracle is IOracle {
         return _price;
     }
 
-    function getPrice(string memory sym) external view returns (uint256) {
+    function getPrice(string memory sym) external view override returns (uint256) {
         uint256 p = _symbolPrices[sym];
         if (p != 0) return p;
         return _price;

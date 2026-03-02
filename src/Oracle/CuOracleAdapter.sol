@@ -32,10 +32,15 @@ contract CuOracleAdapter is IOracle {
     }
 
     /// @inheritdoc IOracle
-    function getPrice() external view override returns (uint256) {
+    function getPrice() public view override returns (uint256) {
         CuOracle.PriceData memory data = cuOracle.getLatestPrice(assetId);
         if (data.price == 0) revert CuOracleAdapter_PriceZero();
         if (maxAge != 0 && block.timestamp - data.lastUpdatedAt > maxAge) revert CuOracleAdapter_PriceStale();
         return data.price;
+    }
+
+    /// @inheritdoc IOracle
+    function getPrice(string memory) external view override returns (uint256) {
+        return getPrice();
     }
 }

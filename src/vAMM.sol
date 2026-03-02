@@ -100,6 +100,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(initialBaseReserve > 0, "baseRes=0");
 		require(liquidity_ > 0, "L=0");
 		require(feeBps_ <= 300, "Fee too high");
+		require(frMaxBpsPerHour_ > 0, "frMax=0");
+		require(kFundingX18_ > 0, "kFunding=0");
 
 		owner = msg.sender;
 		clearinghouse = _clearinghouse;
@@ -362,6 +364,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		// Settle accumulated funding under current parameters before applying new ones
 		_pokeFundingInternal();
 		require(feeBps_ <= 300, "Fee too high"); // Max 3% (matches MarketRegistry.MAX_FEE_BPS)
+		require(frMaxBpsPerHour_ > 0, "frMax=0");
+		require(kFundingX18_ > 0, "kFunding=0");
 		feeBps = feeBps_;
 		frMaxBpsPerHour = frMaxBpsPerHour_;
 		kFundingX18 = kFundingX18_;

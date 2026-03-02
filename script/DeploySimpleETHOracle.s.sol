@@ -15,6 +15,10 @@ contract SimpleETHOracle is IOracle {
     function getPrice() external pure override returns (uint256) {
         return ETH_PRICE;
     }
+
+    function getPrice(string memory) external pure override returns (uint256) {
+        return ETH_PRICE;
+    }
 }
 
 interface IVAMM {
