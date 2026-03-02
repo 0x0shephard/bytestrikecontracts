@@ -107,6 +107,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 		reserveBase = initialBaseReserve;
 		reserveQuote = Calculations.mulDiv(initialBaseReserve, initialPriceX18, 1e18);
+		require(reserveQuote > 0, "quote=0");
+		require(getMarkPrice() > 0, "mark price=0");
 
 		_liquidity = liquidity_;
 		feeBps = feeBps_;
@@ -503,6 +505,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		// Calculate new quote reserve: Y = X * Price
 		uint256 newQuoteReserve = Calculations.mulDiv(newBaseReserve, newPriceX18, 1e18);
 		require(newQuoteReserve > 0, "quote=0");
+		require(Calculations.mulDiv(newQuoteReserve, 1e18, newBaseReserve) > 0, "mark price=0");
 
 		// Ensure new reserves meet minimum requirements
 		require(newBaseReserve >= minReserveBase, "base < min");
