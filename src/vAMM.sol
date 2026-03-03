@@ -41,7 +41,10 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 	uint128 private _liquidity;          // accounting denominator for fee growth (not price impacting)
 	uint256 private _feeGrowthGlobalX128;
-	int256 private _cumulativeFundingPerUnitX18;
+	int256 private _cumulativeFundingLongPerUnitX18;
+	int256 private _cumulativeFundingShortPerUnitX18;
+	uint256 public totalLongOI;
+	uint256 public totalShortOI;
 	uint64  public lastFundingTimestamp;
 
 	bool public swapsPaused;
@@ -64,7 +67,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	event LiquiditySet(uint128 newLiquidity);
 	event ParamsSet(uint16 feeBps, uint256 frMaxBpsPerHour, uint256 kFundingX18);
 	event SwapsPaused(bool paused);
-	event FundingPoked(int256 cumulativeFundingPerUnitX18, uint64 timestamp, int256 fundingRateX18);
+	event FundingPoked(int256 cumulativeFundingLongPerUnitX18, int256 cumulativeFundingShortPerUnitX18, uint64 timestamp, int256 fundingRateX18);
 	event OwnerChanged(address indexed newOwner);
 	event ClearinghouseChanged(address indexed newCH);
 	event OracleChanged(address indexed newOracle);
@@ -292,27 +295,23 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		return _feeGrowthGlobalX128;
 	}
 
-	/// @notice Returns the stored cumulative funding index per unit position size.
-	/// @dev Does not include funding for time elapsed since lastFundingTimestamp.
-	/// Use currentCumulativeFundingPerUnitX18() for a real-time view.
-	function cumulativeFundingPerUnitX18() external view returns (int256) {
-		return _cumulativeFundingPerUnitX18;
+	/// @notice Returns the stored cumulative funding index for long positions.
+	function cumulativeFundingLongPerUnitX18() external view returns (int256) {
+		return _cumulativeFundingLongPerUnitX18;
 	}
 
-	/// @notice Returns the real-time cumulative funding index including pending accrual.
-	/// @dev Simulates what _accrueFunding() would produce for the elapsed time since
-	/// lastFundingTimestamp, without modifying state. Used by off-chain callers and
-	/// view functions that need accurate funding without a preceding transaction.
-	function currentCumulativeFundingPerUnitX18() external view returns (int256) {
-		if (swapsPaused || _cachedIndexPriceX18 == 0) {
-			return _cumulativeFundingPerUnitX18;
-		}
+	/// @notice Returns the stored cumulative funding index for short positions.
+	function cumulativeFundingShortPerUnitX18() external view returns (int256) {
+		return _cumulativeFundingShortPerUnitX18;
+	}
+
+	/// @dev Computes the raw funding rate for the elapsed period (view helper).
+	function _computeFundingRate() internal view returns (int256 fundingRateX18) {
+		if (swapsPaused || _cachedIndexPriceX18 == 0) return 0;
 
 		uint64 nowTs = uint64(block.timestamp);
 		uint64 lastTs = lastFundingTimestamp;
-		if (nowTs <= lastTs) {
-			return _cumulativeFundingPerUnitX18;
-		}
+		if (nowTs <= lastTs) return 0;
 
 		uint256 markX18 = getMarkPrice();
 		uint256 indexPriceX18 = _cachedIndexPriceX18;
@@ -323,7 +322,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		}
 
 		int256 premiumX18 = int256(markX18) - int256(indexPriceX18);
-		int256 fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (24 * 3600 * 1e18);
+		fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (24 * 3600 * 1e18);
 
 		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (3600 * 10000);
 		if (fundingRateX18 > 0 && uint256(fundingRateX18) > maxRateAbs) {
@@ -332,8 +331,36 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		if (fundingRateX18 < 0 && uint256(-fundingRateX18) > maxRateAbs) {
 			fundingRateX18 = -int256(maxRateAbs);
 		}
+	}
 
-		return _cumulativeFundingPerUnitX18 + fundingRateX18;
+	/// @notice Returns the real-time cumulative funding index for longs including pending accrual.
+	function currentCumulativeFundingLongPerUnitX18() external view returns (int256) {
+		int256 fundingRateX18 = _computeFundingRate();
+		if (fundingRateX18 == 0 || totalLongOI == 0 || totalShortOI == 0) {
+			return _cumulativeFundingLongPerUnitX18;
+		}
+		if (fundingRateX18 > 0) {
+			// Longs pay: full rate
+			return _cumulativeFundingLongPerUnitX18 + fundingRateX18;
+		} else {
+			// Shorts pay longs: scaled by OI ratio
+			return _cumulativeFundingLongPerUnitX18 + (fundingRateX18 * int256(totalShortOI)) / int256(totalLongOI);
+		}
+	}
+
+	/// @notice Returns the real-time cumulative funding index for shorts including pending accrual.
+	function currentCumulativeFundingShortPerUnitX18() external view returns (int256) {
+		int256 fundingRateX18 = _computeFundingRate();
+		if (fundingRateX18 == 0 || totalLongOI == 0 || totalShortOI == 0) {
+			return _cumulativeFundingShortPerUnitX18;
+		}
+		if (fundingRateX18 > 0) {
+			// Longs pay shorts: scaled by OI ratio
+			return _cumulativeFundingShortPerUnitX18 + (fundingRateX18 * int256(totalLongOI)) / int256(totalShortOI);
+		} else {
+			// Shorts pay: full rate
+			return _cumulativeFundingShortPerUnitX18 + fundingRateX18;
+		}
 	}
 
 	/// @notice Returns the cached oracle index price used for continuous funding accrual.
@@ -373,7 +400,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	}
 
 	/// @notice Updates the cumulative funding index using the current mark price and oracle index price.
-	/// @dev Funding rate is clamped by frMaxBpsPerHour and accumulated into _cumulativeFundingPerUnitX18.
+	/// @dev Funding rate is clamped by frMaxBpsPerHour and accumulated into the long/short cumulative indices.
 	/// @dev Gracefully handles oracle failures by advancing the timestamp (preventing accumulation of outage time).
 	/// @dev Caps timeElapsed to 1 hour so a single update never covers more than one funding interval.
 	uint256 public constant MAX_FUNDING_ELAPSED = 3600; // 1 hour cap per update
@@ -384,7 +411,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 	/// @dev Accrue funding for the elapsed period using current mark price and cached oracle price.
 	/// Called before every reserve change to make the cumulative index a true time-integral.
-	/// No external oracle call — uses the cached value to keep swap gas costs low.
+	/// Uses two separate indices scaled by OI ratio so total paid == total received.
 	function _accrueFunding() internal {
 		if (swapsPaused) return;
 
@@ -392,6 +419,12 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		uint64 lastTs = lastFundingTimestamp;
 		if (nowTs <= lastTs) return;
 		if (_cachedIndexPriceX18 == 0) return;
+
+		// Skip accrual if either side has no OI (nothing to balance)
+		if (totalLongOI == 0 || totalShortOI == 0) {
+			lastFundingTimestamp = nowTs;
+			return;
+		}
 
 		uint256 markX18 = getMarkPrice();
 		uint256 indexPriceX18 = _cachedIndexPriceX18;
@@ -412,7 +445,16 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 			fundingRateX18 = -int256(maxRateAbs);
 		}
 
-		_cumulativeFundingPerUnitX18 += fundingRateX18;
+		if (fundingRateX18 > 0) {
+			// Longs pay shorts
+			_cumulativeFundingLongPerUnitX18 += fundingRateX18;
+			_cumulativeFundingShortPerUnitX18 += (fundingRateX18 * int256(totalLongOI)) / int256(totalShortOI);
+		} else if (fundingRateX18 < 0) {
+			// Shorts pay longs
+			_cumulativeFundingShortPerUnitX18 += fundingRateX18;
+			_cumulativeFundingLongPerUnitX18 += (fundingRateX18 * int256(totalShortOI)) / int256(totalLongOI);
+		}
+
 		lastFundingTimestamp = nowTs;
 	}
 
@@ -421,7 +463,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		if (swapsPaused) return;
 
 		// Snapshot cumulative before accrual to compute the delta for the event
-		int256 cumBefore = _cumulativeFundingPerUnitX18;
+		int256 cumLongBefore = _cumulativeFundingLongPerUnitX18;
 
 		// Accrue any pending funding at the current cached oracle price
 		_accrueFunding();
@@ -433,7 +475,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 			// Keep old cached price; timestamp already advanced by _accrueFunding
 		}
 
-		emit FundingPoked(_cumulativeFundingPerUnitX18, uint64(block.timestamp), _cumulativeFundingPerUnitX18 - cumBefore);
+		emit FundingPoked(_cumulativeFundingLongPerUnitX18, _cumulativeFundingShortPerUnitX18, uint64(block.timestamp), _cumulativeFundingLongPerUnitX18 - cumLongBefore);
 	}
 
 	/// @notice Toggles the swap execution flag, enabling or disabling all trading through the vAMM.
@@ -449,6 +491,14 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		}
 		swapsPaused = paused;
 		emit SwapsPaused(paused);
+	}
+
+	/// @notice Updates open interest from ClearingHouse for balanced funding scaling.
+	/// @param longOI Total long open interest.
+	/// @param shortOI Total short open interest.
+	function updateOpenInterest(uint256 longOI, uint256 shortOI) external onlyCH {
+		totalLongOI = longOI;
+		totalShortOI = shortOI;
 	}
 
 	/// @notice Updates the clearinghouse contract authorized to interact with the vAMM.

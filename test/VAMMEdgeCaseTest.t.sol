@@ -37,7 +37,7 @@ contract VAMMEdgeCaseTest is BaseTest {
     }
 
     function test_GetCumulativeFunding() public view {
-        int256 cumulativeFunding = vamm.cumulativeFundingPerUnitX18();
+        int256 cumulativeFunding = vamm.cumulativeFundingLongPerUnitX18();
         assertEq(cumulativeFunding, 0, "Initial cumulative funding should be 0");
     }
 
@@ -149,9 +149,9 @@ contract VAMMEdgeCaseTest is BaseTest {
 
         skipTime(1 hours);
 
-        int256 fundingBefore = vamm.cumulativeFundingPerUnitX18();
+        int256 fundingBefore = vamm.cumulativeFundingLongPerUnitX18();
         vamm.pokeFunding();
-        int256 fundingAfter = vamm.cumulativeFundingPerUnitX18();
+        int256 fundingAfter = vamm.cumulativeFundingLongPerUnitX18();
 
         // Funding should change (or stay same if mark = index)
         assertTrue(true); // Just verify no revert
@@ -177,9 +177,9 @@ contract VAMMEdgeCaseTest is BaseTest {
         try clearingHouse.openPosition(ETH_PERP, true, ethQty(150), 0) {
             skipTime(1 hours);
 
-            int256 fundingBefore = vamm.cumulativeFundingPerUnitX18();
+            int256 fundingBefore = vamm.cumulativeFundingLongPerUnitX18();
             vamm.pokeFunding();
-            int256 fundingAfter = vamm.cumulativeFundingPerUnitX18();
+            int256 fundingAfter = vamm.cumulativeFundingLongPerUnitX18();
 
             // Funding change should be clamped
             int256 fundingChange = fundingAfter - fundingBefore;
@@ -232,7 +232,7 @@ contract VAMMEdgeCaseTest is BaseTest {
         vamm.getMarkPrice();
         vamm.getLiquidity();
         vamm.feeGrowthGlobalX128();
-        vamm.cumulativeFundingPerUnitX18();
+        vamm.cumulativeFundingLongPerUnitX18();
     }
 
     // ============ Reserve Boundary Tests ============

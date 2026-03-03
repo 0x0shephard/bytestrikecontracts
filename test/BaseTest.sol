@@ -347,9 +347,9 @@ abstract contract BaseTest is Test {
         return vamm.getReserves();
     }
 
-    /// @notice Get cumulative funding rate
+    /// @notice Get cumulative funding rate (long side)
     function getCumulativeFunding() public view returns (int256) {
-        return vamm.cumulativeFundingPerUnitX18();
+        return vamm.cumulativeFundingLongPerUnitX18();
     }
 
     /// @notice Assert position size

@@ -56,6 +56,11 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     /// @notice Total uncompensated bad debt accumulated across all liquidations
     uint256 public totalBadDebt;
 
+    /// @notice Total long open interest per market (base units, 1e18).
+    mapping(bytes32 marketId => uint256) public totalLongOI;
+    /// @notice Total short open interest per market (base units, 1e18).
+    mapping(bytes32 marketId => uint256) public totalShortOI;
+
     /// @notice Set of legacy vaults from prior migrations, allowing users to withdraw stranded balances.
     mapping(address => bool) public legacyVaults;
 
@@ -449,7 +454,13 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         // Use real-time cumulative index (includes pending accrual for elapsed time)
         // so that view functions like isLiquidatable and getMarginRatio reflect
         // accurate funding without requiring a preceding pokeFunding transaction.
-        int256 currentIndex = IVAMM(m.vamm).currentCumulativeFundingPerUnitX18();
+        // Select the direction-appropriate index.
+        int256 currentIndex;
+        if (position.size > 0) {
+            currentIndex = IVAMM(m.vamm).currentCumulativeFundingLongPerUnitX18();
+        } else {
+            currentIndex = IVAMM(m.vamm).currentCumulativeFundingShortPerUnitX18();
+        }
         int256 deltaIndex = currentIndex - position.lastFundingIndex;
         if (deltaIndex == 0) return 0;
 
@@ -828,10 +839,16 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         vamm.pokeFunding();
 
         PositionView storage position = positions[account][marketId];
-        int256 currentIndex = vamm.cumulativeFundingPerUnitX18();
 
-        if (position.size == 0) {
-            position.lastFundingIndex = currentIndex;
+        // Select direction-appropriate cumulative funding index
+        int256 currentIndex;
+        if (position.size > 0) {
+            currentIndex = vamm.cumulativeFundingLongPerUnitX18();
+        } else if (position.size < 0) {
+            currentIndex = vamm.cumulativeFundingShortPerUnitX18();
+        } else {
+            // No position — just store zero-side index for next open
+            position.lastFundingIndex = 0;
             return;
         }
 
@@ -917,6 +934,29 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
 
         position.size = s1;
         position.realizedPnL += realized;
+
+        // === Update open interest and push to vAMM for balanced funding ===
+        {
+            uint256 oldLong = s0 > 0 ? uint256(s0) : 0;
+            uint256 newLong = s1 > 0 ? uint256(s1) : 0;
+            uint256 oldShort = s0 < 0 ? uint256(-s0) : 0;
+            uint256 newShort = s1 < 0 ? uint256(-s1) : 0;
+            totalLongOI[marketId] = totalLongOI[marketId] - oldLong + newLong;
+            totalShortOI[marketId] = totalShortOI[marketId] - oldShort + newShort;
+            IMarketRegistry.Market memory mOI = IMarketRegistry(marketRegistry).getMarket(marketId);
+            IVAMM(mOI.vamm).updateOpenInterest(totalLongOI[marketId], totalShortOI[marketId]);
+        }
+
+        // Reset lastFundingIndex when position direction changes
+        {
+            IMarketRegistry.Market memory mFI = IMarketRegistry(marketRegistry).getMarket(marketId);
+            IVAMM vammFI = IVAMM(mFI.vamm);
+            if (s1 > 0 && s0 <= 0) {
+                position.lastFundingIndex = vammFI.cumulativeFundingLongPerUnitX18();
+            } else if (s1 < 0 && s0 >= 0) {
+                position.lastFundingIndex = vammFI.cumulativeFundingShortPerUnitX18();
+            }
+        }
 
         // Track active markets for withdrawal checks
         if (s0 == 0 && s1 != 0) {

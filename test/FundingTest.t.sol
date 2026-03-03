@@ -9,9 +9,24 @@ import {console} from "forge-std/Test.sol";
 /// @title FundingTest
 /// @notice Tests for funding rate mechanism
 contract FundingTest is BaseTest {
+    address public counterparty;
 
     function setUp() public override {
         super.setUp();
+        counterparty = makeAddr("counterparty");
+    }
+
+    /// @dev Opens a small counterparty position on the opposite side so both OI sides are non-zero.
+    /// This is required after the balanced funding change: if either side has zero OI, funding
+    /// doesn't accrue (since there's nobody to receive).
+    function _ensureCounterpartyShort(uint128 size) internal {
+        fundAndDeposit(counterparty, 100_000 * USDC_UNIT);
+        openShortPosition(counterparty, size, 0);
+    }
+
+    function _ensureCounterpartyLong(uint128 size) internal {
+        fundAndDeposit(counterparty, 100_000 * USDC_UNIT);
+        openLongPosition(counterparty, size, 0);
     }
 
     // ============ Basic Funding Tests ============
@@ -39,6 +54,7 @@ contract FundingTest is BaseTest {
 
         fundAndDeposit(alice, depositAmount);
         openLongPosition(alice, size, 0);
+        _ensureCounterpartyShort(size);
 
         int256 fundingBefore = getCumulativeFunding();
 
@@ -142,6 +158,7 @@ contract FundingTest is BaseTest {
         // Open large long to push mark price up
         fundAndDeposit(alice, depositAmount);
         openLongPosition(alice, largeSize, 0);
+        _ensureCounterpartyShort(ethQty(1));
 
         uint256 markPrice = getMarkPrice();
         uint256 indexPrice = oracle.getPrice();
@@ -256,6 +273,7 @@ contract FundingTest is BaseTest {
 
         fundAndDeposit(alice, depositAmount);
         openLongPosition(alice, size, 0);
+        _ensureCounterpartyShort(size);
 
         // Change oracle price to create mark-index divergence
         setOraclePrice(2100 * PRICE_PRECISION);
@@ -372,6 +390,8 @@ contract FundingTest is BaseTest {
 
         // Open initial position to create mark != index
         openLongPosition(alice, ethQty(10), 0);
+        // Ensure short OI exists so funding can accrue
+        _ensureCounterpartyShort(ethQty(1));
 
         // Skip time so funding can accrue
         skipTime(30 minutes);
@@ -402,6 +422,9 @@ contract FundingTest is BaseTest {
 
         // Push mark above index with a large long
         openLongPosition(alice, ethQty(10), 0);
+        // Ensure short OI exists so funding accrues in the first period
+        _ensureCounterpartyShort(ethQty(1));
+
         uint256 markHigh = getMarkPrice();
         uint256 indexPrice = oracle.getPrice();
         assertTrue(markHigh > indexPrice, "mark should be above index");
@@ -558,6 +581,7 @@ contract FundingTest is BaseTest {
 
         fundAndDeposit(alice, depositAmount);
         openLongPosition(alice, ethQty(10), 0);
+        _ensureCounterpartyShort(ethQty(1));
 
         skipTime(1 hours);
 
@@ -578,6 +602,7 @@ contract FundingTest is BaseTest {
 
         fundAndDeposit(alice, depositAmount);
         openLongPosition(alice, ethQty(10), 0);
+        _ensureCounterpartyShort(ethQty(1));
 
         skipTime(1 hours);
 

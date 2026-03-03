@@ -41,11 +41,26 @@ interface IVAMM {
     /// @notice Global fee growth index per unit liquidity in Q128 (for LP accounting).
     function feeGrowthGlobalX128() external view returns (uint256);
 
-    /// @notice Stored cumulative funding per unit (1e18) since inception (signed).
-    function cumulativeFundingPerUnitX18() external view returns (int256);
+    /// @notice Stored cumulative funding index for long positions (1e18) since inception (signed).
+    function cumulativeFundingLongPerUnitX18() external view returns (int256);
 
-    /// @notice Real-time cumulative funding including pending accrual for elapsed time.
-    function currentCumulativeFundingPerUnitX18() external view returns (int256);
+    /// @notice Stored cumulative funding index for short positions (1e18) since inception (signed).
+    function cumulativeFundingShortPerUnitX18() external view returns (int256);
+
+    /// @notice Real-time cumulative funding for longs including pending accrual for elapsed time.
+    function currentCumulativeFundingLongPerUnitX18() external view returns (int256);
+
+    /// @notice Real-time cumulative funding for shorts including pending accrual for elapsed time.
+    function currentCumulativeFundingShortPerUnitX18() external view returns (int256);
+
+    /// @notice Push open interest from ClearingHouse to vAMM for balanced funding scaling.
+    function updateOpenInterest(uint256 longOI, uint256 shortOI) external;
+
+    /// @notice Total long open interest tracked for funding scaling.
+    function totalLongOI() external view returns (uint256);
+
+    /// @notice Total short open interest tracked for funding scaling.
+    function totalShortOI() external view returns (uint256);
 
     /// @notice Cached oracle index price used for continuous funding accrual.
     function cachedIndexPrice() external view returns (uint256);

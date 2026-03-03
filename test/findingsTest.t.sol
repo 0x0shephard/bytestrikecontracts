@@ -536,12 +536,12 @@ contract AuditFindingsTest is BaseTest {
         console.log("Mark Price:", markPrice);
         console.log("Index price from oracle:", zeroOracle.getPrice());
 
-        int256 fundingBefore = zeroOracleVamm.cumulativeFundingPerUnitX18();
+        int256 fundingBefore = zeroOracleVamm.cumulativeFundingLongPerUnitX18();
 
         // This should handle zero gracefully but doesn't
         zeroOracleVamm.pokeFunding();
 
-        int256 fundingAfter = zeroOracleVamm.cumulativeFundingPerUnitX18();
+        int256 fundingAfter = zeroOracleVamm.cumulativeFundingLongPerUnitX18();
 
         console.log("Cumulative funding before:");
         console.logInt(fundingBefore);
@@ -796,5 +796,70 @@ contract AuditFindingsTest is BaseTest {
         console.log("Requested:", uint256(requestedSize));
         console.log("Filled:   ", absSize);
         console.log("GOOD: sellBase clamped at reserve boundary instead of reverting");
+    }
+
+    // ============================================================
+    // Balanced Funding with Asymmetric Open Interest
+    // ============================================================
+
+    /// @notice Verify that with asymmetric OI the total funding paid by one side
+    /// equals the total received by the other side.
+    function test_BalancedFundingWithAsymmetricOI() public {
+        // 1. Alice opens 10 ETH long, Bob opens 5 ETH short
+        fundAndDeposit(alice, 100_000 * USDC_UNIT);
+        fundAndDeposit(bob, 100_000 * USDC_UNIT);
+
+        uint128 aliceSize = ethQty(10);
+        uint128 bobSize = ethQty(5);
+
+        vm.startPrank(alice);
+        clearingHouse.addMargin(ETH_PERP, 50_000 * USDC_UNIT);
+        clearingHouse.openPosition(ETH_PERP, true, aliceSize, 0);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        clearingHouse.addMargin(ETH_PERP, 50_000 * USDC_UNIT);
+        clearingHouse.openPosition(ETH_PERP, false, bobSize, 0);
+        vm.stopPrank();
+
+        // Record margins before funding
+        uint256 aliceMarginBefore = clearingHouse.getPosition(alice, ETH_PERP).margin;
+        uint256 bobMarginBefore = clearingHouse.getPosition(bob, ETH_PERP).margin;
+
+        // 2. Advance time and accrue funding (mark > index → longs pay)
+        skipTime(1 hours);
+
+        // 3. Settle funding for both
+        clearingHouse.settleFunding(ETH_PERP, alice);
+        clearingHouse.settleFunding(ETH_PERP, bob);
+
+        uint256 aliceMarginAfter = clearingHouse.getPosition(alice, ETH_PERP).margin;
+        uint256 bobMarginAfter = clearingHouse.getPosition(bob, ETH_PERP).margin;
+
+        // Compute funding changes
+        // Alice (long) should pay (margin decreases) when mark > index
+        // Bob (short) should receive (margin increases)
+        int256 aliceFundingChange = int256(aliceMarginAfter) - int256(aliceMarginBefore);
+        int256 bobFundingChange = int256(bobMarginAfter) - int256(bobMarginBefore);
+
+        console.log("=== Balanced Funding Test ===");
+        console.log("Alice margin before:", aliceMarginBefore);
+        console.log("Alice margin after:", aliceMarginAfter);
+        console.logInt(aliceFundingChange);
+        console.log("Bob margin before:", bobMarginBefore);
+        console.log("Bob margin after:", bobMarginAfter);
+        console.logInt(bobFundingChange);
+
+        // 4. Assert: total paid by alice == total received by bob (within rounding)
+        // aliceFundingChange + bobFundingChange should be ~0
+        int256 netFunding = aliceFundingChange + bobFundingChange;
+        console.log("Net funding (should be ~0):");
+        console.logInt(netFunding);
+
+        // Allow 1 wei of rounding error per unit
+        uint256 absNet = netFunding >= 0 ? uint256(netFunding) : uint256(-netFunding);
+        assertLe(absNet, 2, "Funding should be balanced: total paid == total received");
+
+        console.log("GOOD: Funding is balanced with asymmetric OI");
     }
 }
