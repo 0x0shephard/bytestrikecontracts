@@ -25,6 +25,7 @@ contract CollateralVault is ICollateralVault, AccessControl {
     address public oracle;
     /// @notice Clearinghouse contract allowed to execute outflows.
     address public clearinghouse;
+    uint256 public constant BPS_DENOMINATOR = 10_000;
     /// @notice Per-token configuration keyed by token address.
     mapping(address token => CollateralConfig) public collateralConfigs;
     /// @notice Per-user balances for each token held in the vault.
@@ -214,8 +215,8 @@ contract CollateralVault is ICollateralVault, AccessControl {
     /// and underflow in valuation helpers.
     function _validateConfig(CollateralConfig calldata cfg) internal pure {
         require(cfg.baseUnit > 0, "CV: baseUnit zero");
-        require(cfg.haircutBps <= 10_000, "CV: haircutBps exceeds max");
-        require(cfg.liqIncentiveBps <= 10_000, "CV: liqIncentiveBps exceeds max");
+        require(cfg.haircutBps <= BPS_DENOMINATOR, "CV: haircutBps exceeds max");
+        require(cfg.liqIncentiveBps <= BPS_DENOMINATOR, "CV: liqIncentiveBps exceeds max");
     }
 
     /////////////////////////////////////////////
@@ -244,7 +245,7 @@ contract CollateralVault is ICollateralVault, AccessControl {
         // Normalize by base unit and apply haircut (mulDiv avoids uint256 overflow)
         usdX18 = Calculations.mulDiv(pxX18, amount, cfg.baseUnit);
         if (cfg.haircutBps != 0) {
-            usdX18 = Calculations.mulDiv(usdX18, 10_000 - cfg.haircutBps, 10_000);
+            usdX18 = Calculations.mulDiv(usdX18, BPS_DENOMINATOR - cfg.haircutBps, BPS_DENOMINATOR);
         }
     }
 
@@ -263,7 +264,7 @@ contract CollateralVault is ICollateralVault, AccessControl {
 
             uint256 v = Calculations.mulDiv(pxX18, bal, cfg.baseUnit);
             if (cfg.haircutBps != 0) {
-                v = Calculations.mulDiv(v, 10_000 - cfg.haircutBps, 10_000);
+                v = Calculations.mulDiv(v, BPS_DENOMINATOR - cfg.haircutBps, BPS_DENOMINATOR);
             }
             usdX18 += v;
         }

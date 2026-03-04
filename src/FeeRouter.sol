@@ -13,6 +13,8 @@ import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step
 contract FeeRouter is IFeeRouter, Ownable2Step {
 	using SafeERC20 for IERC20;
 
+	uint256 public constant BPS_DENOMINATOR = 10_000;
+
 	address public immutable quoteToken;    // ERC20 this router handles
 	address public clearinghouse;           // single CH allowed to call hooks
 	address public insuranceFund;           // destination for fund share
@@ -53,7 +55,7 @@ contract FeeRouter is IFeeRouter, Ownable2Step {
 		require(_insuranceFund != address(0), "FR: fund=0");
 		require(_treasuryAdmin != address(0), "FR: treasury admin=0");
 		require(_clearinghouse != address(0), "FR: CH=0");
-		require(_tradeToFundBps <= 10_000 && _liqToFundBps <= 10_000, "FR: bps>1e4");
+		require(_tradeToFundBps <= BPS_DENOMINATOR && _liqToFundBps <= BPS_DENOMINATOR, "FR: bps>1e4");
 		quoteToken = _quoteToken;
 		insuranceFund = _insuranceFund;
 		treasuryAdmin = _treasuryAdmin;
@@ -81,7 +83,7 @@ contract FeeRouter is IFeeRouter, Ownable2Step {
 			return;
 		}
 
-		uint256 toFund = (actualAmount * tradeToFundBps) / 10_000;
+		uint256 toFund = (actualAmount * tradeToFundBps) / BPS_DENOMINATOR;
 		uint256 toTreasury = actualAmount - toFund;
 
 		if (toFund > 0) {
@@ -108,7 +110,7 @@ contract FeeRouter is IFeeRouter, Ownable2Step {
 			return;
 		}
 
-		uint256 toFund = (actualAmount * liqToFundBps) / 10_000;
+		uint256 toFund = (actualAmount * liqToFundBps) / BPS_DENOMINATOR;
 		uint256 toTreasury = actualAmount - toFund;
 
 		if (toFund > 0) {
@@ -148,7 +150,7 @@ contract FeeRouter is IFeeRouter, Ownable2Step {
 	}
 
 	function setSplits(uint16 _tradeToFundBps, uint16 _liqToFundBps) external onlyOwner {
-		require(_tradeToFundBps <= 10_000 && _liqToFundBps <= 10_000, "FR: bps>1e4");
+		require(_tradeToFundBps <= BPS_DENOMINATOR && _liqToFundBps <= BPS_DENOMINATOR, "FR: bps>1e4");
 		tradeToFundBps = _tradeToFundBps;
 		liqToFundBps = _liqToFundBps;
 		emit SplitsSet(_tradeToFundBps, _liqToFundBps);

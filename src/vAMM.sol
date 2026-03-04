@@ -49,6 +49,9 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 	uint256 private _cachedIndexPriceX18; // Cached oracle price for funding between pokeFunding calls
 
+	// ========= Constants =========
+	uint256 public constant BPS_DENOMINATOR = 10_000;
+
 	// ========= Price Change Protection =========
 	/// @notice Maximum allowed price change per resetReserves call (10% = 1000 bps)
 	uint256 public constant MAX_PRICE_CHANGE_BPS = 1000;
@@ -163,8 +166,8 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		// Uniswap v2 inverse formula (solve for gross quote in given base out):
 		// inWithFeeScaled = dx * Y * 10000 / (X - dx)
 		// grossIn = ceil(inWithFeeScaled / (10000 - feeBps))
-		uint256 inWithFeeScaled = Calculations.mulDivRoundingUp(uint256(baseAmount), Y * 10_000, X - uint256(baseAmount));
-		uint256 grossQuoteIn = Calculations.mulDivRoundingUp(inWithFeeScaled, 1, 10_000 - feeBps);
+		uint256 inWithFeeScaled = Calculations.mulDivRoundingUp(uint256(baseAmount), Y * BPS_DENOMINATOR, X - uint256(baseAmount));
+		uint256 grossQuoteIn = Calculations.mulDivRoundingUp(inWithFeeScaled, 1, BPS_DENOMINATOR - feeBps);
 
 		avgPriceX18 = Calculations.mulDivRoundingUp(grossQuoteIn, 1e18, uint256(baseAmount));
 		require(priceLimitX18 == 0 || avgPriceX18 <= priceLimitX18, "slippage");
@@ -177,7 +180,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		reserveBase = X - uint256(baseAmount);
 
 		// Fee accounting
-		uint256 fee = grossQuoteIn - Calculations.mulDiv(grossQuoteIn, 10_000 - feeBps, 10_000);
+		uint256 fee = grossQuoteIn - Calculations.mulDiv(grossQuoteIn, BPS_DENOMINATOR - feeBps, BPS_DENOMINATOR);
 		if (_liquidity > 0 && fee > 0) {
 			_feeGrowthGlobalX128 += (fee << 128) / _liquidity;
 		}
@@ -205,8 +208,8 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		// Uniswap v2 formula (solve for quote out given base in):
 		// out = dy = Y * dx * (10000 - fee) / (X * 10000 + dx * (10000 - fee))
 		uint256 grossBaseIn = uint256(baseAmount);
-		uint256 numerator = Y * grossBaseIn * (10_000 - feeBps);
-		uint256 denominator = X * 10_000 + grossBaseIn * (10_000 - feeBps);
+		uint256 numerator = Y * grossBaseIn * (BPS_DENOMINATOR - feeBps);
+		uint256 denominator = X * BPS_DENOMINATOR + grossBaseIn * (BPS_DENOMINATOR - feeBps);
 		uint256 quoteOut = numerator / denominator;
 
 		// Clamp to available reserve capacity so that near-boundary trades
@@ -220,8 +223,8 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 				// Reverse-solve for the actual base consumed:
 				// quoteOut = Y*dx*f / (X*10000 + dx*f)
 				//   → dx = quoteOut * X * 10000 / (f * (Y - quoteOut))
-				uint256 f = uint256(10_000 - feeBps);
-				grossBaseIn = Calculations.mulDivRoundingUp(maxQuoteOut, X * 10_000, f * minReserveQuote);
+				uint256 f = uint256(BPS_DENOMINATOR - feeBps);
+				grossBaseIn = Calculations.mulDivRoundingUp(maxQuoteOut, X * BPS_DENOMINATOR, f * minReserveQuote);
 				// Safety: never consume more base than the caller offered
 				if (grossBaseIn > uint256(baseAmount)) grossBaseIn = uint256(baseAmount);
 			}
@@ -242,7 +245,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(getMarkPrice() > 0, "Mark price zero");
 
 		// Fee accounting
-		uint256 feeInBase = Calculations.mulDivRoundingUp(grossBaseIn, feeBps, 10_000);
+		uint256 feeInBase = Calculations.mulDivRoundingUp(grossBaseIn, feeBps, BPS_DENOMINATOR);
 		if (_liquidity > 0 && feeInBase > 0) {
 			uint256 feeInQuote = Calculations.mulDivRoundingUp(feeInBase, avgPriceX18, 1e18);
 			_feeGrowthGlobalX128 += (feeInQuote << 128) / _liquidity;
@@ -328,7 +331,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		int256 premiumX18 = int256(markX18) - int256(indexPriceX18);
 		fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (1 days * 1e18);
 
-		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (1 hours * 10000);
+		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (1 hours * BPS_DENOMINATOR);
 		if (fundingRateX18 > 0 && uint256(fundingRateX18) > maxRateAbs) {
 			fundingRateX18 = int256(maxRateAbs);
 		}
@@ -445,7 +448,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		int256 premiumX18 = int256(markX18) - int256(indexPriceX18);
 		int256 fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (1 days * 1e18);
 
-		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (1 hours * 10000);
+		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (1 hours * BPS_DENOMINATOR);
 		if (fundingRateX18 > 0 && uint256(fundingRateX18) > maxRateAbs) {
 			fundingRateX18 = int256(maxRateAbs);
 		}
@@ -565,7 +568,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		uint256 priceDiff = newPriceX18 > currentPrice
 			? newPriceX18 - currentPrice
 			: currentPrice - newPriceX18;
-		uint256 maxAllowedChange = (currentPrice * MAX_PRICE_CHANGE_BPS) / 10000;
+		uint256 maxAllowedChange = (currentPrice * MAX_PRICE_CHANGE_BPS) / BPS_DENOMINATOR;
 		require(priceDiff <= maxAllowedChange, "Price change too large");
 
 		// Calculate new quote reserve: Y = X * Price
