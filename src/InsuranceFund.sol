@@ -4,12 +4,12 @@ pragma solidity 0.8.28;
 import {IInsuranceFund} from "./Interfaces/IInsuranceFund.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /// @title InsuranceFund
 /// @notice Minimal ERC20-based fund that holds quote reserves, receives fee share, and pays out bad debt.
 /// @dev Caller auth is intentionally simple: owner sets router and authorized modules (e.g., Clearinghouse).
-contract InsuranceFund is IInsuranceFund, Ownable {
+contract InsuranceFund is IInsuranceFund, Ownable2Step {
     using SafeERC20 for IERC20;
 
     // ========= Roles / Wiring =========

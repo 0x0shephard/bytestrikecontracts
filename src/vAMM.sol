@@ -6,22 +6,18 @@ import {Calculations} from "./Libraries/Calculations.sol";
 import {IOracle} from "./Interfaces/IOracle.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
 
 /// @title vAMM (Uniswap v2-style, constant product, no ticks)
 /// @notice Virtual reserves X/Y, fee-on-input swaps, funding, and simple admin. CH-only entry.
-contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
+contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM {
 	using Calculations for uint256;
 
 	// ========= Roles =========
-	address public owner;
 	address public clearinghouse;
 	address public oracle;
 
-	modifier onlyOwner() {
-		require(msg.sender == owner, "Not owner");
-		_;
-	}
 	modifier onlyCH() {
 		require(msg.sender == clearinghouse, "Not CH");
 		_;
@@ -70,7 +66,6 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	event ParamsSet(uint16 feeBps, uint256 frMaxBpsPerHour, uint256 kFundingX18);
 	event SwapsPaused(bool paused);
 	event FundingPoked(uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive, uint64 timestamp, int256 fundingRateX18);
-	event OwnerChanged(address indexed newOwner);
 	event ClearinghouseChanged(address indexed newCH);
 	event OracleChanged(address indexed newOracle);
 	event MinReservesSet(uint256 minBase, uint256 minQuote);
@@ -108,7 +103,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(frMaxBpsPerHour_ > 0, "frMax=0");
 		require(kFundingX18_ > 0, "kFunding=0");
 
-		owner = msg.sender;
+		__Ownable_init(msg.sender);
+		__Ownable2Step_init();
 		clearinghouse = _clearinghouse;
 		oracle = _oracle;
 
@@ -130,7 +126,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 			_cachedIndexPriceX18 = initialPriceX18;
 		}
 
-		emit Initialized(owner, clearinghouse, initialPriceX18, reserveBase, reserveQuote);
+		emit Initialized(msg.sender, clearinghouse, initialPriceX18, reserveBase, reserveQuote);
 		emit ParamsSet(feeBps, frMaxBpsPerHour, kFundingX18);
 		emit LiquiditySet(_liquidity);
 	}
@@ -505,7 +501,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	/// @notice Toggles the swap execution flag, enabling or disabling all trading through the vAMM.
 	/// @param paused True to pause swaps, false to resume.
 	function pauseSwaps(bool paused) external {
-		require(msg.sender == owner || msg.sender == clearinghouse, "Not owner or CH");
+		require(msg.sender == owner() || msg.sender == clearinghouse, "Not owner or CH");
 		if (paused) {
 			// Flush any accumulated funding under the current price before pausing
 			_pokeFundingInternal();
@@ -531,14 +527,6 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(newCH != address(0), "CH=0");
 		clearinghouse = newCH;
 		emit ClearinghouseChanged(newCH);
-	}
-
-	/// @notice Transfers contract ownership to a new admin address.
-	/// @param newOwner Address of the new owner; must not be zero.
-	function transferOwnership(address newOwner) external onlyOwner {
-		require(newOwner != address(0), "owner=0");
-		owner = newOwner;
-		emit OwnerChanged(newOwner);
 	}
 
 	/// @notice Sets the oracle used to retrieve index prices for funding calculations.

@@ -270,6 +270,13 @@ contract FeeRouterTest is BaseTest {
         vm.prank(admin);
         feeRouter.transferOwnership(newOwner);
 
+        // Ownership not yet transferred — pending
+        assertEq(feeRouter.owner(), admin, "Owner should still be admin");
+        assertEq(feeRouter.pendingOwner(), newOwner, "Pending owner should be set");
+
+        // New owner accepts
+        vm.prank(newOwner);
+        feeRouter.acceptOwnership();
         assertEq(feeRouter.owner(), newOwner, "Ownership not transferred");
     }
 

@@ -5,14 +5,14 @@ import {IInsuranceFund} from "./Interfaces/IInsuranceFund.sol";
 import {IFeeRouter} from "./Interfaces/IFeeRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /// @title FeeRouter
 /// @notice Token-specific router that receives fees and routes to InsuranceFund.
 /// @dev Deploy one instance per quote token. Clearinghouse should transfer tokens here first, then call hooks.
-contract FeeRouter is IFeeRouter {
+contract FeeRouter is IFeeRouter, Ownable2Step {
 	using SafeERC20 for IERC20;
 
-	address public owner;
 	address public immutable quoteToken;    // ERC20 this router handles
 	address public clearinghouse;           // single CH allowed to call hooks
 	address public insuranceFund;           // destination for fund share
@@ -22,7 +22,6 @@ contract FeeRouter is IFeeRouter {
 	uint16 public tradeToFundBps;           // out of 10000
 	uint16 public liqToFundBps;             // out of 10000
 
-	event OwnerTransferred(address indexed newOwner);
 	event ClearinghouseSet(address indexed ch);
 	event InsuranceFundSet(address indexed fund);
 	event TreasuryAdminSet(address indexed treasuryAdmin);
@@ -30,11 +29,6 @@ contract FeeRouter is IFeeRouter {
 	event SplitsSet(uint16 tradeToFundBps, uint16 liqToFundBps);
 	event TradeFeeRouted(uint256 totalAmount, uint256 toInsuranceFund, uint256 toTreasury);
 	event LiquidationPenaltyRouted(uint256 totalAmount, uint256 toInsuranceFund, uint256 toTreasury);
-
-	modifier onlyOwner() {
-		require(msg.sender == owner, "FR: not owner");
-		_;
-	}
 
 	modifier onlyCH() {
 		require(msg.sender == clearinghouse, "FR: not CH");
@@ -54,13 +48,12 @@ contract FeeRouter is IFeeRouter {
 		address _clearinghouse,
 		uint16 _tradeToFundBps,
 		uint16 _liqToFundBps
-	) {
+	) Ownable(msg.sender) {
 		require(_quoteToken != address(0), "FR: token=0");
 		require(_insuranceFund != address(0), "FR: fund=0");
 		require(_treasuryAdmin != address(0), "FR: treasury admin=0");
 		require(_clearinghouse != address(0), "FR: CH=0");
 		require(_tradeToFundBps <= 10_000 && _liqToFundBps <= 10_000, "FR: bps>1e4");
-		owner = msg.sender;
 		quoteToken = _quoteToken;
 		insuranceFund = _insuranceFund;
 		treasuryAdmin = _treasuryAdmin;
@@ -147,7 +140,7 @@ contract FeeRouter is IFeeRouter {
 	}
 
 	function withdrawTreasury(address to, uint256 amount) external {
-		require(msg.sender == treasuryAdmin || msg.sender == owner, "FR: not treasury admin");
+		require(msg.sender == treasuryAdmin || msg.sender == owner(), "FR: not treasury admin");
 		require(to != address(0), "FR: to=0");
 		require(amount > 0, "FR: amount=0");
 		IERC20(quoteToken).safeTransfer(to, amount);
@@ -161,9 +154,4 @@ contract FeeRouter is IFeeRouter {
 		emit SplitsSet(_tradeToFundBps, _liqToFundBps);
 	}
 
-	function transferOwnership(address newOwner) external onlyOwner {
-		require(newOwner != address(0), "FR: owner=0");
-		owner = newOwner;
-		emit OwnerTransferred(newOwner);
-	}
 }
