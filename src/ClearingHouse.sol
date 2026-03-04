@@ -873,6 +873,9 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
                 fundingPayment = -int256(Calculations.mulDiv(payDelta - receiveDelta, absSize, 1e18));
             }
 
+            // Settle in vault FIRST so downstream margin/shortfall logic sees post-settlement balances.
+            _settlePnLInVault(account, marketId, fundingPayment);
+
             if (fundingPayment > 0) {
                 uint256 credit = uint256(fundingPayment);
                 position.margin += credit;
@@ -892,7 +895,6 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
                     _totalReservedMargin[account] -= debit;
                 }
             }
-            _settlePnLInVault(account, marketId, fundingPayment);
 
             emit FundingSettled(marketId, account, fundingPayment);
         }
@@ -988,6 +990,24 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         // This ensures PnL is reflected in withdrawable collateral, not just margin accounting.
         if (realized != 0) {
             _settlePnLInVault(account, marketId, realized);
+        }
+
+        // Reflect realized PnL in margin accounting so risk checks see consistent values.
+        if (realized > 0) {
+            uint256 credit = uint256(realized);
+            position.margin += credit;
+            _totalReservedMargin[account] += credit;
+        } else if (realized < 0) {
+            uint256 loss = uint256(-realized);
+            if (loss >= position.margin) {
+                _totalReservedMargin[account] = _totalReservedMargin[account] > position.margin
+                    ? _totalReservedMargin[account] - position.margin
+                    : 0;
+                position.margin = 0;
+            } else {
+                position.margin -= loss;
+                _totalReservedMargin[account] -= loss;
+            }
         }
 
         // === Margin management (independent of PnL) ===
@@ -1293,12 +1313,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
             _totalReservedMargin[account] += recovered;
             positions[account][marketId].margin += recovered;
         }
-
-        uint256 finalBadDebt = shortfall - recovered;
-        if (finalBadDebt > 0) {
-            totalBadDebt += finalBadDebt;
-            emit BadDebtRecorded(account, marketId, finalBadDebt);
-        }
+        // No bad debt recording — vault-level bad debt is tracked by _settlePnLInVault.
     }
 
     // ===== Internal helpers (PnL Settlement) =====
