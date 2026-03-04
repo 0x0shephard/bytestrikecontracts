@@ -38,16 +38,6 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     /// @notice Helper mapping to check if a market is in user's active list.
     mapping(address user => mapping(bytes32 marketId => bool)) private _isMarketActive;
 
-    /// @notice Struct defining the risk parameters for a market.
-    struct MarketRiskParams {
-        uint256 imrBps; // initial margin requirement bps
-        uint256 mmrBps; // maintenance margin requirement bps
-        uint256 liquidationPenaltyBps;
-        uint256 penaltyCap; // absolute cap in quote units (1e18)
-        uint256 maxPositionSize; // max position size per user in base units (0 = unlimited)
-        uint256 minPositionSize; // min position size in base units (0 = no minimum)
-    }
-
     /// @notice Basis points denominator (100% = 10000)
     uint256 public constant BPS_DENOMINATOR = 10_000;
     /// @notice Precision for price and value calculations (1e18)
@@ -75,67 +65,6 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         require(WhitelistedLiquidators[msg.sender], "CH: not whitelisted liquidator");
         _;
     }
-
-    event MarginAdded(address indexed user, bytes32 indexed marketId, uint256 amount);
-    event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
-    event CollateralWithdrawn(address indexed user, address indexed token, uint256 amount, uint256 received);
-    event MarginRemoved(address indexed user, bytes32 indexed marketId, uint256 amount);
-    event RiskParamsSet(
-        bytes32 indexed marketId,
-        uint256 imrBps,
-        uint256 mmrBps,
-        uint256 liquidationPenaltyBps,
-        uint256 penaltyCap,
-        uint256 maxPositionSize,
-        uint256 minPositionSize
-    );
-    event FundingSettled(bytes32 indexed marketId, address indexed account, int256 fundingPayment);
-    event MarketPaused(bytes32 indexed marketId, bool isPaused);
-    event LiquidatorWhitelistUpdated(address indexed liquidator, bool isWhitelisted);
-    event VaultUpdated(address indexed oldVault, address indexed newVault);
-    event LegacyVaultWithdrawal(address indexed user, address indexed legacyVault, address indexed token, uint256 amount, uint256 received);
-    event LiquidationExecuted(
-        bytes32 indexed marketId,
-        address indexed liquidator,
-        address indexed account,
-        uint128 size,
-        uint256 notional,
-        uint256 penalty,
-        uint256 liquidatorReward,
-        uint256 protocolFee,
-        uint256 insurancePayout
-    );
-    event PositionOpened(
-        address indexed user,
-        bytes32 indexed marketId,
-        bool isLong,
-        uint128 size,
-        uint256 entryPrice,
-        uint256 margin
-    );
-    event PositionClosed(
-        address indexed user,
-        bytes32 indexed marketId,
-        uint128 size,
-        uint256 exitPrice,
-        int256 realizedPnL
-    );
-    event TradeExecuted(
-        address indexed user,
-        bytes32 indexed marketId,
-        int256 baseDelta,
-        int256 quoteDelta,
-        uint256 executionPrice,
-        int256 newSize,
-        uint256 newMargin,
-        int256 realizedPnL,
-        uint256 fee
-    );
-    event BadDebtRecorded(
-        address indexed account,
-        bytes32 indexed marketId,
-        uint256 shortfall
-    );
 
     constructor() {
         _disableInitializers();
@@ -1211,15 +1140,6 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
 
         emit PositionCleared(user, marketId, oldMargin, oldReservedMargin, _totalReservedMargin[user]);
     }
-
-    /// @notice Event emitted when an admin clears a stuck position.
-    event PositionCleared(
-        address indexed user,
-        bytes32 indexed marketId,
-        uint256 clearedMargin,
-        uint256 oldReservedMargin,
-        uint256 newReservedMargin
-    );
 
     // ===== Internal helpers (Active Markets Tracking) =====
     /// @notice Adds a market to user's active markets list if not already present.
