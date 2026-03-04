@@ -26,7 +26,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
 
 
     /// @notice Mapping of whitelisted liquidator addresses.
-    mapping(address user => bool isWhitelisted) public WhitelistedLiquidators;
+    mapping(address user => bool isWhitelisted) public whitelistedLiquidators;
     /// @notice Mapping from user address to their position in a specific market.
     mapping(address user => mapping(bytes32 marketId => PositionView)) public positions;
     /// @notice Mapping of total margin reserved by a user across all their positions.
@@ -62,7 +62,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
 
     /// @notice Modifier to restrict access to whitelisted liquidators.
     modifier onlyWhitelistedLiquidator() {
-        require(WhitelistedLiquidators[msg.sender], "CH: not whitelisted liquidator");
+        require(whitelistedLiquidators[msg.sender], "CH: not whitelisted liquidator");
         _;
     }
 
@@ -1104,7 +1104,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     /// @param liquidator The address to whitelist.
     /// @param isWhitelisted The whitelist status.
     function setWhitelistedLiquidator(address liquidator, bool isWhitelisted) external onlyAdmin {
-        WhitelistedLiquidators[liquidator] = isWhitelisted;
+        whitelistedLiquidators[liquidator] = isWhitelisted;
         emit LiquidatorWhitelistUpdated(liquidator, isWhitelisted);
     }
 
