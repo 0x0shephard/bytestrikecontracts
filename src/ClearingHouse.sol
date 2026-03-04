@@ -404,8 +404,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         uint256 mmrBps = marketRiskParams[marketId].mmrBps;
         uint256 positionSize = uint256(position.size > 0 ? position.size : -position.size);
         uint256 riskPrice = _getRiskPrice(m);
-        uint256 notionalValue = positionSize.mulDiv(riskPrice, 1e18);
-        return notionalValue.mulDiv(mmrBps, BPS_DENOMINATOR);
+        uint256 notionalValue = Calculations.mulDivRoundingUp(positionSize, riskPrice, 1e18);
+        return Calculations.mulDivRoundingUp(notionalValue, mmrBps, BPS_DENOMINATOR);
     }
 
     /// @notice Computes the liquidation penalty for a position using the same formula as liquidate().
@@ -417,8 +417,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         uint256 riskPrice = _getRiskPrice(m);
         uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
-        uint256 notional = Calculations.mulDiv(absSize, riskPrice, 1e18);
-        uint256 penalty = Calculations.mulDiv(notional, marketRiskParams[marketId].liquidationPenaltyBps, BPS_DENOMINATOR);
+        uint256 notional = Calculations.mulDivRoundingUp(absSize, riskPrice, 1e18);
+        uint256 penalty = Calculations.mulDivRoundingUp(notional, marketRiskParams[marketId].liquidationPenaltyBps, BPS_DENOMINATOR);
         uint256 cap = marketRiskParams[marketId].penaltyCap;
         if (cap > 0 && penalty > cap) {
             penalty = cap;
@@ -650,8 +650,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         uint256 notional;
         uint256 penalty;
         {
-            notional = Calculations.mulDiv(uint256(size), riskPrice, 1e18);
-            penalty = Calculations.mulDiv(notional, marketRiskParams[marketId].liquidationPenaltyBps, BPS_DENOMINATOR);
+            notional = Calculations.mulDivRoundingUp(uint256(size), riskPrice, 1e18);
+            penalty = Calculations.mulDivRoundingUp(notional, marketRiskParams[marketId].liquidationPenaltyBps, BPS_DENOMINATOR);
             if (penalty > marketRiskParams[marketId].penaltyCap) {
                 penalty = marketRiskParams[marketId].penaltyCap;
             }
@@ -1024,9 +1024,9 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         if (!isLiquidation && absBaseDelta > 0) {
             IMarketRegistry.Market memory m2 = IMarketRegistry(marketRegistry).getMarket(marketId);
             if (m2.feeBps > 0) {
-                uint256 notional2 = Calculations.mulDiv(absBaseDelta, execPxX18, 1e18);
+                uint256 notional2 = Calculations.mulDivRoundingUp(absBaseDelta, execPxX18, 1e18);
                 if (notional2 > 0) {
-                    tradeFee = Calculations.mulDiv(notional2, m2.feeBps, BPS_DENOMINATOR);
+                    tradeFee = Calculations.mulDivRoundingUp(notional2, m2.feeBps, BPS_DENOMINATOR);
                     if (tradeFee > 0) {
                         _ensureAvailableCollateral(account, tradeFee, m2.quoteToken);
                         _routeTradeFee(account, tradeFee, m2);
@@ -1070,8 +1070,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
             {
                 int256 unrealizedPnL = _computeUnrealizedPnL(position, oraclePrice);
                 int256 effectiveMargin = int256(marginValue) + unrealizedPnL;
-                uint256 riskNotional = absS1.mulDiv(oraclePrice, 1e18);
-                uint256 maintenanceMargin = riskNotional.mulDiv(marketRiskParams[marketId].mmrBps, BPS_DENOMINATOR);
+                uint256 riskNotional = Calculations.mulDivRoundingUp(absS1, oraclePrice, 1e18);
+                uint256 maintenanceMargin = Calculations.mulDivRoundingUp(riskNotional, marketRiskParams[marketId].mmrBps, BPS_DENOMINATOR);
                 require(effectiveMargin >= int256(maintenanceMargin), "CH: immediately liquidatable");
             }
         }

@@ -168,7 +168,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		uint256 inWithFeeScaled = Calculations.mulDivRoundingUp(uint256(baseAmount), Y * 10_000, X - uint256(baseAmount));
 		uint256 grossQuoteIn = Calculations.mulDivRoundingUp(inWithFeeScaled, 1, 10_000 - feeBps);
 
-		avgPriceX18 = Calculations.mulDiv(grossQuoteIn, 1e18, uint256(baseAmount));
+		avgPriceX18 = Calculations.mulDivRoundingUp(grossQuoteIn, 1e18, uint256(baseAmount));
 		require(priceLimitX18 == 0 || avgPriceX18 <= priceLimitX18, "slippage");
 
 		// Accrue funding at current (pre-trade) mark price before reserves change
@@ -244,9 +244,9 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		require(getMarkPrice() > 0, "Mark price zero");
 
 		// Fee accounting
-		uint256 feeInBase = Calculations.mulDiv(grossBaseIn, feeBps, 10_000);
+		uint256 feeInBase = Calculations.mulDivRoundingUp(grossBaseIn, feeBps, 10_000);
 		if (_liquidity > 0 && feeInBase > 0) {
-			uint256 feeInQuote = feeInBase.mulDiv(avgPriceX18, 1e18);
+			uint256 feeInQuote = Calculations.mulDivRoundingUp(feeInBase, avgPriceX18, 1e18);
 			_feeGrowthGlobalX128 += (feeInQuote << 128) / _liquidity;
 		}
 
