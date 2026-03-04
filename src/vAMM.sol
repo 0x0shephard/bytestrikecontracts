@@ -326,9 +326,9 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		}
 
 		int256 premiumX18 = int256(markX18) - int256(indexPriceX18);
-		fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (24 * 3600 * 1e18);
+		fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (1 days * 1e18);
 
-		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (3600 * 10000);
+		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (1 hours * 10000);
 		if (fundingRateX18 > 0 && uint256(fundingRateX18) > maxRateAbs) {
 			fundingRateX18 = int256(maxRateAbs);
 		}
@@ -411,7 +411,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	/// @dev Funding rate is clamped by frMaxBpsPerHour and accumulated into the long/short cumulative indices.
 	/// @dev Gracefully handles oracle failures by advancing the timestamp (preventing accumulation of outage time).
 	/// @dev Caps timeElapsed to 1 hour so a single update never covers more than one funding interval.
-	uint256 public constant MAX_FUNDING_ELAPSED = 3600; // 1 hour cap per update
+	uint256 public constant MAX_FUNDING_ELAPSED = 1 hours; // 1 hour cap per update
 
 	function pokeFunding() external {
 		_pokeFundingInternal();
@@ -443,9 +443,9 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		}
 
 		int256 premiumX18 = int256(markX18) - int256(indexPriceX18);
-		int256 fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (24 * 3600 * 1e18);
+		int256 fundingRateX18 = (premiumX18 * int256(kFundingX18) * int256(timeElapsed)) / (1 days * 1e18);
 
-		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (3600 * 10000);
+		uint256 maxRateAbs = (frMaxBpsPerHour * timeElapsed * indexPriceX18) / (1 hours * 10000);
 		if (fundingRateX18 > 0 && uint256(fundingRateX18) > maxRateAbs) {
 			fundingRateX18 = int256(maxRateAbs);
 		}
