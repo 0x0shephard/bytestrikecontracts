@@ -41,8 +41,10 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 	uint128 private _liquidity;          // accounting denominator for fee growth (not price impacting)
 	uint256 private _feeGrowthGlobalX128;
-	int256 private _cumulativeFundingLongPerUnitX18;
-	int256 private _cumulativeFundingShortPerUnitX18;
+	uint256 private _cumulativeLongPayPerUnitX18;
+	uint256 private _cumulativeLongReceivePerUnitX18;
+	uint256 private _cumulativeShortPayPerUnitX18;
+	uint256 private _cumulativeShortReceivePerUnitX18;
 	uint256 public totalLongOI;
 	uint256 public totalShortOI;
 	uint64  public lastFundingTimestamp;
@@ -67,7 +69,7 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	event LiquiditySet(uint128 newLiquidity);
 	event ParamsSet(uint16 feeBps, uint256 frMaxBpsPerHour, uint256 kFundingX18);
 	event SwapsPaused(bool paused);
-	event FundingPoked(int256 cumulativeFundingLongPerUnitX18, int256 cumulativeFundingShortPerUnitX18, uint64 timestamp, int256 fundingRateX18);
+	event FundingPoked(uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive, uint64 timestamp, int256 fundingRateX18);
 	event OwnerChanged(address indexed newOwner);
 	event ClearinghouseChanged(address indexed newCH);
 	event OracleChanged(address indexed newOracle);
@@ -295,14 +297,20 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		return _feeGrowthGlobalX128;
 	}
 
-	/// @notice Returns the stored cumulative funding index for long positions.
-	function cumulativeFundingLongPerUnitX18() external view returns (int256) {
-		return _cumulativeFundingLongPerUnitX18;
+	function cumulativeLongPayPerUnitX18() external view returns (uint256) {
+		return _cumulativeLongPayPerUnitX18;
 	}
 
-	/// @notice Returns the stored cumulative funding index for short positions.
-	function cumulativeFundingShortPerUnitX18() external view returns (int256) {
-		return _cumulativeFundingShortPerUnitX18;
+	function cumulativeLongReceivePerUnitX18() external view returns (uint256) {
+		return _cumulativeLongReceivePerUnitX18;
+	}
+
+	function cumulativeShortPayPerUnitX18() external view returns (uint256) {
+		return _cumulativeShortPayPerUnitX18;
+	}
+
+	function cumulativeShortReceivePerUnitX18() external view returns (uint256) {
+		return _cumulativeShortReceivePerUnitX18;
 	}
 
 	/// @dev Computes the raw funding rate for the elapsed period (view helper).
@@ -333,34 +341,38 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 		}
 	}
 
-	/// @notice Returns the real-time cumulative funding index for longs including pending accrual.
-	function currentCumulativeFundingLongPerUnitX18() external view returns (int256) {
+	function currentCumulativeLongPayPerUnitX18() external view returns (uint256) {
 		int256 fundingRateX18 = _computeFundingRate();
-		if (fundingRateX18 == 0 || totalLongOI == 0 || totalShortOI == 0) {
-			return _cumulativeFundingLongPerUnitX18;
+		if (fundingRateX18 > 0 && totalLongOI > 0 && totalShortOI > 0) {
+			return _cumulativeLongPayPerUnitX18 + uint256(fundingRateX18);
 		}
-		if (fundingRateX18 > 0) {
-			// Longs pay: full rate
-			return _cumulativeFundingLongPerUnitX18 + fundingRateX18;
-		} else {
-			// Shorts pay longs: scaled by OI ratio
-			return _cumulativeFundingLongPerUnitX18 + (fundingRateX18 * int256(totalShortOI)) / int256(totalLongOI);
-		}
+		return _cumulativeLongPayPerUnitX18;
 	}
 
-	/// @notice Returns the real-time cumulative funding index for shorts including pending accrual.
-	function currentCumulativeFundingShortPerUnitX18() external view returns (int256) {
+	function currentCumulativeLongReceivePerUnitX18() external view returns (uint256) {
 		int256 fundingRateX18 = _computeFundingRate();
-		if (fundingRateX18 == 0 || totalLongOI == 0 || totalShortOI == 0) {
-			return _cumulativeFundingShortPerUnitX18;
+		if (fundingRateX18 < 0 && totalLongOI > 0 && totalShortOI > 0) {
+			uint256 rate = uint256(-fundingRateX18);
+			return _cumulativeLongReceivePerUnitX18 + (rate * totalShortOI) / totalLongOI;
 		}
-		if (fundingRateX18 > 0) {
-			// Longs pay shorts: scaled by OI ratio
-			return _cumulativeFundingShortPerUnitX18 + (fundingRateX18 * int256(totalLongOI)) / int256(totalShortOI);
-		} else {
-			// Shorts pay: full rate
-			return _cumulativeFundingShortPerUnitX18 + fundingRateX18;
+		return _cumulativeLongReceivePerUnitX18;
+	}
+
+	function currentCumulativeShortPayPerUnitX18() external view returns (uint256) {
+		int256 fundingRateX18 = _computeFundingRate();
+		if (fundingRateX18 < 0 && totalLongOI > 0 && totalShortOI > 0) {
+			return _cumulativeShortPayPerUnitX18 + uint256(-fundingRateX18);
 		}
+		return _cumulativeShortPayPerUnitX18;
+	}
+
+	function currentCumulativeShortReceivePerUnitX18() external view returns (uint256) {
+		int256 fundingRateX18 = _computeFundingRate();
+		if (fundingRateX18 > 0 && totalLongOI > 0 && totalShortOI > 0) {
+			uint256 rate = uint256(fundingRateX18);
+			return _cumulativeShortReceivePerUnitX18 + (rate * totalLongOI) / totalShortOI;
+		}
+		return _cumulativeShortReceivePerUnitX18;
 	}
 
 	/// @notice Returns the cached oracle index price used for continuous funding accrual.
@@ -447,12 +459,14 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 
 		if (fundingRateX18 > 0) {
 			// Longs pay shorts
-			_cumulativeFundingLongPerUnitX18 += fundingRateX18;
-			_cumulativeFundingShortPerUnitX18 += (fundingRateX18 * int256(totalLongOI)) / int256(totalShortOI);
+			uint256 rate = uint256(fundingRateX18);
+			_cumulativeLongPayPerUnitX18 += rate;
+			_cumulativeShortReceivePerUnitX18 += (rate * totalLongOI) / totalShortOI;
 		} else if (fundingRateX18 < 0) {
 			// Shorts pay longs
-			_cumulativeFundingShortPerUnitX18 += fundingRateX18;
-			_cumulativeFundingLongPerUnitX18 += (fundingRateX18 * int256(totalShortOI)) / int256(totalLongOI);
+			uint256 rate = uint256(-fundingRateX18);
+			_cumulativeShortPayPerUnitX18 += rate;
+			_cumulativeLongReceivePerUnitX18 += (rate * totalShortOI) / totalLongOI;
 		}
 
 		lastFundingTimestamp = nowTs;
@@ -462,8 +476,8 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 	function _pokeFundingInternal() internal {
 		if (swapsPaused) return;
 
-		// Snapshot cumulative before accrual to compute the delta for the event
-		int256 cumLongBefore = _cumulativeFundingLongPerUnitX18;
+		// Snapshot long pay before accrual to compute the delta for the event
+		uint256 longPayBefore = _cumulativeLongPayPerUnitX18;
 
 		// Accrue any pending funding at the current cached oracle price
 		_accrueFunding();
@@ -475,7 +489,17 @@ contract vAMM is Initializable, UUPSUpgradeable, IVAMM {
 			// Keep old cached price; timestamp already advanced by _accrueFunding
 		}
 
-		emit FundingPoked(_cumulativeFundingLongPerUnitX18, _cumulativeFundingShortPerUnitX18, uint64(block.timestamp), _cumulativeFundingLongPerUnitX18 - cumLongBefore);
+		// Derive the signed funding rate delta from the long pay index change
+		int256 fundingRateDelta = int256(_cumulativeLongPayPerUnitX18 - longPayBefore);
+
+		emit FundingPoked(
+			_cumulativeLongPayPerUnitX18,
+			_cumulativeLongReceivePerUnitX18,
+			_cumulativeShortPayPerUnitX18,
+			_cumulativeShortReceivePerUnitX18,
+			uint64(block.timestamp),
+			fundingRateDelta
+		);
 	}
 
 	/// @notice Toggles the swap execution flag, enabling or disabling all trading through the vAMM.

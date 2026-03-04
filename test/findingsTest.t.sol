@@ -536,17 +536,17 @@ contract AuditFindingsTest is BaseTest {
         console.log("Mark Price:", markPrice);
         console.log("Index price from oracle:", zeroOracle.getPrice());
 
-        int256 fundingBefore = zeroOracleVamm.cumulativeFundingLongPerUnitX18();
+        uint256 fundingBefore = zeroOracleVamm.cumulativeLongPayPerUnitX18();
 
         // This should handle zero gracefully but doesn't
         zeroOracleVamm.pokeFunding();
 
-        int256 fundingAfter = zeroOracleVamm.cumulativeFundingLongPerUnitX18();
+        uint256 fundingAfter = zeroOracleVamm.cumulativeLongPayPerUnitX18();
 
         console.log("Cumulative funding before:");
-        console.logInt(fundingBefore);
+        console.log(fundingBefore);
         console.log("Cumulative funding after:");
-        console.logInt(fundingAfter);
+        console.log(fundingAfter);
 
         if (fundingAfter != fundingBefore) {
             console.log("");

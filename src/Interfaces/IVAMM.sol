@@ -41,17 +41,17 @@ interface IVAMM {
     /// @notice Global fee growth index per unit liquidity in Q128 (for LP accounting).
     function feeGrowthGlobalX128() external view returns (uint256);
 
-    /// @notice Stored cumulative funding index for long positions (1e18) since inception (signed).
-    function cumulativeFundingLongPerUnitX18() external view returns (int256);
+    // Stored indices (locked at last accrual)
+    function cumulativeLongPayPerUnitX18() external view returns (uint256);
+    function cumulativeLongReceivePerUnitX18() external view returns (uint256);
+    function cumulativeShortPayPerUnitX18() external view returns (uint256);
+    function cumulativeShortReceivePerUnitX18() external view returns (uint256);
 
-    /// @notice Stored cumulative funding index for short positions (1e18) since inception (signed).
-    function cumulativeFundingShortPerUnitX18() external view returns (int256);
-
-    /// @notice Real-time cumulative funding for longs including pending accrual for elapsed time.
-    function currentCumulativeFundingLongPerUnitX18() external view returns (int256);
-
-    /// @notice Real-time cumulative funding for shorts including pending accrual for elapsed time.
-    function currentCumulativeFundingShortPerUnitX18() external view returns (int256);
+    // Real-time indices (include pending accrual)
+    function currentCumulativeLongPayPerUnitX18() external view returns (uint256);
+    function currentCumulativeLongReceivePerUnitX18() external view returns (uint256);
+    function currentCumulativeShortPayPerUnitX18() external view returns (uint256);
+    function currentCumulativeShortReceivePerUnitX18() external view returns (uint256);
 
     /// @notice Push open interest from ClearingHouse to vAMM for balanced funding scaling.
     function updateOpenInterest(uint256 longOI, uint256 shortOI) external;

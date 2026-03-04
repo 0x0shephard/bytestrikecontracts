@@ -38,11 +38,11 @@ contract FundingTest is BaseTest {
         fundAndDeposit(alice, depositAmount);
         openLongPosition(alice, size, 0);
 
-        int256 fundingBefore = getCumulativeFunding();
+        uint256 fundingBefore = getCumulativeFunding();
 
         settleFunding(alice);
 
-        int256 fundingAfter = getCumulativeFunding();
+        uint256 fundingAfter = getCumulativeFunding();
 
         // Initially funding should be zero or very small
         assertEq(fundingBefore, fundingAfter, "Funding should not change immediately");
@@ -56,7 +56,7 @@ contract FundingTest is BaseTest {
         openLongPosition(alice, size, 0);
         _ensureCounterpartyShort(size);
 
-        int256 fundingBefore = getCumulativeFunding();
+        uint256 fundingBefore = getCumulativeFunding();
 
         // Skip time to allow funding to accrue
         skipTime(1 hours);
@@ -64,7 +64,7 @@ contract FundingTest is BaseTest {
         // Poke funding to update
         vamm.pokeFunding();
 
-        int256 fundingAfter = getCumulativeFunding();
+        uint256 fundingAfter = getCumulativeFunding();
 
         // Funding should have changed
         assertTrue(fundingAfter != fundingBefore, "Funding should accrue over time");
@@ -166,13 +166,13 @@ contract FundingTest is BaseTest {
         console.log("Mark price:", markPrice);
         console.log("Index price:", indexPrice);
 
-        int256 fundingBefore = getCumulativeFunding();
+        uint256 fundingBefore = getCumulativeFunding();
 
         // Skip time and update funding
         skipTime(1 hours);
         vamm.pokeFunding();
 
-        int256 fundingAfter = getCumulativeFunding();
+        uint256 fundingAfter = getCumulativeFunding();
 
         // Funding should have accrued based on mark-index premium
         assertTrue(fundingAfter != fundingBefore, "Funding should adjust");
@@ -194,23 +194,23 @@ contract FundingTest is BaseTest {
         try this.openLongPosition(alice, massiveSize, 0) {
             skipTime(1 hours);
 
-            int256 fundingBefore = getCumulativeFunding();
+            uint256 fundingBefore = getCumulativeFunding();
             vamm.pokeFunding();
-            int256 fundingAfter = getCumulativeFunding();
+            uint256 fundingAfter = getCumulativeFunding();
 
-            int256 fundingChange = fundingAfter - fundingBefore;
+            uint256 fundingChange = fundingAfter - fundingBefore;
 
             // Funding rate should be clamped to max per hour
             // FUNDING_MAX_BPS_PER_HOUR = 100 bps = 1%
             // For 1 hour, max change should be around 1% (in 1e18)
-            int256 maxFundingChange = int256(FUNDING_MAX_BPS_PER_HOUR * 1e16); // 1% in 1e18
+            uint256 maxFundingChange = FUNDING_MAX_BPS_PER_HOUR * 1e16; // 1% in 1e18
 
             console.log("Funding change:", fundingChange);
             console.log("Max allowed:", maxFundingChange);
 
-            // Should be within max bounds
+            // Should be within max bounds (monotonic: can only increase)
             assertTrue(
-                fundingChange <= maxFundingChange && fundingChange >= -maxFundingChange,
+                fundingChange <= maxFundingChange,
                 "Funding rate should be clamped"
             );
         } catch {
@@ -280,9 +280,9 @@ contract FundingTest is BaseTest {
 
         skipTime(1 hours);
 
-        int256 fundingBefore = getCumulativeFunding();
+        uint256 fundingBefore = getCumulativeFunding();
         vamm.pokeFunding();
-        int256 fundingAfter = getCumulativeFunding();
+        uint256 fundingAfter = getCumulativeFunding();
 
         console.log("Funding before:", fundingBefore);
         console.log("Funding after:", fundingAfter);
@@ -349,8 +349,8 @@ contract FundingTest is BaseTest {
 
         // Last funding index should be updated
         assertTrue(
-            posAfter.lastFundingIndex != posBefore.lastFundingIndex ||
-            posBefore.lastFundingIndex == 0,
+            posAfter.lastFundingPayIndex != posBefore.lastFundingPayIndex ||
+            posBefore.lastFundingPayIndex == 0,
             "Funding index should be tracked"
         );
     }
@@ -396,12 +396,12 @@ contract FundingTest is BaseTest {
         // Skip time so funding can accrue
         skipTime(30 minutes);
 
-        int256 fundingBefore = getCumulativeFunding();
+        uint256 fundingBefore = getCumulativeFunding();
 
         // Trade — should accrue funding at pre-trade mark price
         openLongPosition(bob, size, 0);
 
-        int256 fundingAfterTrade1 = getCumulativeFunding();
+        uint256 fundingAfterTrade1 = getCumulativeFunding();
         assertTrue(fundingAfterTrade1 != fundingBefore, "Funding should update on first trade");
 
         // Skip more time
@@ -410,7 +410,7 @@ contract FundingTest is BaseTest {
         // Another trade — should accrue again
         openShortPosition(bob, size, 0);
 
-        int256 fundingAfterTrade2 = getCumulativeFunding();
+        uint256 fundingAfterTrade2 = getCumulativeFunding();
         assertTrue(fundingAfterTrade2 != fundingAfterTrade1, "Funding should update on second trade");
     }
 
@@ -434,7 +434,7 @@ contract FundingTest is BaseTest {
 
         // Poke to lock in the high premium period
         vamm.pokeFunding();
-        int256 fundingAfterHighPremium = getCumulativeFunding();
+        uint256 fundingAfterHighPremium = getCumulativeFunding();
 
         // Now push mark below index with a large short
         openShortPosition(bob, ethQty(30), 0);
@@ -444,17 +444,21 @@ contract FundingTest is BaseTest {
         // Skip 30 minutes — mark < index during this period
         skipTime(30 minutes);
         vamm.pokeFunding();
-        int256 fundingAfterBothPeriods = getCumulativeFunding();
+        uint256 fundingAfterBothPeriods = getCumulativeFunding();
 
-        // The cumulative funding should reflect BOTH periods, not just the endpoint.
-        // After high-premium period, funding went positive.
-        // After low-premium period, funding went negative.
-        // The net should be different from zero (partial cancellation, not full).
-        assertTrue(fundingAfterHighPremium > 0, "High premium period should produce positive funding");
+        // With monotonic indices the long pay index can only grow.
+        // After the high-premium period longs paid, so pay > 0.
+        // After the low-premium period shorts paid longs, so the receive index grew
+        // while the pay index stayed flat.  Net obligation should be smaller.
+        assertTrue(fundingAfterHighPremium > 0, "High premium period should produce positive long pay funding");
+        // Pay index is monotonic — it must not decrease
         assertTrue(
-            fundingAfterBothPeriods < fundingAfterHighPremium,
-            "Low premium period should reduce cumulative funding"
+            fundingAfterBothPeriods >= fundingAfterHighPremium,
+            "Monotonic long pay index should not decrease"
         );
+        // But the long receive index should have grown, partially offsetting the pay
+        uint256 longReceive = vamm.cumulativeLongReceivePerUnitX18();
+        assertTrue(longReceive > 0, "Low premium period should produce long receive funding");
     }
 
     function test_ContinuousAccrual_LateSettlementSameAsImmediate() public {
@@ -557,7 +561,7 @@ contract FundingTest is BaseTest {
 
         skipTime(30 minutes);
         vamm.pokeFunding();
-        int256 fundingBeforePause = getCumulativeFunding();
+        uint256 fundingBeforePause = getCumulativeFunding();
 
         // Pause swaps directly on the vAMM (owner can call pauseSwaps)
         vm.prank(admin);
@@ -570,7 +574,7 @@ contract FundingTest is BaseTest {
         vm.prank(admin);
         vamm.pauseSwaps(false);
 
-        int256 fundingAfterUnpause = getCumulativeFunding();
+        uint256 fundingAfterUnpause = getCumulativeFunding();
 
         // No funding should have accrued during the pause
         assertEq(fundingBeforePause, fundingAfterUnpause, "No funding should accrue during pause");
@@ -585,13 +589,13 @@ contract FundingTest is BaseTest {
 
         skipTime(1 hours);
 
-        int256 fundingBefore = getCumulativeFunding();
+        uint256 fundingBefore = getCumulativeFunding();
 
         // setParams should flush funding before applying new params
         vm.prank(admin);
         vamm.setParams(TRADE_FEE_BPS, FUNDING_MAX_BPS_PER_HOUR, 2e18); // double kFunding
 
-        int256 fundingAfterSetParams = getCumulativeFunding();
+        uint256 fundingAfterSetParams = getCumulativeFunding();
 
         // Funding should have been flushed (accrued) with old params
         assertTrue(fundingAfterSetParams != fundingBefore, "setParams should flush pending funding");
@@ -606,7 +610,7 @@ contract FundingTest is BaseTest {
 
         skipTime(1 hours);
 
-        int256 fundingBefore = getCumulativeFunding();
+        uint256 fundingBefore = getCumulativeFunding();
         uint256 cachedBefore = vamm.cachedIndexPrice();
 
         // Deploy new oracle with different price
@@ -616,7 +620,7 @@ contract FundingTest is BaseTest {
         vm.prank(admin);
         vamm.setOracle(address(newOracle));
 
-        int256 fundingAfter = getCumulativeFunding();
+        uint256 fundingAfter = getCumulativeFunding();
         uint256 cachedAfter = vamm.cachedIndexPrice();
 
         // Funding should have been flushed at the OLD oracle price

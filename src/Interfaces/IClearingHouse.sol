@@ -8,7 +8,8 @@ interface IClearingHouse {
         int256 size;
         uint256 margin;
         uint256 entryPriceX18;
-        int256 lastFundingIndex;
+        uint256 lastFundingPayIndex;
+        uint256 lastFundingReceiveIndex;
         int256 realizedPnL;
     }
 

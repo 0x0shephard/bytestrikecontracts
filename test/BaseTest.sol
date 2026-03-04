@@ -347,9 +347,9 @@ abstract contract BaseTest is Test {
         return vamm.getReserves();
     }
 
-    /// @notice Get cumulative funding rate (long side)
-    function getCumulativeFunding() public view returns (int256) {
-        return vamm.cumulativeFundingLongPerUnitX18();
+    /// @notice Get cumulative funding pay index (long side)
+    function getCumulativeFunding() public view returns (uint256) {
+        return vamm.cumulativeLongPayPerUnitX18();
     }
 
     /// @notice Assert position size
@@ -377,7 +377,8 @@ abstract contract BaseTest is Test {
         console.logInt(pos.size);
         console.log("Margin:", pos.margin);
         console.log("Entry Price:", pos.entryPriceX18);
-        console.logInt(pos.lastFundingIndex);
+        console.log("LastFundingPayIndex:", pos.lastFundingPayIndex);
+        console.log("LastFundingReceiveIndex:", pos.lastFundingReceiveIndex);
         console.logInt(pos.realizedPnL);
         console.log("Notional:", getNotional(user));
         console.log("Margin Ratio:", getMarginRatio(user));

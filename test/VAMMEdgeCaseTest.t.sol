@@ -37,7 +37,7 @@ contract VAMMEdgeCaseTest is BaseTest {
     }
 
     function test_GetCumulativeFunding() public view {
-        int256 cumulativeFunding = vamm.cumulativeFundingLongPerUnitX18();
+        uint256 cumulativeFunding = vamm.cumulativeLongPayPerUnitX18();
         assertEq(cumulativeFunding, 0, "Initial cumulative funding should be 0");
     }
 
@@ -149,9 +149,9 @@ contract VAMMEdgeCaseTest is BaseTest {
 
         skipTime(1 hours);
 
-        int256 fundingBefore = vamm.cumulativeFundingLongPerUnitX18();
+        uint256 fundingBefore = vamm.cumulativeLongPayPerUnitX18();
         vamm.pokeFunding();
-        int256 fundingAfter = vamm.cumulativeFundingLongPerUnitX18();
+        uint256 fundingAfter = vamm.cumulativeLongPayPerUnitX18();
 
         // Funding should change (or stay same if mark = index)
         assertTrue(true); // Just verify no revert
@@ -177,16 +177,15 @@ contract VAMMEdgeCaseTest is BaseTest {
         try clearingHouse.openPosition(ETH_PERP, true, ethQty(150), 0) {
             skipTime(1 hours);
 
-            int256 fundingBefore = vamm.cumulativeFundingLongPerUnitX18();
+            uint256 fundingBefore = vamm.cumulativeLongPayPerUnitX18();
             vamm.pokeFunding();
-            int256 fundingAfter = vamm.cumulativeFundingLongPerUnitX18();
+            uint256 fundingAfter = vamm.cumulativeLongPayPerUnitX18();
 
-            // Funding change should be clamped
-            int256 fundingChange = fundingAfter - fundingBefore;
-            int256 maxChange = int256(FUNDING_MAX_BPS_PER_HOUR * 1e16); // 1% per hour
+            // Funding change should be clamped (monotonic: can only increase)
+            uint256 fundingChange = fundingAfter - fundingBefore;
+            uint256 maxChange = FUNDING_MAX_BPS_PER_HOUR * 1e16; // 1% per hour
 
             assertTrue(fundingChange <= maxChange, "Funding should be clamped");
-            assertTrue(fundingChange >= -maxChange, "Funding should be clamped");
         } catch {
             // Expected if position too large
             assertTrue(true);
@@ -232,7 +231,7 @@ contract VAMMEdgeCaseTest is BaseTest {
         vamm.getMarkPrice();
         vamm.getLiquidity();
         vamm.feeGrowthGlobalX128();
-        vamm.cumulativeFundingLongPerUnitX18();
+        vamm.cumulativeLongPayPerUnitX18();
     }
 
     // ============ Reserve Boundary Tests ============

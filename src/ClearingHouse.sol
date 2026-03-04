@@ -451,20 +451,26 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         if (m.vamm == address(0)) return 0;
 
-        // Use real-time cumulative index (includes pending accrual for elapsed time)
-        // so that view functions like isLiquidatable and getMarginRatio reflect
-        // accurate funding without requiring a preceding pokeFunding transaction.
-        // Select the direction-appropriate index.
-        int256 currentIndex;
+        uint256 currentPay;
+        uint256 currentReceive;
         if (position.size > 0) {
-            currentIndex = IVAMM(m.vamm).currentCumulativeFundingLongPerUnitX18();
+            currentPay = IVAMM(m.vamm).currentCumulativeLongPayPerUnitX18();
+            currentReceive = IVAMM(m.vamm).currentCumulativeLongReceivePerUnitX18();
         } else {
-            currentIndex = IVAMM(m.vamm).currentCumulativeFundingShortPerUnitX18();
+            currentPay = IVAMM(m.vamm).currentCumulativeShortPayPerUnitX18();
+            currentReceive = IVAMM(m.vamm).currentCumulativeShortReceivePerUnitX18();
         }
-        int256 deltaIndex = currentIndex - position.lastFundingIndex;
-        if (deltaIndex == 0) return 0;
 
-        return -(deltaIndex * position.size) / int256(1e18);
+        uint256 payDelta = currentPay - position.lastFundingPayIndex;
+        uint256 receiveDelta = currentReceive - position.lastFundingReceiveIndex;
+        if (payDelta == 0 && receiveDelta == 0) return 0;
+
+        uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
+        if (receiveDelta >= payDelta) {
+            return int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18));
+        } else {
+            return -int256(Calculations.mulDiv(payDelta - receiveDelta, absSize, 1e18));
+        }
     }
 
     /// @notice Shared helper to compute unrealized PnL from a provided price.
@@ -840,22 +846,33 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
 
         PositionView storage position = positions[account][marketId];
 
-        // Select direction-appropriate cumulative funding index
-        int256 currentIndex;
+        uint256 currentPay;
+        uint256 currentReceive;
         if (position.size > 0) {
-            currentIndex = vamm.cumulativeFundingLongPerUnitX18();
+            currentPay = vamm.cumulativeLongPayPerUnitX18();
+            currentReceive = vamm.cumulativeLongReceivePerUnitX18();
         } else if (position.size < 0) {
-            currentIndex = vamm.cumulativeFundingShortPerUnitX18();
+            currentPay = vamm.cumulativeShortPayPerUnitX18();
+            currentReceive = vamm.cumulativeShortReceivePerUnitX18();
         } else {
-            // No position — just store zero-side index for next open
-            position.lastFundingIndex = 0;
+            position.lastFundingPayIndex = 0;
+            position.lastFundingReceiveIndex = 0;
             return;
         }
 
-        int256 userIndex = position.lastFundingIndex;
-        int256 deltaIndex = currentIndex - userIndex;
-        if (deltaIndex != 0) {
-            int256 fundingPayment = -(deltaIndex * position.size) / int256(1e18);
+        uint256 payDelta = currentPay - position.lastFundingPayIndex;
+        uint256 receiveDelta = currentReceive - position.lastFundingReceiveIndex;
+
+        if (payDelta != 0 || receiveDelta != 0) {
+            uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
+
+            int256 fundingPayment;
+            if (receiveDelta >= payDelta) {
+                fundingPayment = int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18));
+            } else {
+                fundingPayment = -int256(Calculations.mulDiv(payDelta - receiveDelta, absSize, 1e18));
+            }
+
             if (fundingPayment > 0) {
                 uint256 credit = uint256(fundingPayment);
                 position.margin += credit;
@@ -863,28 +880,25 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
             } else if (fundingPayment < 0) {
                 uint256 debit = uint256(-fundingPayment);
                 if (debit >= position.margin) {
-                    // First, drain position margin completely
                     uint256 shortfall = debit - position.margin;
                     _totalReservedMargin[account] = (_totalReservedMargin[account] > position.margin)
                         ? (_totalReservedMargin[account] - position.margin)
                         : 0;
                     position.margin = 0;
 
-                    // Attempt to recover shortfall from free collateral before recording bad debt
                     _recoverShortfall(account, marketId, shortfall);
                 } else {
                     position.margin -= debit;
                     _totalReservedMargin[account] -= debit;
                 }
             }
-            // Settle funding in vault: credit profit / debit loss from actual collateral.
-            // Without this, funding only adjusts margin accounting and never moves real balances.
             _settlePnLInVault(account, marketId, fundingPayment);
 
             emit FundingSettled(marketId, account, fundingPayment);
         }
 
-        position.lastFundingIndex = currentIndex;
+        position.lastFundingPayIndex = currentPay;
+        position.lastFundingReceiveIndex = currentReceive;
     }
 
 
@@ -947,14 +961,16 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
             IVAMM(mOI.vamm).updateOpenInterest(totalLongOI[marketId], totalShortOI[marketId]);
         }
 
-        // Reset lastFundingIndex when position direction changes
+        // Reset funding indices when position direction changes
         {
             IMarketRegistry.Market memory mFI = IMarketRegistry(marketRegistry).getMarket(marketId);
             IVAMM vammFI = IVAMM(mFI.vamm);
             if (s1 > 0 && s0 <= 0) {
-                position.lastFundingIndex = vammFI.cumulativeFundingLongPerUnitX18();
+                position.lastFundingPayIndex = vammFI.cumulativeLongPayPerUnitX18();
+                position.lastFundingReceiveIndex = vammFI.cumulativeLongReceivePerUnitX18();
             } else if (s1 < 0 && s0 >= 0) {
-                position.lastFundingIndex = vammFI.cumulativeFundingShortPerUnitX18();
+                position.lastFundingPayIndex = vammFI.cumulativeShortPayPerUnitX18();
+                position.lastFundingReceiveIndex = vammFI.cumulativeShortReceivePerUnitX18();
             }
         }
 
@@ -1169,7 +1185,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
 
         // Reset other position fields
         position.entryPriceX18 = 0;
-        position.lastFundingIndex = 0;
+        position.lastFundingPayIndex = 0;
+        position.lastFundingReceiveIndex = 0;
         position.realizedPnL = 0;
 
         emit PositionCleared(user, marketId, oldMargin, oldReservedMargin, _totalReservedMargin[user]);
