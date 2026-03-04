@@ -1399,42 +1399,26 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         require(quoteValueX18 >= reservedForToken + amount, "CH: insufficient quote collateral");
     }
 
-    /// @notice Oracle-resilient valuation for a quote token amount.
-    /// @dev Tries the vault's oracle-based valuation first. If the oracle reverts
-    ///      (sequencer down, stale feed, etc.), falls back to baseUnit normalization
-    ///      assuming the quote token ≈ $1. This prevents false bad debt and frozen
-    ///      positions during temporary oracle outages.
     function _quoteValueX18(address quoteToken, uint256 amount) internal view returns (uint256) {
         if (amount == 0) return 0;
-        try ICollateralVault(vault).getTokenValueX18(quoteToken, amount) returns (uint256 v) {
-            return v;
-        } catch {
-            uint256 baseUnit = ICollateralVault(vault).getConfig(quoteToken).baseUnit;
-            return (amount * 1e18) / baseUnit;
-        }
+        uint256 v = ICollateralVault(vault).getTokenValueX18(quoteToken, amount);
+        require(v > 0, "CH: quote token valuation unavailable");
+        return v;
     }
 
-    /// @dev Convert a 1e18 USD-notional amount to quote-token native units using
-    ///      the live oracle price of the quote token.  Falls back to assuming $1
-    ///      if the oracle reverts or returns 0.
     function _notionalToQuoteUnits(uint256 notionalX18, address quoteToken) internal view returns (uint256) {
         if (notionalX18 == 0) return 0;
         ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
-        uint256 priceX18 = 1e18; // default: assume $1
-        try IOracle(ICollateralVault(vault).oracle()).getPrice(cfg.oracleSymbol) returns (uint256 p) {
-            if (p > 0) priceX18 = p;
-        } catch {}
+        uint256 priceX18 = IOracle(ICollateralVault(vault).oracle()).getPrice(cfg.oracleSymbol);
+        require(priceX18 > 0, "CH: quote oracle price unavailable");
         return Calculations.mulDivRoundingUp(notionalX18, cfg.baseUnit, priceX18);
     }
 
-    /// @dev Same as _notionalToQuoteUnits but rounds down (for crediting profit).
     function _notionalToQuoteUnitsDown(uint256 notionalX18, address quoteToken) internal view returns (uint256) {
         if (notionalX18 == 0) return 0;
         ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
-        uint256 priceX18 = 1e18;
-        try IOracle(ICollateralVault(vault).oracle()).getPrice(cfg.oracleSymbol) returns (uint256 p) {
-            if (p > 0) priceX18 = p;
-        } catch {}
+        uint256 priceX18 = IOracle(ICollateralVault(vault).oracle()).getPrice(cfg.oracleSymbol);
+        require(priceX18 > 0, "CH: quote oracle price unavailable");
         return Calculations.mulDiv(notionalX18, cfg.baseUnit, priceX18);
     }
 
