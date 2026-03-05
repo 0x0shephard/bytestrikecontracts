@@ -55,6 +55,10 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	// ========= Price Change Protection =========
 	/// @notice Maximum allowed price change per resetReserves call (10% = 1000 bps)
 	uint256 public constant MAX_PRICE_CHANGE_BPS = 1000;
+	/// @notice Minimum delay between resetReserves calls to prevent chaining
+	uint256 public constant RESET_COOLDOWN = 1 hours;
+	/// @notice Timestamp of the last resetReserves call
+	uint64 public lastResetTimestamp;
 
 	// ========= Events =========
 	event Initialized(
@@ -562,6 +566,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	function resetReserves(uint256 newPriceX18, uint256 newBaseReserve) external onlyOwner {
 		require(newPriceX18 > 0, "price=0");
 		require(newBaseReserve > 0, "base=0");
+		require(block.timestamp >= lastResetTimestamp + RESET_COOLDOWN, "Reset cooldown active");
 
 		// Check price change is within allowed limits to prevent instant liquidations
 		uint256 currentPrice = getMarkPrice();
@@ -585,6 +590,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 		reserveBase = newBaseReserve;
 		reserveQuote = newQuoteReserve;
+		lastResetTimestamp = uint64(block.timestamp);
 
 		emit ReservesReset(newPriceX18, newBaseReserve, newQuoteReserve);
 	}
