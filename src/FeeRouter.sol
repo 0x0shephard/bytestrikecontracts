@@ -117,13 +117,6 @@ contract FeeRouter is IFeeRouter, Ownable2Step {
 	// ===== Admin =====
 
 	/// @inheritdoc IFeeRouter
-	function setClearinghouse(address ch) external override onlyOwner {
-		require(ch != address(0), "FR: CH=0");
-		clearinghouse = ch;
-		emit ClearinghouseSet(ch);
-	}
-
-	/// @inheritdoc IFeeRouter
 	function setInsuranceFund(address fund) external override onlyOwner {
 		require(fund != address(0), "FR: fund=0");
 		insuranceFund = fund;

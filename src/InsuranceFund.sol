@@ -86,19 +86,6 @@ contract InsuranceFund is IInsuranceFund, Ownable2Step {
     }
 
     /// @inheritdoc IInsuranceFund
-    function setClearinghouse(address newClearinghouse) external override onlyOwner {
-        require(newClearinghouse != address(0), "IF: ch=0");
-        if (_clearinghouse != address(0)) {
-            _authorized[_clearinghouse] = false;
-            emit AuthorizedUpdated(_clearinghouse, false);
-        }
-        _clearinghouse = newClearinghouse;
-        _authorized[newClearinghouse] = true;
-        emit ClearinghouseUpdated(newClearinghouse);
-        emit AuthorizedUpdated(newClearinghouse, true);
-    }
-
-    /// @inheritdoc IInsuranceFund
     /// @notice Enables or disables a fee router address. Only callable by the owner.
     function setFeeRouter(address router_, bool allowed) external override onlyOwner {
         require(router_ != address(0), "IF: router=0");

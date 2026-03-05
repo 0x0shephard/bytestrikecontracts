@@ -81,7 +81,7 @@ interface ICollateralVault {
     /// @notice Address of the price Oracle used for valuation helpers.
     function oracle() external view returns (address);
 
-    /// @notice Set the Clearinghouse allowed to call outflow functions.
+    /// @notice Wire the Clearinghouse (one-time only; reverts if already set).
     function setClearinghouse(address clearinghouse) external;
     /// @notice Clearinghouse contract allowed to execute outflows.
     function clearinghouse() external view returns (address);

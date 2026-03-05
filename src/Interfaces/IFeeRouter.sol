@@ -42,10 +42,6 @@ interface IFeeRouter {
 
     // ========= Admin =========
 
-    /// @notice Updates the clearinghouse address authorized to call fee-routing hooks.
-    /// @param ch New clearinghouse address; must not be zero.
-    function setClearinghouse(address ch) external;
-
     /// @notice Updates the insurance fund destination for the fund share of fees.
     /// @param fund New insurance fund address; must not be zero.
     function setInsuranceFund(address fund) external;

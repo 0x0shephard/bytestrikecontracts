@@ -42,9 +42,6 @@ interface IInsuranceFund {
     /// @notice Set or revoke an authorized caller that can request payouts.
     function setAuthorized(address caller, bool allowed) external;
 
-    /// @notice Set the clearinghouse address responsible for orchestrating payouts.
-    function setClearinghouse(address clearinghouse) external;
-
     /// @notice Enable or disable a fee router that is allowed to notify fee intake.
     function setFeeRouter(address router, bool allowed) external;
 

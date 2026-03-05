@@ -59,9 +59,11 @@ contract CollateralVault is ICollateralVault, AccessControl {
         emit OracleSet(_oracle);
     }
 
-    /// @notice Wire the Clearinghouse that can initiate outflows.
-    /// @param _clearinghouse Clearinghouse contract address.
+    /// @notice Wire the Clearinghouse that can initiate outflows. Can only be called once.
+    /// @param _clearinghouse Clearinghouse proxy address (UUPS — address never changes).
     function setClearinghouse(address _clearinghouse) external onlyAllowed override {
+        require(clearinghouse == address(0), "CV: CH already set");
+        require(_clearinghouse != address(0), "CV: CH=0");
         clearinghouse = _clearinghouse;
         emit ClearinghouseSet(_clearinghouse);
     }

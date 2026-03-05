@@ -152,21 +152,6 @@ contract FeeRouterTest is BaseTest {
         feeRouter.setInsuranceFund(address(0));
     }
 
-    function test_SetClearinghouse() public {
-        address newClearinghouse = makeAddr("newClearinghouse");
-
-        vm.prank(admin);
-        feeRouter.setClearinghouse(newClearinghouse);
-
-        assertEq(feeRouter.clearinghouse(), newClearinghouse, "Clearinghouse not updated");
-    }
-
-    function test_RevertWhen_SetClearinghouse_NotOwner() public {
-        vm.expectRevert();
-        vm.prank(alice);
-        feeRouter.setClearinghouse(makeAddr("newClearinghouse"));
-    }
-
     // ============ View Functions Tests ============
 
     function test_GetQuoteToken() public view {

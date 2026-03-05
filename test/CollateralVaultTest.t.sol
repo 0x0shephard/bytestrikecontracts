@@ -43,24 +43,18 @@ contract CollateralVaultTest is BaseTest {
 
     // Note: setOracle does not validate zero address
 
-    function test_SetClearinghouse() public {
+    function test_SetClearinghouse_IsOneTime() public view {
+        // Clearinghouse is set during setUp via BaseTest
+        assertEq(vault.clearinghouse(), address(clearingHouse), "Clearinghouse should be set");
+    }
+
+    function test_RevertWhen_SetClearinghouse_AlreadySet() public {
         address newClearinghouse = makeAddr("newClearinghouse");
 
+        vm.expectRevert("CV: CH already set");
         vm.prank(admin);
         vault.setClearinghouse(newClearinghouse);
-
-        assertEq(vault.clearinghouse(), newClearinghouse, "Clearinghouse not updated");
     }
-
-    function test_RevertWhen_SetClearinghouse_NotAdmin() public {
-        address newClearinghouse = makeAddr("newClearinghouse");
-
-        vm.expectRevert();
-        vm.prank(alice);
-        vault.setClearinghouse(newClearinghouse);
-    }
-
-    // Note: setClearinghouse does not validate zero address
 
     function test_RegisterCollateral() public {
         vm.prank(admin);
