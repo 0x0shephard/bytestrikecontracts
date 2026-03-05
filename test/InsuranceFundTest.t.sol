@@ -28,7 +28,7 @@ contract InsuranceFundTest is BaseTest {
 
     function test_GetTotalReceived() public view {
         uint256 totalReceived = insuranceFund.totalReceived();
-        assertEq(totalReceived, 0, "Initial total received should be 0");
+        assertEq(totalReceived, 100000 * USDC_UNIT, "Initial total received should match seed donation");
     }
 
     function test_GetTotalPaid() public view {
@@ -40,17 +40,18 @@ contract InsuranceFundTest is BaseTest {
 
     function test_OnFeeReceived() public {
         uint256 feeAmount = 1000 * USDC_UNIT;
+        uint256 receivedBefore = insuranceFund.totalReceived();
 
         // Simulate fee router with funds and approve InsuranceFund to pull
         usdc.mint(address(feeRouter), feeAmount);
-        
+
         vm.prank(address(feeRouter));
         usdc.approve(address(insuranceFund), feeAmount);
 
         vm.prank(address(feeRouter));
         insuranceFund.onFeeReceived(feeAmount);
 
-        assertEq(insuranceFund.totalReceived(), feeAmount, "Total received not updated");
+        assertEq(insuranceFund.totalReceived() - receivedBefore, feeAmount, "Total received not updated");
     }
 
     function test_OnFeeReceived_Multiple() public {
@@ -58,10 +59,11 @@ contract InsuranceFundTest is BaseTest {
         uint256 fee2 = 500 * USDC_UNIT;
         uint256 fee3 = 750 * USDC_UNIT;
         uint256 totalFees = fee1 + fee2 + fee3;
+        uint256 receivedBefore = insuranceFund.totalReceived();
 
         // Mint to feeRouter and approve all at once
         usdc.mint(address(feeRouter), totalFees);
-        
+
         vm.prank(address(feeRouter));
         usdc.approve(address(insuranceFund), totalFees);
 
@@ -71,7 +73,7 @@ contract InsuranceFundTest is BaseTest {
         insuranceFund.onFeeReceived(fee3);
         vm.stopPrank();
 
-        assertEq(insuranceFund.totalReceived(), totalFees, "Total received incorrect");
+        assertEq(insuranceFund.totalReceived() - receivedBefore, totalFees, "Total received incorrect");
     }
 
     function test_RevertWhen_OnFeeReceived_NotAuthorized() public {
@@ -279,7 +281,7 @@ contract InsuranceFundTest is BaseTest {
         vm.stopPrank();
 
         // Verify accounting
-        assertEq(insuranceFund.totalReceived(), feeAmount + donationAmount, "Total received incorrect");
+        assertEq(insuranceFund.totalReceived(), 100000 * USDC_UNIT + feeAmount + donationAmount, "Total received incorrect");
         assertEq(insuranceFund.totalPaid(), payoutAmount, "Total paid incorrect");
 
         uint256 expectedBalance = 100000 * USDC_UNIT + feeAmount - payoutAmount + donationAmount;

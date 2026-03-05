@@ -178,8 +178,10 @@ abstract contract BaseTest is Test {
         // 9. Setup liquidator
         clearingHouse.setWhitelistedLiquidator(liquidator, true);
 
-        // 10. Fund insurance fund
-        usdc.mint(address(insuranceFund), 100000 * USDC_UNIT);
+        // 10. Fund insurance fund (use donate so _totalReceived is tracked)
+        usdc.mint(admin, 100000 * USDC_UNIT);
+        usdc.approve(address(insuranceFund), 100000 * USDC_UNIT);
+        insuranceFund.donate(100000 * USDC_UNIT);
 
         vm.stopPrank();
     }

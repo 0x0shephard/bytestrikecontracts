@@ -57,6 +57,7 @@ contract InsuranceFund is IInsuranceFund, Ownable2Step {
         require(_authorized[msg.sender], "IF: not authorized");
         require(to != address(0), "IF: to=0");
         require(amount > 0, "IF: amount=0");
+        require(amount <= _totalReceived - _totalPaid, "IF: payout exceeds tracked");
         IERC20(_quoteToken).safeTransfer(to, amount);
         _totalPaid += amount;
         emit Payout(to, amount);
