@@ -207,7 +207,7 @@ abstract contract BaseTest is Test {
     function openLongPosition(
         address user,
         uint128 size,
-        uint256 priceLimit
+        uint256 amountLimit
     ) public {
         // Calculate required margin for the position
         // Estimate notional value (actual execution price may vary slightly)
@@ -225,7 +225,7 @@ abstract contract BaseTest is Test {
 
         vm.startPrank(user);
         clearingHouse.addMargin(ETH_PERP, marginToAdd);
-        clearingHouse.openPosition(ETH_PERP, true, size, priceLimit);
+        clearingHouse.openPosition(ETH_PERP, true, size, amountLimit);
         vm.stopPrank();
     }
 
@@ -233,7 +233,7 @@ abstract contract BaseTest is Test {
     function openShortPosition(
         address user,
         uint128 size,
-        uint256 priceLimit
+        uint256 amountLimit
     ) public {
         // Calculate required margin for the position
         // Estimate notional value (actual execution price may vary slightly)
@@ -251,7 +251,7 @@ abstract contract BaseTest is Test {
 
         vm.startPrank(user);
         clearingHouse.addMargin(ETH_PERP, marginToAdd);
-        clearingHouse.openPosition(ETH_PERP, false, size, priceLimit);
+        clearingHouse.openPosition(ETH_PERP, false, size, amountLimit);
         vm.stopPrank();
     }
 
@@ -259,10 +259,10 @@ abstract contract BaseTest is Test {
     function closePosition(
         address user,
         uint128 size,
-        uint256 priceLimit
+        uint256 amountLimit
     ) public {
         vm.prank(user);
-        clearingHouse.closePosition(ETH_PERP, size, priceLimit);
+        clearingHouse.closePosition(ETH_PERP, size, amountLimit);
     }
 
     /// @notice Update oracle price

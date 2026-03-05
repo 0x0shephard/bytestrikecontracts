@@ -138,13 +138,13 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 	/// @notice Buy base asset by paying quote. Trader receives baseAmount of base.
 	/// @param baseAmount Amount of base asset to buy (receive).
-	/// @param priceLimitX18 Maximum acceptable price (quote per base, 1e18). 0 = no limit.
+	/// @param maxQuoteIn Slippage protection: maximum quote tokens willing to pay. 0 = no limit.
 	/// @return baseDelta Positive base received by trader.
 	/// @return quoteDelta Negative quote paid by trader.
 	/// @return avgPriceX18 Effective execution price.
 	function buyBase(
 		uint128 baseAmount,
-		uint256 priceLimitX18
+		uint256 maxQuoteIn
 	) external onlyCH returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18) {
 		require(!swapsPaused, "Swaps paused");
 		require(baseAmount > 0, "amount=0");
@@ -170,7 +170,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		uint256 grossQuoteIn = Calculations.mulDivRoundingUp(inWithFeeScaled, 1, BPS_DENOMINATOR - feeBps);
 
 		avgPriceX18 = Calculations.mulDivRoundingUp(grossQuoteIn, 1e18, uint256(baseAmount));
-		require(priceLimitX18 == 0 || avgPriceX18 <= priceLimitX18, "slippage");
+		require(maxQuoteIn == 0 || grossQuoteIn <= maxQuoteIn, "slippage");
 
 		// Accrue funding at current (pre-trade) mark price before reserves change
 		_accrueFunding();
@@ -192,13 +192,13 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 	/// @notice Sell base asset to receive quote. Used for shorting or closing longs.
 	/// @param baseAmount Amount of base asset to sell.
-	/// @param priceLimitX18 Minimum acceptable price (quote per base, 1e18). 0 = no limit.
+	/// @param minQuoteOut Slippage protection: minimum quote tokens expected to receive. 0 = no limit.
 	/// @return baseDelta Negative base sold by trader.
 	/// @return quoteDelta Positive quote received by trader.
 	/// @return avgPriceX18 Effective execution price.
 	function sellBase(
 		uint128 baseAmount,
-		uint256 priceLimitX18
+		uint256 minQuoteOut
 	) external onlyCH returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18) {
 		require(!swapsPaused, "Swaps paused");
 		require(baseAmount > 0, "amount=0");
@@ -233,7 +233,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(quoteOut > 0, "no out");
 
 		avgPriceX18 = Calculations.mulDiv(quoteOut, 1e18, grossBaseIn);
-		require(priceLimitX18 == 0 || avgPriceX18 >= priceLimitX18, "slippage");
+		require(minQuoteOut == 0 || quoteOut >= minQuoteOut, "slippage");
 
 		// Accrue funding at current (pre-trade) mark price before reserves change
 		_accrueFunding();

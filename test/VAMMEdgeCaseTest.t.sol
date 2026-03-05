@@ -76,7 +76,7 @@ contract VAMMEdgeCaseTest is BaseTest {
         vm.stopPrank();
     }
 
-    function test_SwapWithPriceLimit_ExactMatch() public {
+    function test_SwapWithAmountLimit_ExactMatch() public {
         uint128 size = ethQty(1);
         uint256 currentPrice = getMarkPrice();
 
@@ -85,10 +85,10 @@ contract VAMMEdgeCaseTest is BaseTest {
         vm.startPrank(alice);
         clearingHouse.addMargin(ETH_PERP, 5000 * USDC_UNIT);
 
-        // Set price limit to a value that should just barely work
-        uint256 priceLimit = currentPrice + (currentPrice * 1) / 100; // +1%
+        // Set amount limit: max quote willing to pay = price * 1.01 * size / 1e18
+        uint256 maxQuoteIn = (currentPrice + currentPrice / 100) * uint256(size) / 1e18;
 
-        clearingHouse.openPosition(ETH_PERP, true, size, priceLimit);
+        clearingHouse.openPosition(ETH_PERP, true, size, maxQuoteIn);
         vm.stopPrank();
     }
 

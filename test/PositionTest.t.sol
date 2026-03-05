@@ -52,33 +52,34 @@ contract PositionTest is BaseTest {
         assertTrue(pos.margin > 0, "Margin should be auto allocated");
     }
 
-    function test_OpenLongPosition_WithPriceLimit() public {
+    function test_OpenLongPosition_WithAmountLimit() public {
         uint256 depositAmount = 10000 * USDC_UNIT;
         uint128 size = ethQty(1);
-        uint256 priceLimit = 2050 * PRICE_PRECISION; // Allow up to $2050
+        uint256 maxQuoteIn = 2050 * USDC_UNIT; // Max 2050 quote tokens for 1 ETH
 
         fundAndDeposit(alice, depositAmount);
-        openLongPosition(alice, size, priceLimit);
+        openLongPosition(alice, size, maxQuoteIn);
 
         IClearingHouse.PositionView memory pos = getPosition(alice);
 
-        // Entry price should be within limit
-        assertLe(pos.entryPriceX18, priceLimit, "Entry price exceeds limit");
+        // Entry price * size / 1e18 approximates quote spent; should be within limit
+        uint256 quoteSpent = pos.entryPriceX18 * uint256(size) / 1e18;
+        assertLe(quoteSpent, maxQuoteIn, "Quote spent exceeds limit");
     }
 
-    function test_RevertWhen_OpenLongPosition_PriceLimitTooLow() public {
+    function test_RevertWhen_OpenLongPosition_AmountLimitTooLow() public {
         uint256 depositAmount = 10000 * USDC_UNIT;
     uint128 size = ethQty(1);
-        uint256 priceLimit = 1900 * PRICE_PRECISION; // Too low - mark price is ~$2000
+        uint256 maxQuoteIn = 1900 * USDC_UNIT; // Too low - 1 ETH costs ~$2000 in quote
 
         fundAndDeposit(alice, depositAmount);
 
-        // Manually open with price limit to test the revert
+        // Manually open with amount limit to test the revert
         vm.startPrank(alice);
         clearingHouse.addMargin(ETH_PERP, 500 * USDC_UNIT); // Sufficient margin
 
         vm.expectRevert("slippage"); // vAMM error message
-        clearingHouse.openPosition(ETH_PERP, true, size, priceLimit);
+        clearingHouse.openPosition(ETH_PERP, true, size, maxQuoteIn);
         vm.stopPrank();
     }
 
@@ -136,18 +137,18 @@ contract PositionTest is BaseTest {
         assertTrue(pos.entryPriceX18 > 0, "Entry price not set");
     }
 
-    function test_OpenShortPosition_WithPriceLimit() public {
+    function test_OpenShortPosition_WithAmountLimit() public {
         uint256 depositAmount = 10000 * USDC_UNIT;
     uint128 size = ethQty(1);
-        uint256 priceLimit = 1950 * PRICE_PRECISION; // Minimum acceptable price
+        uint256 minQuoteOut = 1950 * USDC_UNIT; // Minimum 1950 quote tokens for 1 ETH
 
         fundAndDeposit(alice, depositAmount);
-        openShortPosition(alice, size, priceLimit);
+        openShortPosition(alice, size, minQuoteOut);
 
         IClearingHouse.PositionView memory pos = getPosition(alice);
 
-        // Entry price should be at least the limit
-        assertGe(pos.entryPriceX18, priceLimit, "Entry price below limit");
+        // Entry price should be at least the limit (quote received >= minQuoteOut)
+        assertGe(pos.entryPriceX18, minQuoteOut, "Quote received below limit");
     }
 
     // ============ Closing Positions ============

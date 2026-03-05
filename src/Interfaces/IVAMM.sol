@@ -7,24 +7,24 @@ interface IVAMM {
     // ========= Swaps (Clearinghouse-only) =========
     /// @notice Buy base asset by specifying the amount of base to receive.
     /// @param baseAmount Target base quantity to acquire (1e18-scaled base units).
-    /// @param priceLimitX18 Slippage protection: max acceptable price (1e18).
+    /// @param maxQuoteIn Slippage protection: maximum quote tokens willing to pay. 0 = no limit.
     /// @return baseDelta Signed base change for the trader (positive when receiving base).
     /// @return quoteDelta Signed quote change for the trader (negative when paying quote).
     /// @return avgPriceX18 Volume-weighted execution price (1e18).
     function buyBase(
         uint128 baseAmount,
-        uint256 priceLimitX18
+        uint256 maxQuoteIn
     ) external returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18);
 
     /// @notice Sell base asset to receive quote. Used for shorting or closing longs.
     /// @param baseAmount Target base quantity to sell (1e18-scaled base units).
-    /// @param priceLimitX18 Slippage protection: min acceptable price (1e18).
+    /// @param minQuoteOut Slippage protection: minimum quote tokens expected to receive. 0 = no limit.
     /// @return baseDelta Signed base change for the trader (negative when providing base).
     /// @return quoteDelta Signed quote change for the trader (positive when receiving quote).
     /// @return avgPriceX18 Volume-weighted execution price (1e18).
     function sellBase(
         uint128 baseAmount,
-        uint256 priceLimitX18
+        uint256 minQuoteOut
     ) external returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18);
 
     // ========= Views =========

@@ -107,14 +107,16 @@ interface IClearingHouse {
     /// @param marketId Bytes32 key (e.g., keccak256("H100-PERP"))
     /// @param isLong True for long (buy base), false for short (sell base)
     /// @param size Base units (1e18) to add in absolute value
-    /// @param priceLimitX18 Slippage guard on execution (1e18)
-    function openPosition(bytes32 marketId, bool isLong, uint128 size, uint256 priceLimitX18) external;
+    /// @param amountLimit For longs (buying base): max quote to spend. For shorts (selling base): min quote to receive. 0 = no limit.
+    function openPosition(bytes32 marketId, bool isLong, uint128 size, uint256 amountLimit) external;
 
     /// @notice Close or reduce a position size in base units.
-    function closePosition(bytes32 marketId, uint128 size, uint256 priceLimitX18) external;
+    /// @param amountLimit For closing longs (selling base): min quote to receive. For closing shorts (buying base): max quote to spend. 0 = no limit.
+    function closePosition(bytes32 marketId, uint128 size, uint256 amountLimit) external;
 
     /// @notice Liquidate a portion or full position if below maintenance margin.
-    function liquidate(address account, bytes32 marketId, uint128 size, uint256 priceLimitX18) external;
+    /// @param amountLimit For closing longs (selling base): min quote to receive. For closing shorts (buying base): max quote to spend. 0 = no limit.
+    function liquidate(address account, bytes32 marketId, uint128 size, uint256 amountLimit) external;
 
     /// @notice Settle funding up to latest index for a given account on a market.
     function settleFunding(bytes32 marketId, address account) external;

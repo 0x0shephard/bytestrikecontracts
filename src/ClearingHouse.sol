@@ -423,8 +423,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     /// @param marketId The ID of the perpetual market.
     /// @param isLong True for a long position, false for a short position.
     /// @param size The amount of base asset to trade.
-    /// @param priceLimitX18 The price limit for the trade (slippage protection).
-    function openPosition(bytes32 marketId, bool isLong, uint128 size, uint256 priceLimitX18) external override nonReentrant {
+    /// @param amountLimit For longs (buying base): max quote to spend. For shorts (selling base): min quote to receive. 0 = no limit.
+    function openPosition(bytes32 marketId, bool isLong, uint128 size, uint256 amountLimit) external override nonReentrant {
         // Settle funding for all active markets to ensure margin values are current
         bytes32[] memory activeMarkets = _userActiveMarkets[msg.sender];
         for (uint256 i = 0; i < activeMarkets.length; i++) {
@@ -448,8 +448,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
 
         IVAMM vamm = IVAMM(m.vamm);
         (int256 baseDelta, int256 quoteDelta, uint256 avgPrice) = isLong
-            ? vamm.buyBase(size, priceLimitX18)
-            : vamm.sellBase(size, priceLimitX18);
+            ? vamm.buyBase(size, amountLimit)
+            : vamm.sellBase(size, amountLimit);
 
         _applyTrade(msg.sender, marketId, baseDelta, quoteDelta, false);
 
@@ -483,8 +483,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     /// @notice Closes or reduces an existing position in a perpetual market.
     /// @param marketId The ID of the perpetual market.
     /// @param size The amount of base asset to trade for closing the position.
-    /// @param priceLimitX18 The price limit for the trade (slippage protection).
-    function closePosition(bytes32 marketId, uint128 size, uint256 priceLimitX18) external override nonReentrant {
+    /// @param amountLimit For closing longs (selling base): min quote to receive. For closing shorts (buying base): max quote to spend. 0 = no limit.
+    function closePosition(bytes32 marketId, uint128 size, uint256 amountLimit) external override nonReentrant {
         // Settle funding for all active markets so vault balances and
         // _totalReservedMargin are current before any shortfall recovery.
         bytes32[] memory activeMarkets = _userActiveMarkets[msg.sender];
@@ -508,8 +508,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         IVAMM vamm = IVAMM(m.vamm);
         // If long, sell base to close; if short, buy base to close
         (int256 baseDelta, int256 quoteDelta, uint256 avgPrice) = position.size > 0
-            ? vamm.sellBase(size, priceLimitX18)
-            : vamm.buyBase(size, priceLimitX18);
+            ? vamm.sellBase(size, amountLimit)
+            : vamm.buyBase(size, amountLimit);
 
         // Store realized PnL before applying trade
         int256 oldRealizedPnL = position.realizedPnL;
@@ -539,7 +539,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     /// @param account The address of the user whose position is being liquidated.
     /// @param marketId The ID of the market.
     /// @param size The amount of the position to liquidate.
-    function liquidate(address account, bytes32 marketId, uint128 size, uint256 priceLimitX18) external override nonReentrant onlyWhitelistedLiquidator {
+    function liquidate(address account, bytes32 marketId, uint128 size, uint256 amountLimit) external override nonReentrant onlyWhitelistedLiquidator {
         // Settle funding for all active markets so vault balances and
         // _totalReservedMargin are current before any shortfall recovery.
         bytes32[] memory userMarkets = _userActiveMarkets[account];
@@ -576,8 +576,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         {
             IVAMM vamm = IVAMM(m.vamm);
             (int256 baseDelta, int256 quoteDelta, ) = position.size > 0
-                ? vamm.sellBase(size, priceLimitX18)
-                : vamm.buyBase(size, priceLimitX18);
+                ? vamm.sellBase(size, amountLimit)
+                : vamm.buyBase(size, amountLimit);
             _applyTrade(account, marketId, baseDelta, quoteDelta, true);
         }
 
