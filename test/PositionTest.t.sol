@@ -200,6 +200,8 @@ contract PositionTest is BaseTest {
         // Bob opens long, pushing vAMM price further up
         openLongPosition(bob, ethQty(2), 0);
 
+        uint256 vaultBefore = getCollateralBalance(alice);
+
         // Now Alice closes at the higher price
         closePosition(alice, size, 0);
 
@@ -207,6 +209,8 @@ contract PositionTest is BaseTest {
 
         // Should have profit since Bob pushed the price up after Alice entered
         assertTrue(pos.realizedPnL > 0, "Should have realized profit");
+        // Profit must be credited to the vault so it is withdrawable collateral
+        assertGt(getCollateralBalance(alice), vaultBefore, "Vault balance should increase on profit");
     }
 
     function test_ClosePosition_WithLoss() public {
@@ -214,18 +218,25 @@ contract PositionTest is BaseTest {
         uint128 size = ethQty(1);
 
         fundAndDeposit(alice, depositAmount);
+        fundAndDeposit(bob, depositAmount);
+
+        // Alice opens long
         openLongPosition(alice, size, 0);
 
-        // Price goes down
-        setOraclePrice(1800 * PRICE_PRECISION);
+        // Bob opens short, pushing vAMM price below Alice's entry
+        openShortPosition(bob, ethQty(2), 0);
 
-        // Close position
+        uint256 vaultBefore = getCollateralBalance(alice);
+
+        // Alice closes at the lower price
         closePosition(alice, size, 0);
 
         IClearingHouse.PositionView memory pos = getPosition(alice);
 
-        // Should have loss
+        // Should have loss since Bob pushed the price down after Alice entered
         assertTrue(pos.realizedPnL < 0, "Should have realized loss");
+        // Loss must be debited from the vault
+        assertLt(getCollateralBalance(alice), vaultBefore, "Vault balance should decrease on loss");
     }
 
     function test_RevertWhen_ClosePosition_SizeExceedsPosition() public {

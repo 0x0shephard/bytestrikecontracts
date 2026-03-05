@@ -111,6 +111,29 @@ contract FundingTest is BaseTest {
         console.log("Short - Margin after:", marginAfter);
     }
 
+    function test_FundingSettlement_UpdatesVaultBalance() public {
+        uint256 depositAmount = 50000 * USDC_UNIT;
+        uint128 size = ethQty(10); // Large long pushes mark significantly above index
+
+        fundAndDeposit(alice, depositAmount);
+        openLongPosition(alice, size, 0);
+        _ensureCounterpartyShort(ethQty(1)); // Ensures short OI > 0 so funding accrues
+
+        uint256 markPrice = getMarkPrice();
+        uint256 indexPrice = oracle.getPrice();
+        assertTrue(markPrice > indexPrice, "Mark should be above index after large long");
+
+        uint256 aliceVaultBefore = getCollateralBalance(alice);
+
+        skipTime(1 hours);
+        settleFunding(alice);
+
+        uint256 aliceVaultAfter = getCollateralBalance(alice);
+
+        // mark > index => longs pay funding => alice's vault balance must decrease
+        assertLt(aliceVaultAfter, aliceVaultBefore, "Vault balance should decrease when longs pay funding");
+    }
+
     function test_FundingPayment_OppositeDirections() public {
         uint256 depositAmount = 10000 * USDC_UNIT;
     uint128 size = ethQty(1);
