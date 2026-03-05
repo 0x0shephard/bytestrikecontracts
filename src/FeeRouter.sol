@@ -24,14 +24,6 @@ contract FeeRouter is IFeeRouter, Ownable2Step {
 	uint16 public tradeToFundBps;           // out of 10000
 	uint16 public liqToFundBps;             // out of 10000
 
-	event ClearinghouseSet(address indexed ch);
-	event InsuranceFundSet(address indexed fund);
-	event TreasuryAdminSet(address indexed treasuryAdmin);
-	event TreasuryWithdrawn(address indexed to, uint256 amount);
-	event SplitsSet(uint16 tradeToFundBps, uint16 liqToFundBps);
-	event TradeFeeRouted(uint256 totalAmount, uint256 toInsuranceFund, uint256 toTreasury);
-	event LiquidationPenaltyRouted(uint256 totalAmount, uint256 toInsuranceFund, uint256 toTreasury);
-
 	modifier onlyCH() {
 		require(msg.sender == clearinghouse, "FR: not CH");
 		_;
@@ -123,25 +115,30 @@ contract FeeRouter is IFeeRouter, Ownable2Step {
 	}
 
 	// ===== Admin =====
-	function setClearinghouse(address ch) external onlyOwner {
+
+	/// @inheritdoc IFeeRouter
+	function setClearinghouse(address ch) external override onlyOwner {
 		require(ch != address(0), "FR: CH=0");
 		clearinghouse = ch;
 		emit ClearinghouseSet(ch);
 	}
 
-	function setInsuranceFund(address fund) external onlyOwner {
+	/// @inheritdoc IFeeRouter
+	function setInsuranceFund(address fund) external override onlyOwner {
 		require(fund != address(0), "FR: fund=0");
 		insuranceFund = fund;
 		emit InsuranceFundSet(fund);
 	}
 
-	function setTreasuryAdmin(address _treasuryAdmin) external onlyOwner {
+	/// @inheritdoc IFeeRouter
+	function setTreasuryAdmin(address _treasuryAdmin) external override onlyOwner {
 		require(_treasuryAdmin != address(0), "FR: treasury admin=0");
 		treasuryAdmin = _treasuryAdmin;
 		emit TreasuryAdminSet(_treasuryAdmin);
 	}
 
-	function withdrawTreasury(address to, uint256 amount) external {
+	/// @inheritdoc IFeeRouter
+	function withdrawTreasury(address to, uint256 amount) external override {
 		require(msg.sender == treasuryAdmin || msg.sender == owner(), "FR: not treasury admin");
 		require(to != address(0), "FR: to=0");
 		require(amount > 0, "FR: amount=0");
@@ -149,7 +146,8 @@ contract FeeRouter is IFeeRouter, Ownable2Step {
 		emit TreasuryWithdrawn(to, amount);
 	}
 
-	function setSplits(uint16 _tradeToFundBps, uint16 _liqToFundBps) external onlyOwner {
+	/// @inheritdoc IFeeRouter
+	function setSplits(uint16 _tradeToFundBps, uint16 _liqToFundBps) external override onlyOwner {
 		require(_tradeToFundBps <= BPS_DENOMINATOR && _liqToFundBps <= BPS_DENOMINATOR, "FR: bps>1e4");
 		tradeToFundBps = _tradeToFundBps;
 		liqToFundBps = _liqToFundBps;
