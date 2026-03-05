@@ -42,7 +42,6 @@ interface IMarketRegistry {
     );
     event MarketPaused(bytes32 indexed marketId, bool paused);
     event MarketParamsUpdated(bytes32 indexed marketId, uint16 feeBps, address feeRouter, address insuranceFund);
-    event VammUpdated(bytes32 indexed marketId, address indexed oldVamm, address indexed newVamm);
     event OracleUpdated(bytes32 indexed marketId, address indexed oldOracle, address indexed newOracle);
 
     function addMarket(AddMarketConfig calldata config) external;
@@ -54,7 +53,6 @@ interface IMarketRegistry {
         address insuranceFund
     ) external;
 
-    function setVamm(bytes32 marketId, address newVamm) external;
     /// @notice Update the oracle for a market. Takes effect immediately — may impact liquidation status of open positions.
     function setOracle(bytes32 marketId, address newOracle) external;
 

@@ -101,20 +101,6 @@ contract MarketRegistry is IMarketRegistry, AccessControl {
         emit MarketParamsUpdated(marketId, feeBps, feeRouter, insuranceFund);
     }
 
-    /// @notice Update the vAMM address for an existing market.
-    /// @dev Only callable by MARKET_ADMIN or DEFAULT_ADMIN. Use when migrating to upgraded vAMM.
-    /// @param marketId The ID of the market to update.
-    /// @param newVamm The new vAMM contract address.
-    function setVamm(bytes32 marketId, address newVamm) external onlyAllowed {
-        Market storage market = markets[marketId];
-        require(market.vamm != address(0), "No such market");
-        require(newVamm != address(0), "vAMM addr(0)");
-        
-        address oldVamm = market.vamm;
-        market.vamm = newVamm;
-        emit VammUpdated(marketId, oldVamm, newVamm);
-    }
-
     /// @notice Update the oracle address for an existing market.
     /// @dev Only callable by MARKET_ADMIN or DEFAULT_ADMIN. Use when migrating to upgraded oracle.
     /// WARNING: The new oracle price takes effect immediately for all risk calculations
