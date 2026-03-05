@@ -55,6 +55,7 @@ interface IMarketRegistry {
     ) external;
 
     function setVamm(bytes32 marketId, address newVamm) external;
+    /// @notice Update the oracle for a market. Takes effect immediately — may impact liquidation status of open positions.
     function setOracle(bytes32 marketId, address newOracle) external;
 
     function pauseMarket(bytes32 marketId, bool paused) external;

@@ -674,6 +674,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     }
 
     /// @notice Returns the preferred risk price for margin checks, preferring oracle/index price with mark price fallback.
+    /// @dev Uses the market oracle from MarketRegistry. If the oracle is changed via MarketRegistry::setOracle,
+    /// the new price takes effect immediately — positions may become liquidatable without a grace period.
     function _getRiskPrice(IMarketRegistry.Market memory m) internal view returns (uint256) {
         require(m.oracle != address(0), "CH: oracle not set");
         uint256 indexPrice = IOracle(m.oracle).getPrice();

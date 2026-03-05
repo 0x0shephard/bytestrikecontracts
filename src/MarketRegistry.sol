@@ -116,6 +116,10 @@ contract MarketRegistry is IMarketRegistry, AccessControl {
 
     /// @notice Update the oracle address for an existing market.
     /// @dev Only callable by MARKET_ADMIN or DEFAULT_ADMIN. Use when migrating to upgraded oracle.
+    /// WARNING: The new oracle price takes effect immediately for all risk calculations
+    /// (margin checks, liquidation eligibility). Positions healthy under the old oracle
+    /// may become instantly liquidatable if the new oracle returns a different price.
+    /// Consider pausing the market before switching oracles to give users time to adjust.
     /// @param marketId The ID of the market to update.
     /// @param newOracle The new oracle contract address.
     function setOracle(bytes32 marketId, address newOracle) external onlyAllowed {
