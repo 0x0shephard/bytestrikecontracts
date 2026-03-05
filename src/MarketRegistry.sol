@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {IMarketRegistry} from "./Interfaces/IMarketRegistry.sol";
+import {IVAMM} from "./Interfaces/IVAMM.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 
@@ -132,8 +133,9 @@ contract MarketRegistry is IMarketRegistry, AccessControl {
         emit OracleUpdated(marketId, oldOracle, newOracle);
     }
 
-    /// @notice Pause or unpause a market.
+    /// @notice Pause or unpause a market and its vAMM swaps.
     /// @dev Pausing requires PAUSE_GUARDIAN or DEFAULT_ADMIN. Unpausing requires MARKET_ADMIN or DEFAULT_ADMIN.
+    /// Also freezes/unfreezes funding on the vAMM: flushes on pause, resets timestamp on unpause.
     function pauseMarket(bytes32 marketId, bool paused) external override {
         Market storage market = markets[marketId];
         require(market.vamm != address(0), "No such market");
@@ -149,6 +151,7 @@ contract MarketRegistry is IMarketRegistry, AccessControl {
             );
         }
         market.paused = paused;
+        IVAMM(market.vamm).pauseSwaps(paused);
         emit MarketPaused(marketId, paused);
     }
 

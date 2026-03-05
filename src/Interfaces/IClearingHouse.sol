@@ -37,7 +37,6 @@ interface IClearingHouse {
         uint256 minPositionSize
     );
     event FundingSettled(bytes32 indexed marketId, address indexed account, int256 fundingPayment);
-    event MarketPaused(bytes32 indexed marketId, bool isPaused);
     event LiquidatorWhitelistUpdated(address indexed liquidator, bool isWhitelisted);
     event VaultUpdated(address indexed oldVault, address indexed newVault);
     event LegacyVaultWithdrawal(address indexed user, address indexed legacyVault, address indexed token, uint256 amount, uint256 received);
@@ -131,9 +130,6 @@ interface IClearingHouse {
         uint256 maxPositionSize,
         uint256 minPositionSize
     ) external;
-
-    /// @notice Pause or unpause a market.
-    function pauseMarket(bytes32 marketId, bool paused) external;
 
     /// @notice Check if a position is liquidatable.
     function isLiquidatable(address account, bytes32 marketId) external view returns (bool);

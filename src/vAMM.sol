@@ -16,6 +16,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 	// ========= Roles =========
 	address public clearinghouse;
+	address public registry;
 	address public oracle;
 
 	modifier onlyCH() {
@@ -74,6 +75,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	event SwapsPaused(bool paused);
 	event FundingPoked(uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive, uint64 timestamp, int256 fundingRateX18);
 	event ClearinghouseChanged(address indexed newCH);
+	event RegistryChanged(address indexed newRegistry);
 	event OracleChanged(address indexed newOracle);
 	event MinReservesSet(uint256 minBase, uint256 minQuote);
 	event ReservesReset(uint256 newPrice, uint256 newBaseReserve, uint256 newQuoteReserve);
@@ -508,7 +510,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	/// @notice Toggles the swap execution flag, enabling or disabling all trading through the vAMM.
 	/// @param paused True to pause swaps, false to resume.
 	function pauseSwaps(bool paused) external {
-		require(msg.sender == owner() || msg.sender == clearinghouse, "Not owner or CH");
+		require(msg.sender == owner() || msg.sender == clearinghouse || msg.sender == registry, "Not authorized");
 		if (paused) {
 			// Flush any accumulated funding under the current price before pausing
 			_pokeFundingInternal();
@@ -534,6 +536,14 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(newCH != address(0), "CH=0");
 		clearinghouse = newCH;
 		emit ClearinghouseChanged(newCH);
+	}
+
+	/// @notice Updates the market registry authorized to pause/unpause swaps.
+	/// @param newRegistry Address of the replacement registry.
+	function setRegistry(address newRegistry) external onlyOwner {
+		require(newRegistry != address(0), "Registry=0");
+		registry = newRegistry;
+		emit RegistryChanged(newRegistry);
 	}
 
 	/// @notice Sets the oracle used to retrieve index prices for funding calculations.

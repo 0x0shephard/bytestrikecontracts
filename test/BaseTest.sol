@@ -131,6 +131,7 @@ abstract contract BaseTest is Test {
         insuranceFund.setFeeRouter(address(feeRouter), true);
         insuranceFund.setAuthorized(address(clearingHouse), true);
         vault.setClearinghouse(address(clearingHouse));
+        vamm.setRegistry(address(marketRegistry));
 
         // 6. Register collateral
         vault.registerCollateral(
