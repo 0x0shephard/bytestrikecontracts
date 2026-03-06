@@ -83,7 +83,11 @@ interface IVAMM {
     ) external;
 
     /// @notice Keeper/CH trigger to advance funding indices based on mark vs index.
-    function pokeFunding() external;
+    /// @return longPay     Updated cumulative long-pay index (1e18 per unit).
+    /// @return longReceive Updated cumulative long-receive index (1e18 per unit).
+    /// @return shortPay    Updated cumulative short-pay index (1e18 per unit).
+    /// @return shortReceive Updated cumulative short-receive index (1e18 per unit).
+    function pokeFunding() external returns (uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive);
 
     /// @notice Optional trading pause (e.g., after lastTradeTimestamp for dated futures). Closing-only is enforced by CH.
     function pauseSwaps(bool paused) external;

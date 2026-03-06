@@ -156,6 +156,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(baseAmount > 0, "amount=0");
 		uint256 X = reserveBase;
 		uint256 Y = reserveQuote;
+		uint256 fee_ = feeBps;
 		require(uint256(baseAmount) < X, "insufficient X");
 
 		// Clamp to available capacity at the reserve boundary so that
@@ -173,7 +174,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		// inWithFeeScaled = dx * Y * 10000 / (X - dx)
 		// grossIn = ceil(inWithFeeScaled / (10000 - feeBps))
 		uint256 inWithFeeScaled = Calculations.mulDivRoundingUp(uint256(baseAmount), Y * BPS_DENOMINATOR, X - uint256(baseAmount));
-		uint256 grossQuoteIn = Calculations.mulDivRoundingUp(inWithFeeScaled, 1, BPS_DENOMINATOR - feeBps);
+		uint256 grossQuoteIn = Calculations.mulDivRoundingUp(inWithFeeScaled, 1, BPS_DENOMINATOR - fee_);
 
 		avgPriceX18 = Calculations.mulDivRoundingUp(grossQuoteIn, 1e18, uint256(baseAmount));
 		require(maxQuoteIn == 0 || grossQuoteIn <= maxQuoteIn, "slippage");
@@ -186,7 +187,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		reserveBase = X - uint256(baseAmount);
 
 		// Fee accounting
-		uint256 fee = grossQuoteIn - Calculations.mulDiv(grossQuoteIn, BPS_DENOMINATOR - feeBps, BPS_DENOMINATOR);
+		uint256 fee = grossQuoteIn - Calculations.mulDiv(grossQuoteIn, BPS_DENOMINATOR - fee_, BPS_DENOMINATOR);
 		if (_liquidity > 0 && fee > 0) {
 			_feeGrowthGlobalX128 += (fee << 128) / _liquidity;
 		}
@@ -210,12 +211,13 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(baseAmount > 0, "amount=0");
 		uint256 X = reserveBase;
 		uint256 Y = reserveQuote;
+		uint256 fee_ = feeBps;
 
 		// Uniswap v2 formula (solve for quote out given base in):
 		// out = dy = Y * dx * (10000 - fee) / (X * 10000 + dx * (10000 - fee))
 		uint256 grossBaseIn = uint256(baseAmount);
-		uint256 numerator = Y * grossBaseIn * (BPS_DENOMINATOR - feeBps);
-		uint256 denominator = X * BPS_DENOMINATOR + grossBaseIn * (BPS_DENOMINATOR - feeBps);
+		uint256 numerator = Y * grossBaseIn * (BPS_DENOMINATOR - fee_);
+		uint256 denominator = X * BPS_DENOMINATOR + grossBaseIn * (BPS_DENOMINATOR - fee_);
 		uint256 quoteOut = numerator / denominator;
 
 		// Clamp to available reserve capacity so that near-boundary trades
@@ -229,7 +231,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 				// Reverse-solve for the actual base consumed:
 				// quoteOut = Y*dx*f / (X*10000 + dx*f)
 				//   → dx = quoteOut * X * 10000 / (f * (Y - quoteOut))
-				uint256 f = uint256(BPS_DENOMINATOR - feeBps);
+				uint256 f = BPS_DENOMINATOR - fee_;
 				grossBaseIn = Calculations.mulDivRoundingUp(maxQuoteOut, X * BPS_DENOMINATOR, f * minReserveQuote);
 				// Safety: never consume more base than the caller offered
 				if (grossBaseIn > uint256(baseAmount)) grossBaseIn = uint256(baseAmount);
@@ -251,7 +253,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(getMarkPrice() > 0, "Mark price zero");
 
 		// Fee accounting
-		uint256 feeInBase = Calculations.mulDivRoundingUp(grossBaseIn, feeBps, BPS_DENOMINATOR);
+		uint256 feeInBase = Calculations.mulDivRoundingUp(grossBaseIn, fee_, BPS_DENOMINATOR);
 		if (_liquidity > 0 && feeInBase > 0) {
 			uint256 feeInQuote = Calculations.mulDivRoundingUp(feeInBase, avgPriceX18, 1e18);
 			_feeGrowthGlobalX128 += (feeInQuote << 128) / _liquidity;
@@ -413,7 +415,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		feeBps = feeBps_;
 		frMaxBpsPerHour = frMaxBpsPerHour_;
 		kFundingX18 = kFundingX18_;
-		emit ParamsSet(feeBps, frMaxBpsPerHour, kFundingX18);
+		emit ParamsSet(feeBps_, frMaxBpsPerHour_, kFundingX18_);
 	}
 
 	/// @notice Updates the cumulative funding index using the current mark price and oracle index price.
@@ -422,8 +424,14 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	/// @dev Caps timeElapsed to 1 hour so a single update never covers more than one funding interval.
 	uint256 public constant MAX_FUNDING_ELAPSED = 1 hours; // 1 hour cap per update
 
-	function pokeFunding() external {
+	function pokeFunding() external returns (uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive) {
 		_pokeFundingInternal();
+		return (
+			_cumulativeLongPayPerUnitX18,
+			_cumulativeLongReceivePerUnitX18,
+			_cumulativeShortPayPerUnitX18,
+			_cumulativeShortReceivePerUnitX18
+		);
 	}
 
 	/// @dev Accrue funding for the elapsed period using current mark price and cached oracle price.

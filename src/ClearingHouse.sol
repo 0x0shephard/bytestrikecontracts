@@ -140,9 +140,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         uint256 received = ICollateralVault(vault).withdrawFor(msg.sender, token, amount, msg.sender);
 
         // Post-withdrawal check: ensure no positions become liquidatable
-        bytes32[] memory activeMarkets = _userActiveMarkets[msg.sender];
-        for (uint256 i = 0; i < activeMarkets.length; i++) {
-            require(!this.isLiquidatable(msg.sender, activeMarkets[i]), "CH: would be liquidatable");
+        for (uint256 i = 0; i < markets.length; i++) {
+            require(!_isLiquidatable(msg.sender, markets[i]), "CH: would be liquidatable");
         }
 
         emit CollateralWithdrawn(msg.sender, token, amount, received);
@@ -244,6 +243,10 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     /// @param marketId The ID of the market.
     /// @return A boolean indicating if the position is liquidatable.
     function isLiquidatable(address account, bytes32 marketId) external view override returns (bool) {
+        return _isLiquidatable(account, marketId);
+    }
+
+    function _isLiquidatable(address account, bytes32 marketId) internal view returns (bool) {
         PositionView storage position = positions[account][marketId];
         if (position.size == 0) return false;
 
@@ -417,17 +420,19 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
 
     /// @notice Shared helper to compute unrealized PnL from a provided price.
     function _computeUnrealizedPnL(PositionView storage position, uint256 priceX18) internal view returns (int256) {
-        if (priceX18 == 0 || position.size == 0 || position.entryPriceX18 == 0) {
+        int256 size = position.size;
+        uint256 entryPrice = position.entryPriceX18;
+        if (priceX18 == 0 || size == 0 || entryPrice == 0) {
             return 0;
         }
 
-        uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
-        if (position.size > 0) {
+        uint256 absSize = uint256(size > 0 ? size : -size);
+        if (size > 0) {
             // Long position: PnL = (price - entry) * size
-            return (int256(priceX18) - int256(position.entryPriceX18)) * int256(absSize) / 1e18;
+            return (int256(priceX18) - int256(entryPrice)) * int256(absSize) / 1e18;
         } else {
             // Short position: PnL = (entry - price) * size
-            return (int256(position.entryPriceX18) - int256(priceX18)) * int256(absSize) / 1e18;
+            return (int256(entryPrice) - int256(priceX18)) * int256(absSize) / 1e18;
         }
     }
 
@@ -450,7 +455,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
 
         // Block new positions if user has any liquidatable position
         for (uint256 i = 0; i < activeMarkets.length; i++) {
-            require(!this.isLiquidatable(msg.sender, activeMarkets[i]), "CH: has liquidatable position");
+            require(!_isLiquidatable(msg.sender, activeMarkets[i]), "CH: has liquidatable position");
         }
 
         require(IMarketRegistry(marketRegistry).isActive(marketId), "CH: market not active");
@@ -470,14 +475,16 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         PositionView storage position = positions[msg.sender][marketId];
         uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
 
+        MarketRiskParams memory rp = marketRiskParams[marketId];
+
         // Check max position size (0 = unlimited)
-        uint256 maxSize = marketRiskParams[marketId].maxPositionSize;
+        uint256 maxSize = rp.maxPositionSize;
         if (maxSize > 0) {
             require(absSize <= maxSize, "CH: exceeds max size");
         }
 
         // Check min position size (0 = no minimum)
-        uint256 minSize = marketRiskParams[marketId].minPositionSize;
+        uint256 minSize = rp.minPositionSize;
         if (minSize > 0 && absSize > 0) {
             require(absSize >= minSize, "CH: below min size");
         }
@@ -507,7 +514,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         if (activeMarkets.length == 0 || !_isMarketActive[msg.sender][marketId]) {
             _settleFundingInternal(marketId, msg.sender);
         }
-        require(!this.isLiquidatable(msg.sender, marketId), "CH: position liquidatable");
+        require(!_isLiquidatable(msg.sender, marketId), "CH: position liquidatable");
         require(IMarketRegistry(marketRegistry).isActive(marketId), "CH: market not active");
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         require(m.vamm != address(0), "CH: market not found");
@@ -562,18 +569,18 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         if (userMarkets.length == 0 || !_isMarketActive[account][marketId]) {
             _settleFundingInternal(marketId, account);
         }
-        require(this.isLiquidatable(account, marketId), "CH: not liquidatable");
+        require(_isLiquidatable(account, marketId), "CH: not liquidatable");
         require(IMarketRegistry(marketRegistry).isActive(marketId), "CH: market not active");
         PositionView storage position = positions[account][marketId];
+        MarketRiskParams memory rp = marketRiskParams[marketId];
         {
             uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
             require(size > 0 && uint256(size) <= absSize, "CH: invalid size");
 
             // Check remaining position meets min size (prevent dust after partial liquidation)
             uint256 remainingSize = absSize - uint256(size);
-            uint256 minSize = marketRiskParams[marketId].minPositionSize;
-            if (minSize > 0 && remainingSize > 0) {
-                require(remainingSize >= minSize, "CH: remaining below min, liquidate full");
+            if (rp.minPositionSize > 0 && remainingSize > 0) {
+                require(remainingSize >= rp.minPositionSize, "CH: remaining below min, liquidate full");
             }
         }
 
@@ -599,9 +606,9 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         uint256 penalty;
         {
             notional = Calculations.mulDivRoundingUp(uint256(size), riskPrice, 1e18);
-            penalty = Calculations.mulDivRoundingUp(notional, marketRiskParams[marketId].liquidationPenaltyBps, BPS_DENOMINATOR);
-            if (penalty > marketRiskParams[marketId].penaltyCap) {
-                penalty = marketRiskParams[marketId].penaltyCap;
+            penalty = Calculations.mulDivRoundingUp(notional, rp.liquidationPenaltyBps, BPS_DENOMINATOR);
+            if (penalty > rp.penaltyCap) {
+                penalty = rp.penaltyCap;
             }
         }
         // Split penalty and process payments
@@ -661,7 +668,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         // position to restore health (or liquidate it entirely), preventing
         // repeated small liquidations that bypass the penaltyCap.
         if (position.size != 0) {
-            require(!this.isLiquidatable(account, marketId), "CH: must liquidate more");
+            require(!_isLiquidatable(account, marketId), "CH: must liquidate more");
         }
 
         emit LiquidationExecuted(
@@ -710,6 +717,10 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     /// @param marketId The ID of the market.
     /// @return The notional value of the position.
     function getNotional(address account, bytes32 marketId) external view override returns (uint256) {
+        return _getNotional(account, marketId);
+    }
+
+    function _getNotional(address account, bytes32 marketId) internal view returns (uint256) {
         PositionView storage p = positions[account][marketId];
         if (p.size == 0) return 0;
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
@@ -727,7 +738,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     function getMarginRatio(address account, bytes32 marketId) external view override returns (uint256) {
         PositionView storage p = positions[account][marketId];
         if (p.size == 0) return type(uint256).max;
-        uint256 notional = this.getNotional(account, marketId);
+        uint256 notional = _getNotional(account, marketId);
         if (notional == 0) return type(uint256).max;
         int256 unrealizedPnL = _getUnrealizedPnLAtOracle(account, marketId);
         int256 pendingFunding = _getPendingFunding(account, marketId);
@@ -773,18 +784,18 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         require(m.vamm != address(0), "CH: market not found");
 
         IVAMM vamm = IVAMM(m.vamm);
-        vamm.pokeFunding();
+        (uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive) = vamm.pokeFunding();
 
         PositionView storage position = positions[account][marketId];
 
         uint256 currentPay;
         uint256 currentReceive;
         if (position.size > 0) {
-            currentPay = vamm.cumulativeLongPayPerUnitX18();
-            currentReceive = vamm.cumulativeLongReceivePerUnitX18();
+            currentPay = longPay;
+            currentReceive = longReceive;
         } else if (position.size < 0) {
-            currentPay = vamm.cumulativeShortPayPerUnitX18();
-            currentReceive = vamm.cumulativeShortReceivePerUnitX18();
+            currentPay = shortPay;
+            currentReceive = shortReceive;
         } else {
             position.lastFundingPayIndex = 0;
             position.lastFundingReceiveIndex = 0;
@@ -855,6 +866,11 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         // Execution price in 1e18 (avoid division by zero as absBaseDelta>0 when called)
         uint256 execPxX18 = Calculations.mulDiv(absQuote, 1e18, absBaseDelta);
 
+        // Cache market struct and risk params — used in OI update, funding reset, margin
+        // management, fee collection, and IMR check below. One cross-contract read each.
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        MarketRiskParams memory rp = marketRiskParams[marketId];
+
         int256 realized = 0;
         if (s0 == 0) {
             // New position: set entry to execution price
@@ -890,14 +906,12 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
             uint256 newShort = s1 < 0 ? uint256(-s1) : 0;
             totalLongOI[marketId] = totalLongOI[marketId] - oldLong + newLong;
             totalShortOI[marketId] = totalShortOI[marketId] - oldShort + newShort;
-            IMarketRegistry.Market memory mOI = IMarketRegistry(marketRegistry).getMarket(marketId);
-            IVAMM(mOI.vamm).updateOpenInterest(totalLongOI[marketId], totalShortOI[marketId]);
+            IVAMM(m.vamm).updateOpenInterest(totalLongOI[marketId], totalShortOI[marketId]);
         }
 
         // Reset funding indices when position direction changes
         {
-            IMarketRegistry.Market memory mFI = IMarketRegistry(marketRegistry).getMarket(marketId);
-            IVAMM vammFI = IVAMM(mFI.vamm);
+            IVAMM vammFI = IVAMM(m.vamm);
             if (s1 > 0 && s0 <= 0) {
                 position.lastFundingPayIndex = vammFI.cumulativeLongPayPerUnitX18();
                 position.lastFundingReceiveIndex = vammFI.cumulativeLongReceivePerUnitX18();
@@ -947,15 +961,13 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         // from needing to silently auto-commit additional collateral after the trade.
         if (s0 == 0 || ((s0 > 0 && baseDelta > 0) || (s0 < 0 && baseDelta < 0))) {
             // Opening or increasing: allocate IMR margin from available collateral
-            IMarketRegistry.Market memory mq = IMarketRegistry(marketRegistry).getMarket(marketId);
-            uint256 markPrice = IVAMM(mq.vamm).getMarkPrice();
-            uint256 oraclePrice = _getRiskPrice(mq);
+            uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
+            uint256 oraclePrice = _getRiskPrice(m);
             uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
             uint256 tradeNotional = absBaseDelta.mulDiv(imrPrice, 1e18);
-            uint256 imrBps = marketRiskParams[marketId].imrBps;
-            uint256 marginRequired = tradeNotional.mulDiv(imrBps, BPS_DENOMINATOR);
+            uint256 marginRequired = tradeNotional.mulDiv(rp.imrBps, BPS_DENOMINATOR);
             if (!isLiquidation && marginRequired > 0) {
-                _ensureAvailableCollateral(account, marginRequired, mq.quoteToken);
+                _ensureAvailableCollateral(account, marginRequired, m.quoteToken);
             }
             position.margin += marginRequired;
             _totalReservedMargin[account] += marginRequired;
@@ -969,15 +981,13 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
             // If flipping (trade exceeds current position), allocate margin for the new direction
             if (absBaseDelta > absS0) {
                 uint256 openAmt = absBaseDelta - absS0;
-                IMarketRegistry.Market memory mq = IMarketRegistry(marketRegistry).getMarket(marketId);
-                uint256 markPrice = IVAMM(mq.vamm).getMarkPrice();
-                uint256 oraclePrice = _getRiskPrice(mq);
+                uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
+                uint256 oraclePrice = _getRiskPrice(m);
                 uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
                 uint256 openNotional = openAmt.mulDiv(imrPrice, 1e18);
-                uint256 imrBps = marketRiskParams[marketId].imrBps;
-                uint256 marginRequired = openNotional.mulDiv(imrBps, BPS_DENOMINATOR);
+                uint256 marginRequired = openNotional.mulDiv(rp.imrBps, BPS_DENOMINATOR);
                 if (!isLiquidation && marginRequired > 0) {
-                    _ensureAvailableCollateral(account, marginRequired, mq.quoteToken);
+                    _ensureAvailableCollateral(account, marginRequired, m.quoteToken);
                 }
                 position.margin += marginRequired;
                 _totalReservedMargin[account] += marginRequired;
@@ -989,14 +999,13 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         // that position margin remains intact for the risk assessment.
         // Skip fee collection during liquidation to prevent blocking liquidation of underwater users.
         if (!isLiquidation && absBaseDelta > 0) {
-            IMarketRegistry.Market memory m2 = IMarketRegistry(marketRegistry).getMarket(marketId);
-            if (m2.feeBps > 0) {
+            if (m.feeBps > 0) {
                 uint256 notional2 = Calculations.mulDivRoundingUp(absBaseDelta, execPxX18, 1e18);
                 if (notional2 > 0) {
-                    tradeFee = Calculations.mulDivRoundingUp(notional2, m2.feeBps, BPS_DENOMINATOR);
+                    tradeFee = Calculations.mulDivRoundingUp(notional2, m.feeBps, BPS_DENOMINATOR);
                     if (tradeFee > 0) {
-                        _ensureAvailableCollateral(account, tradeFee, m2.quoteToken);
-                        _routeTradeFee(account, tradeFee, m2);
+                        _ensureAvailableCollateral(account, tradeFee, m.quoteToken);
+                        _routeTradeFee(account, tradeFee, m);
                     }
                 }
             }
@@ -1006,13 +1015,11 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         // It ensures the remaining margin is sufficient for the new/updated position AFTER fees.
         // Skip during liquidation: liquidated users cannot meet IMR and the check would block liquidation.
         if (!isLiquidation && absS1 > 0) {
-            uint256 imrBps = marketRiskParams[marketId].imrBps;
-            IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
             uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
             uint256 oraclePrice = _getRiskPrice(m);
             uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
             uint256 notional = absS1.mulDiv(imrPrice, 1e18);
-            uint256 requiredMargin = notional.mulDiv(imrBps, BPS_DENOMINATOR);
+            uint256 requiredMargin = notional.mulDiv(rp.imrBps, BPS_DENOMINATOR);
 
             // Revalue margin against real collateral so a depegged quote token
             // cannot mask an IMR breach.
@@ -1038,7 +1045,7 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
                 int256 unrealizedPnL = _computeUnrealizedPnL(position, oraclePrice);
                 int256 effectiveMargin = int256(marginValue) + unrealizedPnL;
                 uint256 riskNotional = Calculations.mulDivRoundingUp(absS1, oraclePrice, 1e18);
-                uint256 maintenanceMargin = Calculations.mulDivRoundingUp(riskNotional, marketRiskParams[marketId].mmrBps, BPS_DENOMINATOR);
+                uint256 maintenanceMargin = Calculations.mulDivRoundingUp(riskNotional, rp.mmrBps, BPS_DENOMINATOR);
                 require(effectiveMargin >= int256(maintenanceMargin), "CH: immediately liquidatable");
             }
         }
