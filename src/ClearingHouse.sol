@@ -1256,11 +1256,11 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
 
         if (realized > 0) {
-            // Use ceiling division so any non-zero profit in notional always produces >= 1 token
-            // unit in the vault. Floor division could produce 0 for tiny profits (e.g. 1 wei
-            // notional with a 6-decimal quote token), leaving realizedPnL updated but the vault
-            // uncredited — violating the accounting invariant that PnL changes mirror vault changes.
-            uint256 profitInQuote = _notionalToQuoteUnits(uint256(realized), m.quoteToken);
+            // Round down so the protocol never credits more token units than were earned.
+            // Rounding up (ceiling) would favour the user and slowly drain the vault for
+            // tiny profits; floor is the safe direction when distributing value outward.
+            // Sub-unit profits (< 1 token unit) are therefore not credited to the vault.
+            uint256 profitInQuote = _notionalToQuoteUnitsDown(uint256(realized), m.quoteToken);
             if (profitInQuote > 0) {
                 ICollateralVault(vault).settlePnL(account, m.quoteToken, int256(profitInQuote));
             }
