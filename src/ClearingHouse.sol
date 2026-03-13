@@ -358,8 +358,8 @@ contract ClearingHouse is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         return penalty;
     }
 
-    /// @notice Internal function to calculate unrealized PnL for a position using mark price.
-    function _getUnrealizedPnL(address account, bytes32 marketId) internal view returns (int256) {
+    /// @notice Returns the unrealized PnL for a position using mark price.
+    function getUnrealizedPnL(address account, bytes32 marketId) public view returns (int256) {
         PositionView storage position = positions[account][marketId];
         if (position.size == 0 || position.entryPriceX18 == 0) {
             return 0;
