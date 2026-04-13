@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {BaseTest} from "./BaseTest.sol";
+import {ClearingHouse} from "../src/ClearingHouse.sol";
 import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
 
 /// @title PositionTest
@@ -116,7 +117,7 @@ contract PositionTest is BaseTest {
         vm.startPrank(alice);
     clearingHouse.addMargin(ETH_PERP, depositAmount); // Add entire (insufficient) deposit
 
-        vm.expectRevert("CH: insufficient quote collateral");
+        vm.expectRevert(ClearingHouse.InsufficientQuoteCollateral.selector);
         clearingHouse.openPosition(ETH_PERP, true, size, 0);
         vm.stopPrank();
     }

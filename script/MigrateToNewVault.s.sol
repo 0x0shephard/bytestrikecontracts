@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {ClearingHouse} from "../src/ClearingHouse.sol";
+import {ClearingHouseLogic} from "../src/ClearingHouseLogic.sol";
 import {CollateralVault} from "../src/CollateralVault.sol";
 import {ICollateralVault} from "../src/Interfaces/ICollateralVault.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -53,7 +54,8 @@ contract MigrateToNewVault is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        ClearingHouse newClearingHouseImpl = new ClearingHouse();
+        ClearingHouseLogic chLogic = new ClearingHouseLogic();
+        ClearingHouse newClearingHouseImpl = new ClearingHouse(address(chLogic));
         console.log("  New ClearingHouse V4 impl:", address(newClearingHouseImpl));
         console.log("");
 
@@ -117,8 +119,8 @@ contract MigrateToNewVault is Script {
         console.log("STEP 5: Updating vault address in ClearingHouse...");
         console.log("");
 
-        clearingHouse.setVault(address(newVault));
-        console.log("  Vault updated to:", address(newVault));
+        // NOTE: setVault() was removed from ClearingHouse. Vault migration requires a full re-deploy.
+        console.log("  NOTE: setVault() is no longer available. New vault:", address(newVault));
         console.log("");
 
         vm.stopBroadcast();

@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {ClearingHouse} from "../src/ClearingHouse.sol";
+import {ClearingHouseLogic} from "../src/ClearingHouseLogic.sol";
 
 /**
  * @title UpgradeClearingHouseV3
@@ -30,7 +31,8 @@ contract UpgradeClearingHouseV3 is Script {
 
         // Deploy new implementation
         console.log("Deploying new ClearingHouse implementation...");
-        ClearingHouse newImpl = new ClearingHouse();
+        ClearingHouseLogic chLogic = new ClearingHouseLogic();
+        ClearingHouse newImpl = new ClearingHouse(address(chLogic));
         console.log("New Implementation:", address(newImpl));
         console.log("");
 

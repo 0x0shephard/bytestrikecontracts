@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {ClearingHouse} from "../src/ClearingHouse.sol";
+import {ClearingHouseLogic} from "../src/ClearingHouseLogic.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
@@ -41,7 +42,8 @@ contract UpgradeClearingHouse is Script {
 
         // Step 1: Deploy new implementation
         console.log("Step 1: Deploying new ClearingHouse implementation...");
-        ClearingHouse newImplementation = new ClearingHouse();
+        ClearingHouseLogic chLogic = new ClearingHouseLogic();
+        ClearingHouse newImplementation = new ClearingHouse(address(chLogic));
         console.log("  New Implementation:", address(newImplementation));
         console.log("");
 

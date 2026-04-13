@@ -632,8 +632,8 @@ contract AuditFindingsTest is BaseTest {
         uint128 size = ethQty(80);
 
         vm.startPrank(alice);
-        // Should revert with "CH: immediately liquidatable" due to the post-trade health check
-        vm.expectRevert("CH: immediately liquidatable");
+        // Should revert with ImmediatelyLiquidatable due to the post-trade health check
+        vm.expectRevert(ClearingHouse.ImmediatelyLiquidatable.selector);
         clearingHouse.openPosition(ETH_PERP, false, size, 0);
         vm.stopPrank();
     }

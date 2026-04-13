@@ -7,6 +7,7 @@ import {MockOracle} from "./mocks/MockOracle.sol";
 import {CollateralVault} from "../src/CollateralVault.sol";
 import {MarketRegistry} from "../src/MarketRegistry.sol";
 import {ClearingHouse} from "../src/ClearingHouse.sol";
+import {ClearingHouseLogic} from "../src/ClearingHouseLogic.sol";
 import {vAMM} from "../src/vAMM.sol";
 import {FeeRouter} from "../src/FeeRouter.sol";
 import {InsuranceFund} from "../src/InsuranceFund.sol";
@@ -86,7 +87,8 @@ abstract contract BaseTest is Test {
         marketRegistry = new MarketRegistry();
 
         // Deploy ClearingHouse with proxy
-        ClearingHouse clearingHouseImpl = new ClearingHouse();
+        ClearingHouseLogic chLogic = new ClearingHouseLogic();
+        ClearingHouse clearingHouseImpl = new ClearingHouse(address(chLogic));
         bytes memory clearingHouseInitData = abi.encodeWithSelector(
             ClearingHouse.initialize.selector,
             address(vault),

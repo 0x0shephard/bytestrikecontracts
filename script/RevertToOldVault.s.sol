@@ -25,7 +25,8 @@ contract RevertToOldVault is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        ClearingHouse(CLEARING_HOUSE_PROXY).setVault(OLD_VAULT);
+        // NOTE: setVault() was removed from ClearingHouse. This script is no longer functional.
+        revert("setVault() removed - vault migration requires a full re-deploy");
 
         vm.stopBroadcast();
 

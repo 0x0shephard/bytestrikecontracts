@@ -7,6 +7,7 @@ import {MockOracle} from "../test/mocks/MockOracle.sol";
 import {CollateralVault} from "../src/CollateralVault.sol";
 import {MarketRegistry} from "../src/MarketRegistry.sol";
 import {ClearingHouse} from "../src/ClearingHouse.sol";
+import {ClearingHouseLogic} from "../src/ClearingHouseLogic.sol";
 import {vAMM} from "../src/vAMM.sol";
 import {FeeRouter} from "../src/FeeRouter.sol";
 import {InsuranceFund} from "../src/InsuranceFund.sol";
@@ -98,7 +99,8 @@ contract DeployWithMocks is Script {
         vault.setOracle(address(oracle));
         marketRegistry = new MarketRegistry();
 
-        ClearingHouse clearingHouseImplementation = new ClearingHouse();
+        ClearingHouseLogic chLogic = new ClearingHouseLogic();
+        ClearingHouse clearingHouseImplementation = new ClearingHouse(address(chLogic));
         bytes memory clearingHouseInitData = abi.encodeCall(
             ClearingHouse.initialize,
             (address(vault), address(marketRegistry), admin)

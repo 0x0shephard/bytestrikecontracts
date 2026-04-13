@@ -6,16 +6,19 @@ libs = ["lib"]
 remappings = [
     # OpenZeppelin from lib
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
-    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/"
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    "battlechain-lib/=lib/battlechain-lib/src/"
 ]
 
 optimizer = true
-optimizer_runs = 200
+optimizer_runs = 1
 via_ir = true
+fs_permissions = [{ access = "read-write", path = "./deployments/" }]
 
 # RPC endpoints
 [rpc_endpoints]
 sepolia = "${SEPOLIA_RPC_URL}"
+battlechain_testnet = "${BATTLECHAIN_RPC_URL}"
 
 # Etherscan API key for verification
 [etherscan]

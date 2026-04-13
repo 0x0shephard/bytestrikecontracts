@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {BaseTest} from "./BaseTest.sol";
+import {ClearingHouse} from "../src/ClearingHouse.sol";
 import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
 import {console} from "forge-std/Test.sol";
 
@@ -128,7 +129,7 @@ contract LiquidationTest is BaseTest {
 
         // Partial liquidation that leaves position still liquidatable must revert
         vm.prank(liquidator);
-        vm.expectRevert("CH: must liquidate more");
+        vm.expectRevert(ClearingHouse.MustLiquidateMore.selector);
         clearingHouse.liquidate(alice, ETH_PERP, liquidateSize, 0);
 
         // Full liquidation succeeds
