@@ -1,0 +1,139 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "cuOracle": "0x97f557594bA32e51c0eA215B1886111F24E957af",
+  "marketRegistry": "0x236b75D39203506ee3180Ef2E1c7460a188C43c6",
+  "commitReveal": {
+    "priceDecimals": 18,
+    "commitHashSolidity": "keccak256(abi.encodePacked(priceX18, nonce))",
+    "minCommitRevealDelaySeconds": 1,
+    "maxCommitAgeSeconds": 3600,
+    "freshnessCaveat": "CuOracle.latestPrices[assetId].lastUpdatedAt is the commit block timestamp, not the reveal timestamp. Reveal promptly and keep bot cadence comfortably below the adapter max age."
+  },
+  "permissions": {
+    "commitPrice": "owner or allowedRoles[bot] == true",
+    "updatePrices": "owner only"
+  },
+  "assets": [
+    {
+      "market": "H100-PERP",
+      "assetSymbol": "H100",
+      "assetId": "0x4af9fd38a31e980043173ab5907026770c7559ea203999da89b6c8a7a625f6c6"
+    },
+    {
+      "market": "A100-PERP",
+      "assetSymbol": "A100",
+      "assetId": "0x800dc08a7e47b959d22d840c1fc554e1273853b297d50418ebe9d86e8bf7394a"
+    },
+    {
+      "market": "AWS-H100-PERP",
+      "assetSymbol": "AWS-H100",
+      "assetId": "0x33474ec291744718e5d36573b65c7b5cbf85740c766ba61ff1fdf324408de00c"
+    },
+    {
+      "market": "AWS-H200-PERP",
+      "assetSymbol": "AWS-H200",
+      "assetId": "0xb881e68e4d9b9350e2a0f595bc20903d150d76b04264bed9d64d3a173829c55f"
+    },
+    {
+      "market": "AZURE-H100-PERP",
+      "assetSymbol": "AZURE-H100",
+      "assetId": "0xe73f2cbece22cd622973b57c976d23b4d197f34245b506aad9296988be8312ed"
+    },
+    {
+      "market": "COREWEAVE-H200-PERP",
+      "assetSymbol": "COREWEAVE-H200",
+      "assetId": "0x481ed8afbc6dbe3e196f0c385bbcf699c9d03d39f8c53de63e0729574723b222"
+    },
+    {
+      "market": "GCP-H100-PERP",
+      "assetSymbol": "GCP-H100",
+      "assetId": "0x59af16e64573d8c27d6eb69ab1f1672f1826f2ea1bfd32b037ed2686dc8c3e4b"
+    },
+    {
+      "market": "GCP-H200-PERP",
+      "assetSymbol": "GCP-H200",
+      "assetId": "0x2db415cc64a40fbb0ce9195f3d5b1a8f3db72687d8dc4e377a78644882fdff02"
+    },
+    {
+      "market": "ORACLE-H200-PERP",
+      "assetSymbol": "ORACLE-H200",
+      "assetId": "0x56c9f844fdd2964a481d72d02ddb84411142ad0e0e8575a34dd45d9ae75a8952"
+    },
+    {
+      "market": "T4-PERP",
+      "assetSymbol": "T4",
+      "assetId": "0x3a505fbe2e444482cb9c5d0c70da3dc8dea36ae62656a4c551d7750f3933f1db"
+    },
+    {
+      "market": "H100-GPU-PERP",
+      "assetSymbol": "H100-GPU",
+      "assetId": "0xa9d8df3b447ff129b06fedc7de1d9692d53d107f0233181fb333b0dd0fe7ff33"
+    },
+    {
+      "market": "H100-HyperScalers-PERP",
+      "assetSymbol": "H100-HyperScalers",
+      "assetId": "0x79bd03720e349eb16eb997b6c27d1abaf8534556adb4719e484d5030f87bb3bf"
+    },
+    {
+      "market": "ORACLE-H200-PERPETUAL",
+      "assetSymbol": "ORACLE_H200_HOUR",
+      "assetId": "0x5d5f627ba6daf1427a1559c3200cbe7ebf105d0df0ec1610c6b89d54a314bf51"
+    },
+    {
+      "market": "AWS-H200-PERPETUAL",
+      "assetSymbol": "AWS_H200_HOUR",
+      "assetId": "0xb377854a672b5274c99b24e7fe27d9661c60c8b697ca4f974208162655716b3e"
+    },
+    {
+      "market": "COREWEAVE-H200-PERPETUAL",
+      "assetSymbol": "COREWEAVE_H200_HOUR",
+      "assetId": "0xa05f2ef65a5f11da36153346f35e9cdb554962e858a95c7f79075cd3a4c6ddfd"
+    },
+    {
+      "market": "GCP-H200-PERPETUAL",
+      "assetSymbol": "GCP_H200_HOUR",
+      "assetId": "0x0ba2d87db04ca970c41ab4334516ce12e74356d71ee96e228fb1ba5d519aaaf4"
+    },
+    {
+      "market": "AZURE-H200-PERPETUAL",
+      "assetSymbol": "AZURE_H200_HOUR",
+      "assetId": "0x12b283ae476f0251b7a6eaa8d414a3260644e167d9253ef1e72d49e2c8291e61"
+    },
+    {
+      "market": "B200-PERP-V2",
+      "assetSymbol": "B200",
+      "assetId": "0xcebd53e2877b54ffddc8abbb4764a279df3df948dcc2b606db94e6aae8a80995"
+    },
+    {
+      "market": "AWS-B200-PERP",
+      "assetSymbol": "AWS-B200",
+      "assetId": "0xd4cb0c395efb880df5c098c103eb6dfd23ee89a322b22e473e29c476f5240bd4"
+    },
+    {
+      "market": "ORACLE-B200-PERP",
+      "assetSymbol": "ORACLE-B200",
+      "assetId": "0x9bf58bdbcbc9ddfd61f5add09163bfa8392f346eaf046baebcf3474867d92d41"
+    },
+    {
+      "market": "COREWEAVE-B200-PERP",
+      "assetSymbol": "COREWEAVE-B200",
+      "assetId": "0x7cfd459019cab14dcd5a85a668482047debede1f13dfb31be53aeb279791325b"
+    },
+    {
+      "market": "GCP-B200-PERP",
+      "assetSymbol": "GCP-B200",
+      "assetId": "0x76d0a44da38fe3b87efb5f30986a5be867c6685bbaf1a26fb154c63a6fc23f0c"
+    },
+    {
+      "market": "H200-PERP-V2",
+      "assetSymbol": "H200",
+      "assetId": "0x8340d453df40afe28f3d35784237cd4d87407b4bdf574a1f10a1fbabdc417b83"
+    },
+    {
+      "market": "H100-non-HyperScalers-PERP-V2",
+      "assetSymbol": "H100-non-HyperScalers",
+      "assetId": "0x03e18761e22317ee1d8c89c0c8d944f1592ec6ef26b7264b391e3ba6aae51e65"
+    }
+  ]
+}

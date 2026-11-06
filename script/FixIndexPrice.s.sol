@@ -81,7 +81,7 @@ contract FixIndexPrice is Script {
         CuOracleAdapter adapter = new CuOracleAdapter(
             CU_ORACLE,
             ETH_ASSET_ID,
-            3600 // 1 hour max age
+            12 hours
         );
         console.log("  Adapter deployed:", address(adapter));
 

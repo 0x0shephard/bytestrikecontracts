@@ -1,0 +1,46 @@
+{
+  "0": {
+    "adapter": "0xDBA6Ce71E0d0cC7E9EE83B9cf57F173bF6a66e71",
+    "assetId": "0xd4cb0c395efb880df5c098c103eb6dfd23ee89a322b22e473e29c476f5240bd4",
+    "assetSymbol": "AWS-B200",
+    "marketId": "0xb7269b1b771cba59419ca55da90b293f89e72d986f7f50cb542e22797ad46f14",
+    "name": "AWS-B200-PERP",
+    "nonce": "0x01e897ae092ca6103df7fea48a5f46064495de27c8c3602ce5a0bb20c4774114",
+    "priceX18": 3874294322165306000,
+    "vamm": "0x4ECd2da8789dd067833Acab3F4BF4857e8A0ca6B"
+  },
+  "1": {
+    "adapter": "0x7F021ca464deE0446C18934639DA9cc98Baa3317",
+    "assetId": "0x9bf58bdbcbc9ddfd61f5add09163bfa8392f346eaf046baebcf3474867d92d41",
+    "assetSymbol": "ORACLE-B200",
+    "marketId": "0x409078466c3ce47594bb7591497b09163aae7262d949015e19a7c4c947434d80",
+    "name": "ORACLE-B200-PERP",
+    "nonce": "0xbb2ea9e0fa5b75a1f06c9e8fdfe67a2adbd7e68ca465938212c28cdb87e6973c",
+    "priceX18": 14000000000000000000,
+    "vamm": "0x0E9bF74e394219004CbD2b7d6Dd3443418d116E9"
+  },
+  "2": {
+    "adapter": "0xaD37F69ccB279A69E5037E5aF80B749b245e2780",
+    "assetId": "0x7cfd459019cab14dcd5a85a668482047debede1f13dfb31be53aeb279791325b",
+    "assetSymbol": "COREWEAVE-B200",
+    "marketId": "0x75da99206b1151e67ba75b25d99b3e2609e1d80b86bb0339fe90a7c4e64930f0",
+    "name": "COREWEAVE-B200-PERP",
+    "nonce": "0x5bc639836495cd4f706658fcc665091c6876de706a34d03ff8842599183d28fd",
+    "priceX18": 18080284968793100000,
+    "vamm": "0x283Eb1C70c1ddFed588EFFF0B20A129Bd366CB96"
+  },
+  "3": {
+    "adapter": "0x02b9bbA6194b3eC79f7501fe8095A4f34BcA95c6",
+    "assetId": "0x76d0a44da38fe3b87efb5f30986a5be867c6685bbaf1a26fb154c63a6fc23f0c",
+    "assetSymbol": "GCP-B200",
+    "marketId": "0xcf1ddf7c363a1165e075f2c8ddcb837d0a5417ee0c7209660c101c804fb1dd97",
+    "name": "GCP-B200-PERP",
+    "nonce": "0x6f54325f4e0075b62c79dfd30f5668c3cb5200c4b762acc76c9b93eef4911fef",
+    "priceX18": 7282373090652320000,
+    "vamm": "0x4c77B2c6ab65f21108B5AB24A0d73e66E1C7BC0e"
+  },
+  "chainId": 11155111,
+  "cuOracle": "0x97f557594bA32e51c0eA215B1886111F24E957af",
+  "marketRegistry": "0x236b75D39203506ee3180Ef2E1c7460a188C43c6",
+  "network": "sepolia"
+}
