@@ -1,14 +1,51 @@
+# This repository is public. Only contract code, scripts, tests and
+# deployment records belong here.
+
 # Compiler files
 cache/
 out/
 
-# Ignores development broadcast logs
-!/broadcast
-/broadcast/*/31337/
-/broadcast/**/dry-run/
+# Forge broadcast logs
+/broadcast/
 
-# Docs
-docs/
-
-# Dotenv file
+# Secrets and credentials
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS and editor files
+.DS_Store
+
+# Backup files
+*.bak
+
+# Dependencies
+node_modules/
+
+# Private and regulatory documents
+/docs/
+/output/
+/analysis/
+/*.pdf
+
+# Internal notes
+/AGENTS.md
+/AUDIT_CAVEATS.md
+/LEVERAGE_UPDATE.md
+/db_schema.sql
+
+# Separate projects and operational tooling
+/overhaul/
+/agents/
+/vulnerability-scanner/
+/supabase/
+/canonical-pnl-indexer/
+/tenderly-actions/
+/web3-actions/
+/tenderly.yaml
+
+# Local build scripts and scratch files
+/scripts/
+/tmp/
