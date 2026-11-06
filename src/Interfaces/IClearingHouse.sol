@@ -38,6 +38,9 @@ interface IClearingHouse {
     );
     event FundingSettled(bytes32 indexed marketId, address indexed account, int256 fundingPayment);
     event LiquidatorWhitelistUpdated(address indexed liquidator, bool isWhitelisted);
+    event AllowlistManagerUpdated(address indexed manager);
+    event AllowlistEnforcementUpdated(bool enforced);
+    event TraderAllowlistUpdated(address indexed trader, bool isAllowed);
     event VaultUpdated(address indexed oldVault, address indexed newVault);
     event LegacyVaultWithdrawal(address indexed user, address indexed legacyVault, address indexed token, uint256 amount, uint256 received);
     event LiquidationExecuted(

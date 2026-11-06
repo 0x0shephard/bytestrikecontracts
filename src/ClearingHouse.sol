@@ -22,6 +22,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     // =========================================================================
     // Storage layout (slots 0-10) — must match ClearingHouseLogic exactly.
     // Do NOT reorder or insert variables without updating ClearingHouseLogic.
+    // Slots 11-12 are appended here only; ClearingHouseLogic does not use them.
     // =========================================================================
 
     /// @notice Address of the collateral vault contract.
@@ -55,6 +56,13 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Total short open interest per market (base units, 1e18).
     mapping(bytes32 marketId => uint256) public totalShortOI; // slot 10
 
+    /// @notice Address that can add and remove allowlisted traders alongside the owner.
+    address public allowlistManager; // slot 11
+    /// @notice Whether trader functions are restricted to allowlisted wallets.
+    bool public allowlistEnforced; // slot 11 (packed with allowlistManager)
+    /// @notice Wallets allowed to call trader functions while the allowlist is enforced.
+    mapping(address trader => bool isAllowed) public allowedTraders; // slot 12
+
     // =========================================================================
     // Logic contract (immutable — embedded in implementation bytecode, not proxy storage)
     // =========================================================================
@@ -87,6 +95,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     error MustLiquidateMore();
     error NoPosition();
     error NotAdmin();
+    error NotAllowlistManager();
     error NotLiquidatable();
     error NotWhitelistedLiquidator();
     error OracleNotSet();
@@ -99,6 +108,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     error RemainingBelowMinLiquidateFull();
     error RiskParamsNotSet();
     error SizeZero();
+    error TraderNotAllowed();
     error WouldBeLiquidatable();
     error ZeroAddress();
 
@@ -111,6 +121,19 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Modifier to restrict access to whitelisted liquidators.
     modifier onlyWhitelistedLiquidator() {
         if (!(whitelistedLiquidators[msg.sender])) revert NotWhitelistedLiquidator();
+        _;
+    }
+
+    /// @notice Modifier to restrict access to the allowlist manager or the owner.
+    modifier onlyAllowlistManager() {
+        if (msg.sender != allowlistManager && msg.sender != owner()) revert NotAllowlistManager();
+        _;
+    }
+
+    /// @notice Modifier to restrict trader functions while the allowlist is enforced.
+    /// @dev Reads the wallet's entry first so a listed trader pays for one storage read.
+    modifier onlyAllowedTrader() {
+        if (!allowedTraders[msg.sender] && allowlistEnforced) revert TraderNotAllowed();
         _;
     }
 
@@ -140,7 +163,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Deposits collateral into the vault for the caller.
     /// @param token The address of the ERC20 token to deposit.
     /// @param amount The amount of the token to deposit.
-    function deposit(address token, uint256 amount) external override nonReentrant {
+    function deposit(address token, uint256 amount) external override onlyAllowedTrader nonReentrant {
         if (!(amount > 0)) revert AmountZero();
         ICollateralVault(vault).deposit(token, amount, msg.sender);
         emit CollateralDeposited(msg.sender, token, amount);
@@ -151,7 +174,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     ///      and that no positions would become liquidatable after withdrawal.
     /// @param token The address of the ERC20 token to withdraw.
     /// @param amount The amount of the token to withdraw.
-    function withdraw(address token, uint256 amount) external override nonReentrant {
+    function withdraw(address token, uint256 amount) external override onlyAllowedTrader nonReentrant {
         if (!(amount > 0)) revert AmountZero();
 
         // Settle funding for all active markets to ensure margin values are current
@@ -184,7 +207,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Adds margin to a specific position from the user's available collateral.
     /// @param marketId The ID of the market for the position.
     /// @param amount The amount of margin to add (in quote currency value, 1e18).
-    function addMargin(bytes32 marketId, uint256 amount) external override {
+    function addMargin(bytes32 marketId, uint256 amount) external override onlyAllowedTrader {
         _settleFundingInternal(marketId, msg.sender);
         if (!(amount > 0)) revert AmountZero();
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
@@ -202,7 +225,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @dev Checks that removing margin does not leave the position below the maintenance margin requirement.
     /// @param marketId The ID of the market for the position.
     /// @param amount The amount of margin to remove (in quote currency value, 1e18).
-    function removeMargin(bytes32 marketId, uint256 amount) external override {
+    function removeMargin(bytes32 marketId, uint256 amount) external override onlyAllowedTrader {
         _settleFundingInternal(marketId, msg.sender);
         if (!(amount > 0)) revert AmountZero();
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
@@ -417,7 +440,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @param isLong True for a long position, false for a short position.
     /// @param size The amount of base asset to trade.
     /// @param amountLimit For longs (buying base): max quote to spend. For shorts (selling base): min quote to receive. 0 = no limit.
-    function openPosition(bytes32 marketId, bool isLong, uint128 size, uint256 amountLimit) external override nonReentrant {
+    function openPosition(bytes32 marketId, bool isLong, uint128 size, uint256 amountLimit) external override onlyAllowedTrader nonReentrant {
         // Settle funding for all active markets to ensure margin values are current
         bytes32[] memory activeMarkets = _userActiveMarkets[msg.sender];
         for (uint256 i = 0; i < activeMarkets.length; i++) {
@@ -478,7 +501,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @param marketId The ID of the perpetual market.
     /// @param size The amount of base asset to trade for closing the position.
     /// @param amountLimit For closing longs (selling base): min quote to receive. For closing shorts (buying base): max quote to spend. 0 = no limit.
-    function closePosition(bytes32 marketId, uint128 size, uint256 amountLimit) external override nonReentrant {
+    function closePosition(bytes32 marketId, uint128 size, uint256 amountLimit) external override onlyAllowedTrader nonReentrant {
         // Settle funding for all active markets so vault balances and
         // _totalReservedMargin are current before any shortfall recovery.
         bytes32[] memory activeMarkets = _userActiveMarkets[msg.sender];
@@ -759,6 +782,33 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     function setWhitelistedLiquidator(address liquidator, bool isWhitelisted) external onlyAdmin {
         whitelistedLiquidators[liquidator] = isWhitelisted;
         emit LiquidatorWhitelistUpdated(liquidator, isWhitelisted);
+    }
+
+    // =========================================================================
+    // Trader allowlist management
+    // =========================================================================
+
+    /// @notice Sets the address that can manage the trader allowlist.
+    /// @param manager The new manager, or address(0) to leave management with the owner.
+    function setAllowlistManager(address manager) external onlyAdmin {
+        allowlistManager = manager;
+        emit AllowlistManagerUpdated(manager);
+    }
+
+    /// @notice Turns allowlist enforcement on or off for all trader functions.
+    function setAllowlistEnforced(bool enforced) external onlyAdmin {
+        allowlistEnforced = enforced;
+        emit AllowlistEnforcementUpdated(enforced);
+    }
+
+    /// @notice Adds or removes a batch of wallets from the trader allowlist.
+    /// @param traders The wallets to update.
+    /// @param isAllowed Whether the wallets can call trader functions.
+    function setAllowedTraders(address[] calldata traders, bool isAllowed) external onlyAllowlistManager {
+        for (uint256 i = 0; i < traders.length; i++) {
+            allowedTraders[traders[i]] = isAllowed;
+            emit TraderAllowlistUpdated(traders[i], isAllowed);
+        }
     }
 
     // =========================================================================
