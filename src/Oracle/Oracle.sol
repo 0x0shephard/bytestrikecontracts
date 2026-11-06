@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 //@dev - having same stale time period for uptime and price staleness check
 
+import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {AggregatorV3Interface, AggregatorInterface} from "./interfaces/AggregatorV3Interface.sol";
 
 // --- Errors ---
@@ -13,15 +14,14 @@ error SequencerDown();
 error PriceIsStale();
 error GracePeriodNotOver();
 error PriceOutOfBounds();
+error Oracle_RenounceOwnershipDisabled();
 
 /**
  * @title Oracle
  * @dev This contract retrieves asset prices using Chainlink Price Feeds.
  * It includes a check for L2 sequencer uptime to prevent stale prices.
  */
-contract Oracle {
-    address public owner;
-
+contract Oracle is Ownable2Step {
     mapping(string => AggregatorV3Interface) public priceFeeds;
     mapping(string => uint256) public baseUnits;
     mapping(string => uint256) public priceStalePeriods;
@@ -39,16 +39,9 @@ contract Oracle {
     event PriceStalePeriodSetForToken(string indexed tokenSymbol, uint256 newStalePeriod);
     event PriceStalePeriodSet(uint256 indexed newStalePeriod);
 
-    constructor() {
-        owner = msg.sender;
+    constructor() Ownable(msg.sender) {
         priceStalePeriod = 3600; // Default to 1 hour
         emit PriceStalePeriodSet(priceStalePeriod);
-    }
-
-    // --- Modifiers ---
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Oracle: Caller is not the owner");
-        _;
     }
 
     // --- Price Oracle Functions ---
@@ -138,6 +131,11 @@ contract Oracle {
     function setPriceStalePeriodForToken(string memory _tokenSymbol, uint256 _stalePeriod) external onlyOwner {
         priceStalePeriods[_tokenSymbol] = _stalePeriod;
         emit PriceStalePeriodSetForToken(_tokenSymbol, _stalePeriod);
+    }
+
+    /// @notice Disabled because renouncing would permanently remove the oracle's admin.
+    function renounceOwnership() public pure override {
+        revert Oracle_RenounceOwnershipDisabled();
     }
 
     // --- Internal Functions ---

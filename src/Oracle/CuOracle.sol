@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+
 /**
  * @title CuOracle
  * @author Sheep
  * @dev A simple price oracle that uses a commit-reveal scheme to prevent front-running (sandwich attacks).
- * The owner first commits a hash of the price and a nonce, then reveals the price and nonce in a separate transaction.
+ * A publisher first commits a hash of the price and a nonce, then reveals the price and nonce in a separate transaction.
+ * Publishers can only move a price within maxPriceMoveBps of its last value and cannot set an asset's first price.
+ * Only the owner can reveal outside those bounds.
  */
-contract CuOracle {
+contract CuOracle is Ownable2Step {
     // --- Custom Errors ---
-    error OnlyOwner();
     error OnlyAllowedRole();
     error InvalidAddress();
     error InvalidAssetId();
@@ -26,9 +29,16 @@ contract CuOracle {
     error CommitExpired();
     error RoleAlreadyGranted();
     error RoleNotGranted();
+    error InvalidPriceMoveLimit();
+    error PriceMoveTooLarge(uint256 previousPrice, uint256 newPrice);
+    error RenounceOwnershipDisabled();
+
+    // --- Constants ---
+    uint256 public constant BPS_DENOMINATOR = 10_000;
+    uint256 public constant DEFAULT_MAX_PRICE_MOVE_BPS = 2_000; // 20%
 
     // --- State Variables ---
-    address public owner;
+    uint256 public maxPriceMoveBps; // Largest move a publisher can make from an asset's last price
     uint256 public minTimeInterval; // Minimum time between commits for same asset
     uint256 public minCommitRevealDelay; // Minimum time between commit and reveal
     uint256 public maxCommitAge; // Maximum time a commit is valid
@@ -43,7 +53,7 @@ contract CuOracle {
     event MaxCommitAgeUpdated(uint256 indexed newMaxAge);
     event RoleGranted(address indexed role);
     event RoleRevoked(address indexed role);
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event MaxPriceMoveBpsUpdated(uint256 indexed newMaxPriceMoveBps);
     event MinTimeIntervalSet(uint256 indexed minTimeInterval);
     event MaxCommitAgeSet(uint256 indexed maxCommitAge);
     event MinCommitRevealDelaySet(uint256 indexed minCommitRevealDelay);
@@ -64,13 +74,8 @@ contract CuOracle {
     mapping(address => bool) public allowedRoles;
 
     // --- Modifiers ---
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert OnlyOwner();
-        _;
-    }
-
     modifier onlyAllowedRole() {
-        if (msg.sender != owner && !allowedRoles[msg.sender]) revert OnlyAllowedRole();
+        if (msg.sender != owner() && !allowedRoles[msg.sender]) revert OnlyAllowedRole();
         _;
     }
 
@@ -79,15 +84,14 @@ contract CuOracle {
      * @param _owner The address of the owner.
      * @param _minTimeInterval Minimum time between commits for same asset.
      */
-    constructor(address _owner, uint256 _minTimeInterval) {
-        if (_owner == address(0)) revert InvalidAddress();
+    constructor(address _owner, uint256 _minTimeInterval) Ownable(_owner) {
         if (_minTimeInterval == 0) revert InvalidInterval();
 
-        owner = _owner;
+        maxPriceMoveBps = DEFAULT_MAX_PRICE_MOVE_BPS;
         minTimeInterval = _minTimeInterval;
         minCommitRevealDelay = 1; // Default: at least 1 second between commit and reveal
         maxCommitAge = 1 hours; // Default: commits expire after 1 hour
-        emit OwnershipTransferred(address(0), _owner);
+        emit MaxPriceMoveBpsUpdated(DEFAULT_MAX_PRICE_MOVE_BPS);
         emit MinTimeIntervalSet(_minTimeInterval);
         emit MaxCommitAgeSet(maxCommitAge);
         emit MinCommitRevealDelaySet(minCommitRevealDelay);
@@ -118,7 +122,7 @@ contract CuOracle {
      * @param _price The actual price to be set, scaled by 1e18.
      * @param _nonce The secret nonce used to generate the commit hash.
      */
-    function updatePrices(bytes32 _assetId, uint256 _price, bytes32 _nonce) external onlyOwner {
+    function updatePrices(bytes32 _assetId, uint256 _price, bytes32 _nonce) external onlyAllowedRole {
         if (!supportedAssets[_assetId]) revert AssetNotSupported();
         if (_nonce == 0) revert InvalidNonce();
         if (_price == 0) revert InvalidPrice();
@@ -143,6 +147,10 @@ contract CuOracle {
             revert InvalidPrice();
         }
 
+        if (msg.sender != owner()) {
+            _checkPriceMove(latestPrices[_assetId].price, _price);
+        }
+
         // Clear the commit
         delete priceCommits[_assetId];
         delete commitTimestamps[_assetId];
@@ -157,8 +165,8 @@ contract CuOracle {
     }
 
     /**
-     * @dev Allows owner to grant addresses permission to commit prices.
-     * @param _role The address to be granted commit permissions.
+     * @dev Allows owner to grant addresses permission to commit and reveal prices.
+     * @param _role The address to be granted publisher permissions.
      */
     function grantRole(address _role) external onlyOwner {
         if (_role == address(0)) revert InvalidAddress();
@@ -169,7 +177,7 @@ contract CuOracle {
     }
 
     /**
-     * @dev Allows owner to revoke commit permissions from an address.
+     * @dev Allows owner to revoke publisher permissions from an address.
      * @param _role The address to have permissions revoked.
      */
     function revokeRole(address _role) external onlyOwner {
@@ -211,15 +219,21 @@ contract CuOracle {
     }
 
     /**
-     * @dev Transfers ownership of the contract to a new address.
-     * @param _newOwner The address of the new owner.
+     * @dev Allows owner to update the largest price move a publisher can make.
+     * @param _newMaxPriceMoveBps The new limit in basis points of the last price.
      */
-    function transferOwnership(address _newOwner) external onlyOwner {
-        if (_newOwner == address(0)) revert InvalidAddress();
+    function updateMaxPriceMoveBps(uint256 _newMaxPriceMoveBps) external onlyOwner {
+        if (_newMaxPriceMoveBps == 0 || _newMaxPriceMoveBps > BPS_DENOMINATOR) revert InvalidPriceMoveLimit();
 
-        address previousOwner = owner;
-        owner = _newOwner;
-        emit OwnershipTransferred(previousOwner, _newOwner);
+        maxPriceMoveBps = _newMaxPriceMoveBps;
+        emit MaxPriceMoveBpsUpdated(_newMaxPriceMoveBps);
+    }
+
+    /**
+     * @dev Disabled because renouncing would permanently remove the oracle's admin.
+     */
+    function renounceOwnership() public pure override {
+        revert RenounceOwnershipDisabled();
     }
 
     /**
@@ -258,5 +272,21 @@ contract CuOracle {
         delete latestPrices[_assetId];
 
         emit AssetRemoved(_assetId);
+    }
+
+    // --- Internal Functions ---
+
+    /**
+     * @dev Rejects a publisher's first price for an asset and any move above maxPriceMoveBps.
+     * @param _previousPrice The asset's last price, or zero if it has none.
+     * @param _newPrice The price being revealed.
+     */
+    function _checkPriceMove(uint256 _previousPrice, uint256 _newPrice) internal view {
+        if (_previousPrice == 0) revert PriceMoveTooLarge(_previousPrice, _newPrice);
+
+        uint256 move = _newPrice > _previousPrice ? _newPrice - _previousPrice : _previousPrice - _newPrice;
+        if (move * BPS_DENOMINATOR > _previousPrice * maxPriceMoveBps) {
+            revert PriceMoveTooLarge(_previousPrice, _newPrice);
+        }
     }
 }

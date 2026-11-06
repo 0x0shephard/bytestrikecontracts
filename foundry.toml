@@ -2,6 +2,8 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+solc_version = "0.8.28"
+evm_version = "prague"
 
 remappings = [
     # OpenZeppelin from lib
@@ -13,6 +15,8 @@ remappings = [
 optimizer = true
 optimizer_runs = 1
 via_ir = true
+cbor_metadata = true
+bytecode_hash = "ipfs"
 fs_permissions = [{ access = "read-write", path = "./deployments/" }]
 
 # RPC endpoints
