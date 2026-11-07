@@ -63,6 +63,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Wallets allowed to call trader functions while the allowlist is enforced.
     mapping(address trader => bool isAllowed) public allowedTraders; // slot 12
 
+    /// @notice Per-market caps on aggregate open interest (gross and net, base units).
+    mapping(bytes32 marketId => OpenInterestCaps) public openInterestCaps; // slot 13
+
     // =========================================================================
     // Logic contract (immutable — embedded in implementation bytecode, not proxy storage)
     // =========================================================================
@@ -74,6 +77,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     error AmountZero();
     error BelowMinSize();
     error ExceedsMaxSize();
+    error ExceedsMaxGrossOI();
+    error ExceedsMaxNetOI();
     error HasLiquidatablePosition();
     error IMRBelowMMR();
     error IMRBreach();
@@ -84,6 +89,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     error InsufficientQuoteCollateral();
     error InsufficientQuoteForFee();
     error InvalidAdmin();
+    error InvalidOpenInterestCaps();
     error InvalidRegistry();
     error InvalidSize();
     error InvalidVault();
@@ -435,6 +441,46 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
 
+    /// @notice Sets the aggregate open-interest caps for a market. 0 disables a cap.
+    /// @dev Lowering a cap below current OI never traps positions: only trades that
+    ///      increase the capped measure are rejected, and closes and liquidations are never capped.
+    /// @param marketId The market to configure.
+    /// @param maxGrossOI Cap on long OI + short OI, in base units (1e18).
+    /// @param maxNetOI Cap on |long OI - short OI|, in base units (1e18).
+    function setOpenInterestCaps(bytes32 marketId, uint128 maxGrossOI, uint128 maxNetOI) external onlyAdmin {
+        if (!(IMarketRegistry(marketRegistry).getMarket(marketId).vamm != address(0))) revert MarketNotFound();
+        if (maxGrossOI != 0 && maxNetOI > maxGrossOI) revert InvalidOpenInterestCaps();
+
+        openInterestCaps[marketId] = OpenInterestCaps({maxGrossOI: maxGrossOI, maxNetOI: maxNetOI});
+        emit OpenInterestCapsSet(marketId, maxGrossOI, maxNetOI);
+    }
+
+    /// @notice Reverts if a trade raised gross or net OI above its cap.
+    /// @dev A trade that lowers a measure is always allowed, even if the measure is still above its cap.
+    function _checkOpenInterestCaps(
+        bytes32 marketId,
+        OpenInterestCaps memory oiCaps,
+        uint256 longOIBefore,
+        uint256 shortOIBefore
+    ) internal view {
+        uint256 longOIAfter = totalLongOI[marketId];
+        uint256 shortOIAfter = totalShortOI[marketId];
+
+        if (oiCaps.maxGrossOI != 0) {
+            uint256 grossAfter = longOIAfter + shortOIAfter;
+            if (grossAfter > oiCaps.maxGrossOI && grossAfter > longOIBefore + shortOIBefore) {
+                revert ExceedsMaxGrossOI();
+            }
+        }
+
+        if (oiCaps.maxNetOI != 0) {
+            uint256 netAfter = longOIAfter > shortOIAfter ? longOIAfter - shortOIAfter : shortOIAfter - longOIAfter;
+            uint256 netBefore =
+                longOIBefore > shortOIBefore ? longOIBefore - shortOIBefore : shortOIBefore - longOIBefore;
+            if (netAfter > oiCaps.maxNetOI && netAfter > netBefore) revert ExceedsMaxNetOI();
+        }
+    }
+
     /// @notice Opens a new position or increases an existing one in a perpetual market.
     /// @param marketId The ID of the perpetual market.
     /// @param isLong True for a long position, false for a short position.
@@ -462,12 +508,24 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         if (!(m.vamm != address(0))) revert MarketNotFound();
         if (!(size > 0)) revert SizeZero();
 
+        // Snapshot aggregate OI only when the market has a cap (one storage read otherwise).
+        OpenInterestCaps memory oiCaps = openInterestCaps[marketId];
+        bool oiCapped = oiCaps.maxGrossOI != 0 || oiCaps.maxNetOI != 0;
+        uint256 longOIBefore;
+        uint256 shortOIBefore;
+        if (oiCapped) {
+            longOIBefore = totalLongOI[marketId];
+            shortOIBefore = totalShortOI[marketId];
+        }
+
         IVAMM vamm = IVAMM(m.vamm);
         (int256 baseDelta, int256 quoteDelta, uint256 avgPrice) = isLong
             ? vamm.buyBase(size, amountLimit)
             : vamm.sellBase(size, amountLimit);
 
         _applyTrade(msg.sender, marketId, baseDelta, quoteDelta, false);
+
+        if (oiCapped) _checkOpenInterestCaps(marketId, oiCaps, longOIBefore, shortOIBefore);
 
         // Check position size limits
         PositionView storage position = positions[msg.sender][marketId];
