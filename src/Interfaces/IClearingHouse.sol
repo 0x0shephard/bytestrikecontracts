@@ -48,6 +48,7 @@ interface IClearingHouse {
     event AllowlistEnforcementUpdated(bool enforced);
     event TraderAllowlistUpdated(address indexed trader, bool isAllowed);
     event OpenInterestCapsSet(bytes32 indexed marketId, uint256 maxGrossOI, uint256 maxNetOI);
+    event LiquidationPriceBandSet(bytes32 indexed marketId, uint256 bandBps);
     event VaultUpdated(address indexed oldVault, address indexed newVault);
     event LegacyVaultWithdrawal(address indexed user, address indexed legacyVault, address indexed token, uint256 amount, uint256 received);
     event LiquidationExecuted(

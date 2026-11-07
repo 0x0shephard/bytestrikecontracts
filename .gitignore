@@ -49,3 +49,6 @@ node_modules/
 # Local build scripts and scratch files
 /scripts/
 /tmp/
+
+# Claude Code local state and agent worktrees
+/.claude/

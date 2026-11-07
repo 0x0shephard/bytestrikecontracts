@@ -91,7 +91,7 @@ contract TraderAllowlistTest is BaseTest {
 
     // --- Unlisted traders ---
 
-    function test_UnlistedTraderIsBlockedFromEveryFunction() public {
+    function test_UnlistedTraderCannotDepositOrOpen() public {
         _enforce();
         fundUser(stranger, DEPOSIT);
 
@@ -102,51 +102,38 @@ contract TraderAllowlistTest is BaseTest {
         clearingHouse.deposit(address(usdc), AMOUNT);
 
         vm.expectRevert(ClearingHouse.TraderNotAllowed.selector);
-        clearingHouse.withdraw(address(usdc), AMOUNT);
+        clearingHouse.openPosition(ETH_PERP, true, SIZE, 0);
+        vm.stopPrank();
+    }
 
-        vm.expectRevert(ClearingHouse.TraderNotAllowed.selector);
-        clearingHouse.addMargin(ETH_PERP, AMOUNT);
+    function test_RemovedTraderCannotAddExposure() public {
+        _aliceTradingWhileEnforced();
+        _setAllowed(alice, false);
+        fundUser(alice, AMOUNT);
 
+        vm.startPrank(alice);
+        usdc.approve(address(vault), AMOUNT);
         vm.expectRevert(ClearingHouse.TraderNotAllowed.selector);
-        clearingHouse.removeMargin(ETH_PERP, AMOUNT);
+        clearingHouse.deposit(address(usdc), AMOUNT);
 
         vm.expectRevert(ClearingHouse.TraderNotAllowed.selector);
         clearingHouse.openPosition(ETH_PERP, true, SIZE, 0);
-
-        vm.expectRevert(ClearingHouse.TraderNotAllowed.selector);
-        clearingHouse.closePosition(ETH_PERP, SIZE, 0);
         vm.stopPrank();
     }
 
-    function test_RemovedTraderIsFrozenButKeepsBalanceAndPosition() public {
+    /// @dev A removed wallet keeps every exit, so a manager key cannot trap it into liquidation.
+    function test_RemovedTraderCanStillDeRiskAndLeave() public {
         _aliceTradingWhileEnforced();
-        uint256 balanceBefore = getCollateralBalance(alice);
-        int256 sizeBefore = getPosition(alice).size;
-
         _setAllowed(alice, false);
 
         vm.startPrank(alice);
-        vm.expectRevert(ClearingHouse.TraderNotAllowed.selector);
-        clearingHouse.closePosition(ETH_PERP, SIZE, 0);
-
-        vm.expectRevert(ClearingHouse.TraderNotAllowed.selector);
-        clearingHouse.withdraw(address(usdc), AMOUNT);
-        vm.stopPrank();
-
-        assertEq(getCollateralBalance(alice), balanceBefore);
-        assertEq(getPosition(alice).size, sizeBefore);
-    }
-
-    function test_RestoredTraderCanExit() public {
-        _aliceTradingWhileEnforced();
-        _setAllowed(alice, false);
-        _setAllowed(alice, true);
-
-        vm.startPrank(alice);
+        clearingHouse.addMargin(ETH_PERP, AMOUNT);
+        clearingHouse.removeMargin(ETH_PERP, AMOUNT / 2);
         clearingHouse.closePosition(ETH_PERP, SIZE, 0);
         clearingHouse.withdraw(address(usdc), AMOUNT);
         vm.stopPrank();
 
+        assertEq(getPosition(alice).size, 0);
         assertEq(usdc.balanceOf(alice), AMOUNT);
     }
 
@@ -173,7 +160,7 @@ contract TraderAllowlistTest is BaseTest {
         assertEq(getPosition(alice).size, 0);
     }
 
-    function test_LiquidatorNeedsListingToWithdrawReward() public {
+    function test_UnlistedLiquidatorCanWithdrawReward() public {
         _aliceTradingWhileEnforced();
         setOraclePrice(1_800 * PRICE_PRECISION);
 
@@ -183,13 +170,7 @@ contract TraderAllowlistTest is BaseTest {
         assertGt(reward, 0);
 
         vm.prank(liquidator);
-        vm.expectRevert(ClearingHouse.TraderNotAllowed.selector);
         clearingHouse.withdraw(address(usdc), reward);
-
-        _setAllowed(liquidator, true);
-        vm.prank(liquidator);
-        clearingHouse.withdraw(address(usdc), reward);
-
         assertEq(usdc.balanceOf(liquidator), reward);
     }
 

@@ -9,6 +9,8 @@ contract OpenInterestCapsTest is BaseTest {
     address internal carol = makeAddr("carol");
 
     uint256 internal constant DEPOSIT = 20_000 * USDC_UNIT;
+    /// @dev Gross cap high enough not to bind, for tests that exercise the net cap.
+    uint128 internal constant NO_GROSS_LIMIT = 1_000 ether;
 
     function setUp() public override {
         super.setUp();
@@ -31,6 +33,12 @@ contract OpenInterestCapsTest is BaseTest {
         vm.prank(trader);
         vm.expectRevert(selector);
         clearingHouse.openPosition(ETH_PERP, isLong, size, 0);
+    }
+
+    function _net() internal view returns (uint256) {
+        uint256 longOI = clearingHouse.totalLongOI(ETH_PERP);
+        uint256 shortOI = clearingHouse.totalShortOI(ETH_PERP);
+        return longOI > shortOI ? longOI - shortOI : shortOI - longOI;
     }
 
     function _gross() internal view returns (uint256) {
@@ -77,11 +85,17 @@ contract OpenInterestCapsTest is BaseTest {
         clearingHouse.setOpenInterestCaps(ETH_PERP, 4 ether, 5 ether);
     }
 
-    function test_NetCapAloneIsAllowed() public {
-        _setCaps(0, 4 ether);
+    function test_NetCapRequiresGrossCap() public {
+        vm.prank(admin);
+        vm.expectRevert(ClearingHouse.InvalidOpenInterestCaps.selector);
+        clearingHouse.setOpenInterestCaps(ETH_PERP, 0, 4 ether);
+    }
+
+    function test_GrossCapAloneIsAllowed() public {
+        _setCaps(4 ether, 0);
         (uint128 maxGross, uint128 maxNet) = clearingHouse.openInterestCaps(ETH_PERP);
-        assertEq(maxGross, 0);
-        assertEq(maxNet, 4 ether);
+        assertEq(maxGross, 4 ether);
+        assertEq(maxNet, 0);
     }
 
     function test_StorageIsAppendedAtSlot13() public {
@@ -121,13 +135,13 @@ contract OpenInterestCapsTest is BaseTest {
     // --- Net cap ---
 
     function test_NetCapBlocksOneSidedExposure() public {
-        _setCaps(0, 2 ether);
+        _setCaps(NO_GROSS_LIMIT, 2 ether);
         _open(alice, true, ethQty(2));
         _expectOpenRevert(bob, true, ethQty(1), ClearingHouse.ExceedsMaxNetOI.selector);
     }
 
     function test_NetCapAllowsBalancedGrowth() public {
-        _setCaps(0, 2 ether);
+        _setCaps(NO_GROSS_LIMIT, 2 ether);
         _open(alice, true, ethQty(2));
         _open(bob, false, ethQty(4)); // net moves from +2 to -2
         _open(carol, true, ethQty(4)); // net moves from -2 to +2
@@ -137,7 +151,7 @@ contract OpenInterestCapsTest is BaseTest {
     }
 
     function test_NetCapBlocksOvershootOnTheOtherSide() public {
-        _setCaps(0, 2 ether);
+        _setCaps(NO_GROSS_LIMIT, 2 ether);
         _open(alice, true, ethQty(2));
         _expectOpenRevert(bob, false, ethQty(5), ClearingHouse.ExceedsMaxNetOI.selector); // net would be -3
     }
@@ -146,7 +160,7 @@ contract OpenInterestCapsTest is BaseTest {
 
     function test_RiskReducingOpenIsAllowedAboveTheNetCap() public {
         _open(alice, true, ethQty(5));
-        _setCaps(0, 2 ether);
+        _setCaps(NO_GROSS_LIMIT, 2 ether);
 
         _open(bob, false, ethQty(1)); // net falls from 5 to 4, still above cap
         assertEq(clearingHouse.totalShortOI(ETH_PERP), 1 ether);
@@ -158,6 +172,24 @@ contract OpenInterestCapsTest is BaseTest {
 
         _open(alice, false, ethQty(6)); // long 5 -> short 1, gross falls from 5 to 1
         assertEq(_gross(), 1 ether);
+    }
+
+    function test_ReducingViaOpenPositionIsExemptLikeClose() public {
+        _open(bob, false, ethQty(2));
+        _open(alice, true, ethQty(2));
+        _setCaps(NO_GROSS_LIMIT, 1 ether);
+
+        _open(bob, true, ethQty(2)); // bob closes his short via openPosition; net moves 0 -> 2
+        assertEq(clearingHouse.totalShortOI(ETH_PERP), 0);
+    }
+
+    function test_FlipViaOpenPositionIsStillCapped() public {
+        _open(bob, false, ethQty(2));
+        _open(alice, true, ethQty(2));
+        _setCaps(NO_GROSS_LIMIT, 1 ether);
+
+        // bob short 2 -> long 2: not a pure reduction, net would go 0 -> 4
+        _expectOpenRevert(bob, true, ethQty(4), ClearingHouse.ExceedsMaxNetOI.selector);
     }
 
     function test_ClosingIsAllowedAboveTheCaps() public {
@@ -207,13 +239,20 @@ contract OpenInterestCapsTest is BaseTest {
 
         for (uint256 i = 0; i < 8; i++) {
             uint128 size = uint128(bound(sizes[i], 1, 4)) * 1 ether;
-            vm.prank(traders[i % 3]);
+            address trader = traders[i % 3];
+            uint256 netBefore = _net();
+            int256 sizeBefore = clearingHouse.getPosition(trader, ETH_PERP).size;
+            vm.prank(trader);
             try clearingHouse.openPosition(ETH_PERP, sides[i], size, 0) {} catch {}
+            int256 sizeAfter = clearingHouse.getPosition(trader, ETH_PERP).size;
 
-            uint256 longOI = clearingHouse.totalLongOI(ETH_PERP);
-            uint256 shortOI = clearingHouse.totalShortOI(ETH_PERP);
-            assertLe(longOI + shortOI, 6 ether);
-            assertLe(longOI > shortOI ? longOI - shortOI : shortOI - longOI, 3 ether);
+            // Gross is a hard bound. Net is bounded for any trade that grows it, except a
+            // pure reduction of the trader's own position, which is exempt like closePosition.
+            assertLe(_gross(), 6 ether);
+            bool pureReduction = (sizeBefore > 0 && sizeAfter >= 0 && sizeAfter <= sizeBefore)
+                || (sizeBefore < 0 && sizeAfter <= 0 && sizeAfter >= sizeBefore);
+            uint256 netAfter = _net();
+            if (netAfter > netBefore && !pureReduction) assertLe(netAfter, 3 ether);
         }
     }
 }

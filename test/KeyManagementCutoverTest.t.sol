@@ -162,6 +162,86 @@ contract KeyManagementCutoverTest is Test {
 
     // --- CuOracle ownership ---
 
+    // --- Pending commits are bound to their maker ---
+
+    function _bareCommit(address caller, uint256 newPrice, bytes32 salt) internal {
+        _advanceTime();
+        vm.prank(caller);
+        cuOracle.commitPrice(assetId, keccak256(abi.encodePacked(newPrice, salt)));
+    }
+
+    function testPublisherCannotOverwriteOwnersPendingCommit() external {
+        _publish(owner, price);
+        uint256 bigMove = price * 2;
+        _bareCommit(owner, bigMove, nonce);
+        assertEq(cuOracle.commitOwners(assetId), owner);
+
+        _advanceTime();
+        vm.prank(publisher);
+        vm.expectRevert(CuOracle.CommitPendingFromAnotherPublisher.selector);
+        cuOracle.commitPrice(assetId, keccak256(abi.encodePacked(price, keccak256("other"))));
+
+        vm.prank(owner);
+        cuOracle.updatePrices(assetId, bigMove, nonce);
+        assertEq(_latestPrice(), bigMove);
+        assertEq(cuOracle.commitOwners(assetId), address(0));
+    }
+
+    function testPublisherCannotOverwriteAnotherPublishersCommit() external {
+        address publisher2 = address(0xB0B2);
+        vm.prank(owner);
+        cuOracle.grantRole(publisher2);
+        _publish(owner, price);
+
+        _bareCommit(publisher, price, nonce);
+        _advanceTime();
+        vm.prank(publisher2);
+        vm.expectRevert(CuOracle.CommitPendingFromAnotherPublisher.selector);
+        cuOracle.commitPrice(assetId, keccak256(abi.encodePacked(price, keccak256("other"))));
+    }
+
+    function testCommitterCanReplaceOwnCommit() external {
+        _publish(owner, price);
+        _bareCommit(publisher, price, keccak256("first"));
+        _bareCommit(publisher, price, nonce);
+        _advanceTime();
+
+        vm.prank(publisher);
+        cuOracle.updatePrices(assetId, price, nonce);
+        assertEq(_latestPrice(), price);
+    }
+
+    function testOwnerCanReplacePublishersCommit() external {
+        _publish(owner, price);
+        _bareCommit(publisher, price, keccak256("publisher"));
+        _bareCommit(owner, price * 3, nonce);
+        assertEq(cuOracle.commitOwners(assetId), owner);
+        _advanceTime();
+
+        vm.prank(owner);
+        cuOracle.updatePrices(assetId, price * 3, nonce);
+        assertEq(_latestPrice(), price * 3);
+    }
+
+    function testExpiredCommitCanBeReplacedByAnotherPublisher() external {
+        _publish(owner, price);
+        _bareCommit(owner, price * 2, keccak256("stale"));
+
+        currentTime += 1 hours + 1;
+        vm.warp(currentTime);
+        vm.prank(publisher);
+        cuOracle.commitPrice(assetId, keccak256(abi.encodePacked(price, nonce)));
+        assertEq(cuOracle.commitOwners(assetId), publisher);
+    }
+
+    function testRemovingAssetClearsCommitOwner() external {
+        _publish(owner, price);
+        _bareCommit(publisher, price, nonce);
+        vm.prank(owner);
+        cuOracle.removeAsset(assetId);
+        assertEq(cuOracle.commitOwners(assetId), address(0));
+    }
+
     function testCuOracleOwnershipNeedsAcceptance() external {
         vm.prank(owner);
         cuOracle.transferOwnership(multisig);

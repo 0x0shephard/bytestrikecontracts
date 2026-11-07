@@ -66,6 +66,13 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Per-market caps on aggregate open interest (gross and net, base units).
     mapping(bytes32 marketId => OpenInterestCaps) public openInterestCaps; // slot 13
 
+    /// @notice Per-market limit on how far below (long) or above (short) the index a liquidation may fill, in bps.
+    /// @dev 0 means DEFAULT_LIQUIDATION_PRICE_BAND_BPS. Read through liquidationPriceBandBps().
+    mapping(bytes32 marketId => uint256 bandBps) internal _liquidationPriceBandBps; // slot 14
+
+    /// @notice Band used when a market has none set: 5%.
+    uint256 public constant DEFAULT_LIQUIDATION_PRICE_BAND_BPS = 500;
+
     // =========================================================================
     // Logic contract (immutable — embedded in implementation bytecode, not proxy storage)
     // =========================================================================
@@ -89,10 +96,13 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     error InsufficientQuoteCollateral();
     error InsufficientQuoteForFee();
     error InvalidAdmin();
+    error InvalidLiquidationPriceBand();
+    error InvalidLogic();
     error InvalidOpenInterestCaps();
     error InvalidRegistry();
     error InvalidSize();
     error InvalidVault();
+    error LiquidationPriceOutOfBand(uint256 fillPriceX18, uint256 indexPriceX18);
     error MMRZero();
     error MarginBelowPenalty();
     error MarketNotActive();
@@ -136,7 +146,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         _;
     }
 
-    /// @notice Modifier to restrict trader functions while the allowlist is enforced.
+    /// @notice Modifier to restrict risk-increasing trader functions (deposit, openPosition) while the allowlist is enforced.
+    /// @dev Exits (closePosition, addMargin, removeMargin, withdraw) stay open so a removed wallet can always de-risk and leave.
     /// @dev Reads the wallet's entry first so a listed trader pays for one storage read.
     modifier onlyAllowedTrader() {
         if (!allowedTraders[msg.sender] && allowlistEnforced) revert TraderNotAllowed();
@@ -144,6 +155,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
     constructor(address logic) {
+        if (logic.code.length == 0) revert InvalidLogic();
         _logic = logic;
         _disableInitializers();
     }
@@ -180,7 +192,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     ///      and that no positions would become liquidatable after withdrawal.
     /// @param token The address of the ERC20 token to withdraw.
     /// @param amount The amount of the token to withdraw.
-    function withdraw(address token, uint256 amount) external override onlyAllowedTrader nonReentrant {
+    function withdraw(address token, uint256 amount) external override nonReentrant {
         if (!(amount > 0)) revert AmountZero();
 
         // Settle funding for all active markets to ensure margin values are current
@@ -213,7 +225,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Adds margin to a specific position from the user's available collateral.
     /// @param marketId The ID of the market for the position.
     /// @param amount The amount of margin to add (in quote currency value, 1e18).
-    function addMargin(bytes32 marketId, uint256 amount) external override onlyAllowedTrader {
+    function addMargin(bytes32 marketId, uint256 amount) external override {
         _settleFundingInternal(marketId, msg.sender);
         if (!(amount > 0)) revert AmountZero();
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
@@ -231,7 +243,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @dev Checks that removing margin does not leave the position below the maintenance margin requirement.
     /// @param marketId The ID of the market for the position.
     /// @param amount The amount of margin to remove (in quote currency value, 1e18).
-    function removeMargin(bytes32 marketId, uint256 amount) external override onlyAllowedTrader {
+    function removeMargin(bytes32 marketId, uint256 amount) external override {
         _settleFundingInternal(marketId, msg.sender);
         if (!(amount > 0)) revert AmountZero();
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
@@ -446,13 +458,23 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     ///      increase the capped measure are rejected, and closes and liquidations are never capped.
     /// @param marketId The market to configure.
     /// @param maxGrossOI Cap on long OI + short OI, in base units (1e18).
-    /// @param maxNetOI Cap on |long OI - short OI|, in base units (1e18).
+    /// @param maxNetOI Cap on |long OI - short OI|, in base units (1e18). Limits new one-sided exposure only;
+    ///        closes can still leave net OI above it. Requires a non-zero maxGrossOI.
     function setOpenInterestCaps(bytes32 marketId, uint128 maxGrossOI, uint128 maxNetOI) external onlyAdmin {
         if (!(IMarketRegistry(marketRegistry).getMarket(marketId).vamm != address(0))) revert MarketNotFound();
-        if (maxGrossOI != 0 && maxNetOI > maxGrossOI) revert InvalidOpenInterestCaps();
+        // Net OI can be pushed past its cap by building both sides and then closing one, so the
+        // gross cap is the hard bound and a net cap is only accepted alongside one.
+        if (maxNetOI != 0 && (maxGrossOI == 0 || maxNetOI > maxGrossOI)) revert InvalidOpenInterestCaps();
 
         openInterestCaps[marketId] = OpenInterestCaps({maxGrossOI: maxGrossOI, maxNetOI: maxNetOI});
         emit OpenInterestCapsSet(marketId, maxGrossOI, maxNetOI);
+    }
+
+    /// @notice True if the position kept its side (or closed) and did not grow.
+    function _isPureReduction(int256 sizeBefore, int256 sizeAfter) internal pure returns (bool) {
+        if (sizeBefore > 0) return sizeAfter >= 0 && sizeAfter <= sizeBefore;
+        if (sizeBefore < 0) return sizeAfter <= 0 && sizeAfter >= sizeBefore;
+        return false;
     }
 
     /// @notice Reverts if a trade raised gross or net OI above its cap.
@@ -513,9 +535,11 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         bool oiCapped = oiCaps.maxGrossOI != 0 || oiCaps.maxNetOI != 0;
         uint256 longOIBefore;
         uint256 shortOIBefore;
+        int256 sizeBefore;
         if (oiCapped) {
             longOIBefore = totalLongOI[marketId];
             shortOIBefore = totalShortOI[marketId];
+            sizeBefore = positions[msg.sender][marketId].size;
         }
 
         IVAMM vamm = IVAMM(m.vamm);
@@ -525,7 +549,10 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         _applyTrade(msg.sender, marketId, baseDelta, quoteDelta, false);
 
-        if (oiCapped) _checkOpenInterestCaps(marketId, oiCaps, longOIBefore, shortOIBefore);
+        // A trade that only shrinks the trader's position (no flip) is exempt, matching closePosition.
+        if (oiCapped && !_isPureReduction(sizeBefore, positions[msg.sender][marketId].size)) {
+            _checkOpenInterestCaps(marketId, oiCaps, longOIBefore, shortOIBefore);
+        }
 
         // Check position size limits
         PositionView storage position = positions[msg.sender][marketId];
@@ -559,7 +586,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @param marketId The ID of the perpetual market.
     /// @param size The amount of base asset to trade for closing the position.
     /// @param amountLimit For closing longs (selling base): min quote to receive. For closing shorts (buying base): max quote to spend. 0 = no limit.
-    function closePosition(bytes32 marketId, uint128 size, uint256 amountLimit) external override onlyAllowedTrader nonReentrant {
+    function closePosition(bytes32 marketId, uint128 size, uint256 amountLimit) external override nonReentrant {
         // Settle funding for all active markets so vault balances and
         // _totalReservedMargin are current before any shortfall recovery.
         bytes32[] memory activeMarkets = _userActiveMarkets[msg.sender];
@@ -646,9 +673,11 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         // Close position via vAMM
         {
             IVAMM vamm = IVAMM(m.vamm);
-            (int256 baseDelta, int256 quoteDelta, ) = position.size > 0
+            bool closingLong = position.size > 0;
+            (int256 baseDelta, int256 quoteDelta, ) = closingLong
                 ? vamm.sellBase(size, amountLimit)
                 : vamm.buyBase(size, amountLimit);
+            _checkLiquidationFill(marketId, closingLong, baseDelta, quoteDelta, riskPrice);
             _applyTrade(account, marketId, baseDelta, quoteDelta, true);
         }
 
@@ -692,9 +721,14 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
                 if (m.insuranceFund != address(0)) {
                     uint256 fundBalance = IInsuranceFund(m.insuranceFund).balance();
                     uint256 actualPayout = liqShortfall > fundBalance ? fundBalance : liqShortfall;
+                    // The fund checks its tracked balance, which can be below its token balance after a
+                    // direct transfer. If the payout reverts, record the shortfall as bad debt and finish.
                     if (actualPayout > 0) {
-                        IInsuranceFund(m.insuranceFund).payout(msg.sender, actualPayout);
-                        insurancePayout = actualPayout;
+                        try IInsuranceFund(m.insuranceFund).payout(msg.sender, actualPayout) {
+                            insurancePayout = actualPayout;
+                        } catch {
+                            actualPayout = 0;
+                        }
                     }
                     uncompensatedBadDebt = liqShortfall - actualPayout;
                 } else {
@@ -730,6 +764,46 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             routeAmount,
             insurancePayout
         );
+    }
+
+    /// @notice Effective liquidation price band for a market, in bps.
+    function liquidationPriceBandBps(bytes32 marketId) public view returns (uint256) {
+        uint256 band = _liquidationPriceBandBps[marketId];
+        return band == 0 ? DEFAULT_LIQUIDATION_PRICE_BAND_BPS : band;
+    }
+
+    /// @notice Sets how far a liquidation fill may be worse than the index. 0 restores the default (5%).
+    /// @param bandBps Band in bps; at most 10,000.
+    function setLiquidationPriceBand(bytes32 marketId, uint256 bandBps) external onlyAdmin {
+        if (!(IMarketRegistry(marketRegistry).getMarket(marketId).vamm != address(0))) revert MarketNotFound();
+        if (bandBps > BPS_DENOMINATOR) revert InvalidLiquidationPriceBand();
+        _liquidationPriceBandBps[marketId] = bandBps;
+        emit LiquidationPriceBandSet(marketId, bandBps);
+    }
+
+    /// @notice Reverts if a liquidation filled worse than the index by more than the market's band.
+    /// @dev Stops an attacker from pushing the vAMM price just before a liquidation to turn the
+    ///      victim's loss into bad debt. Only the side that hurts the protocol is checked: selling a
+    ///      long below the index, or buying back a short above it. A better-than-index fill always passes.
+    function _checkLiquidationFill(
+        bytes32 marketId,
+        bool closingLong,
+        int256 baseDelta,
+        int256 quoteDelta,
+        uint256 indexPriceX18
+    ) internal view {
+        uint256 absBase = uint256(baseDelta >= 0 ? baseDelta : -baseDelta);
+        uint256 absQuote = uint256(quoteDelta >= 0 ? quoteDelta : -quoteDelta);
+        uint256 fillPriceX18 = Calculations.mulDiv(absQuote, PRECISION, absBase);
+        uint256 band = liquidationPriceBandBps(marketId);
+
+        if (closingLong) {
+            uint256 floorPx = Calculations.mulDiv(indexPriceX18, BPS_DENOMINATOR - band, BPS_DENOMINATOR);
+            if (fillPriceX18 < floorPx) revert LiquidationPriceOutOfBand(fillPriceX18, indexPriceX18);
+        } else {
+            uint256 ceilPx = Calculations.mulDiv(indexPriceX18, BPS_DENOMINATOR + band, BPS_DENOMINATOR);
+            if (fillPriceX18 > ceilPx) revert LiquidationPriceOutOfBand(fillPriceX18, indexPriceX18);
+        }
     }
 
     /// @notice Internal function to get market information from the registry.

@@ -390,10 +390,13 @@ contract AuditFindingsTest is BaseTest {
         IClearingHouse.PositionView memory posBefore = clearingHouse.getPosition(alice, ETH_PERP);
         uint128 sizeToLiquidate = uint128(uint256(posBefore.size > 0 ? posBefore.size : -posBefore.size));
 
+        // Since the liquidation price band (internal review C-1), a fill this far below the
+        // index is rejected, so pushing the mark before liquidating no longer works.
         vm.prank(liquidator);
+        vm.expectPartialRevert(ClearingHouse.LiquidationPriceOutOfBand.selector);
         clearingHouse.liquidate(alice, ETH_PERP, sizeToLiquidate, 0);
 
-        console.log("Liquidation executed using manipulated mark price for penalty calculation");
+        console.log("Liquidation at a manipulated mark is rejected by the price band");
     }
 
     // ============================================================

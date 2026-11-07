@@ -27,6 +27,7 @@ contract CuOracle is Ownable2Step {
     error NoPriceCommitted();
     error CommitRevealDelayNotMet();
     error CommitExpired();
+    error CommitPendingFromAnotherPublisher();
     error RoleAlreadyGranted();
     error RoleNotGranted();
     error InvalidPriceMoveLimit();
@@ -72,6 +73,7 @@ contract CuOracle is Ownable2Step {
     mapping(bytes32 => uint256) public lastCommitTimestamp; // Per-asset last commit time
     mapping(bytes32 => PriceData) public latestPrices;
     mapping(address => bool) public allowedRoles;
+    mapping(bytes32 => address) public commitOwners; // Who made each asset's pending commit
 
     // --- Modifiers ---
     modifier onlyAllowedRole() {
@@ -109,7 +111,17 @@ contract CuOracle is Ownable2Step {
             revert MinTimeIntervalNotMet();
         }
 
+        // A live commit can only be replaced by its maker or the owner, so one publisher cannot
+        // keep blocking another's (or the owner's) reveal. An expired commit can be replaced by anyone.
+        if (
+            priceCommits[_assetId] != 0 && msg.sender != commitOwners[_assetId] && msg.sender != owner()
+                && block.timestamp <= commitTimestamps[_assetId] + maxCommitAge
+        ) {
+            revert CommitPendingFromAnotherPublisher();
+        }
+
         priceCommits[_assetId] = _commit;
+        commitOwners[_assetId] = msg.sender;
         commitTimestamps[_assetId] = block.timestamp;
         lastCommitTimestamp[_assetId] = block.timestamp;
 
@@ -153,6 +165,7 @@ contract CuOracle is Ownable2Step {
 
         // Clear the commit
         delete priceCommits[_assetId];
+        delete commitOwners[_assetId];
         delete commitTimestamps[_assetId];
 
         // Update the price using commit time (when price was observed, not reveal time)
@@ -267,6 +280,7 @@ contract CuOracle is Ownable2Step {
 
         delete supportedAssets[_assetId];
         delete priceCommits[_assetId];
+        delete commitOwners[_assetId];
         delete commitTimestamps[_assetId];
         delete lastCommitTimestamp[_assetId];
         delete latestPrices[_assetId];
