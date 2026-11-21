@@ -283,7 +283,7 @@ mapping(address => bool) public isAuthorized;
 
 **Responsibilities**:
 - Receive fees from FeeRouter (`onFeeReceived`) and donations (`donate`); fund it with `donate`, not a plain transfer (owner `sync()` books plain transfers)
-- Cover bad debt: when a liquidation or funding debit realizes a loss beyond the trader's vault balance, ClearingHouse pays the uncovered part from the fund into the CollateralVault, which holds the winners' credits
+- Cover bad debt: when a liquidation realizes a loss (including funding debt carried on the position) beyond the trader's vault balance, ClearingHouse pays the uncovered part from the fund into the CollateralVault, which holds the winners' credits
 - Pay the liquidator incentive when it cannot be collected from the liquidated account
 - Track `totalReceived` / `totalPaid`; payouts are limited to the tracked balance `totalReceived - totalPaid`
 
@@ -445,6 +445,8 @@ fundingPayment = position.size * fundingDelta / 1e18
 position.margin -= fundingPayment  // Can go negative, triggering liquidatability
 position.lastFundingIndex = cumulativeFundingPerUnitX18
 ```
+
+**Funding debt**: a funding debit larger than the trader's vault balance is not written off. The part the balance cannot pay is kept on the position as `fundingDebt`, netted against later funding, retried against the balance at every settlement (and after the account's other markets on the same quote token are settled, so their credits pay it), and subtracted from equity in every margin check. A position carrying funding debt, or whose pending funding would leave it with debt, is liquidatable. The debt is settled when the position closes or flips: a voluntary close that cannot pay it reverts, a liquidation writes off the rest (insurance fund first, then `totalBadDebt`).
 
 ---
 

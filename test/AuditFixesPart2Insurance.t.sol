@@ -214,6 +214,8 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
     }
 
     /// @notice Finding 1: a funding debit beyond the payer's vault balance is covered by the fund.
+    /// @dev Since finding 10 the shortfall is first carried as funding debt on the position, and the
+    /// fund pays it into the vault when the position is liquidated.
     function test_Finding1_fundingDebitBeyondBalancePaidIntoVault() public {
         fundAndDeposit(alice, 1_100e18);
         fundAndDeposit(carol, 100_000e18);
@@ -247,7 +249,16 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         assertGt(debit, aliceBalance, "debit exceeds alice's balance");
 
         assertEq(getCollateralBalance(alice), 0, "balance used up");
-        assertEq(usdc.balanceOf(address(vault)) - vaultTokensBefore, debit - aliceBalance, "fund covers the rest");
-        assertEq(clearingHouse.totalBadDebt(), badDebtBefore, "no bad debt while the fund can pay");
+        uint256 debt = clearingHouse.getPosition(alice, ETH_PERP).fundingDebt;
+        assertEq(debt, debit - aliceBalance, "rest carried as funding debt");
+        assertEq(usdc.balanceOf(address(vault)), vaultTokensBefore, "fund drawn before the position closes");
+
+        // Liquidation settles the debt; the fund pays what the account cannot into the vault.
+        vm.prank(liquidator);
+        clearingHouse.liquidate(alice, ETH_PERP, 10e18, 0);
+        assertEq(clearingHouse.getPosition(alice, ETH_PERP).fundingDebt, 0, "debt not settled");
+        assertGe(usdc.balanceOf(address(vault)) - vaultTokensBefore, debt, "fund covers the debt");
+        // Only the protocol's uncollected penalty share (1% of 10 ETH at the 1,900 index) is recorded.
+        assertEq(clearingHouse.totalBadDebt() - badDebtBefore, 190e18, "funding written off while the fund can pay");
     }
 }

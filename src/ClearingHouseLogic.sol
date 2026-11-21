@@ -89,6 +89,32 @@ contract ClearingHouseLogic {
         _settleFundingInternal(marketId, account);
     }
 
+    /// @notice Settles funding for `account` in its active markets and in `marketId` (skipped when 0).
+    /// @dev With `sameQuoteOnly`, only markets sharing `marketId`'s quote token are settled, so markets
+    ///      on other quote tokens cannot block a close or liquidation. Markets left carrying funding
+    ///      debt are settled again afterwards, so a credit settled in a later market pays the debt
+    ///      whatever order the markets are settled in.
+    function settleAccountFunding(address account, bytes32 marketId, bool sameQuoteOnly) external {
+        address quote;
+        if (sameQuoteOnly) quote = IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken;
+        bytes32[] memory markets = _userActiveMarkets[account];
+        bool[] memory settled = new bool[](markets.length);
+        for (uint256 i = 0; i < markets.length; i++) {
+            if (!sameQuoteOnly || IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken == quote) {
+                _settleFundingInternal(markets[i], account);
+                settled[i] = true;
+            }
+        }
+        if (marketId != bytes32(0) && !_isMarketActive[account][marketId]) {
+            _settleFundingInternal(marketId, account);
+        }
+        for (uint256 i = 0; i < markets.length; i++) {
+            if (settled[i] && positions[account][markets[i]].fundingDebt != 0) {
+                _settleFundingInternal(markets[i], account);
+            }
+        }
+    }
+
     // =========================================================================
     // Core logic (moved from ClearingHouse)
     // =========================================================================
@@ -217,6 +243,12 @@ contract ClearingHouseLogic {
             position.margin -= marginRelease;
             _totalReservedMargin[account] -= marginRelease;
 
+            // Funding debt carried on the side being reduced is paid from the balance, which now
+            // includes any profit this trade realized.
+            if (position.fundingDebt != 0) {
+                _settleFundingDebt(account, marketId, position, m.quoteToken, absBaseDelta >= absS0, isLiquidation);
+            }
+
             if (absBaseDelta > absS0) {
                 uint256 openAmt = absBaseDelta - absS0;
                 uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
@@ -274,7 +306,7 @@ contract ClearingHouseLogic {
 
             {
                 int256 unrealizedPnL = _computeUnrealizedPnL(position, oraclePrice);
-                int256 effectiveMargin = int256(marginValue) + unrealizedPnL;
+                int256 effectiveMargin = int256(marginValue) + unrealizedPnL - int256(position.fundingDebt);
                 uint256 riskNotional = Calculations.mulDivRoundingUp(absS1, oraclePrice, 1e18);
                 uint256 maintenanceMargin = Calculations.mulDivRoundingUp(riskNotional, rp.mmrBps, BPS_DENOMINATOR);
                 if (!(effectiveMargin >= int256(maintenanceMargin))) revert ImmediatelyLiquidatable();
@@ -328,8 +360,9 @@ contract ClearingHouseLogic {
 
         uint256 payDelta = currentPay - position.lastFundingPayIndex;
         uint256 receiveDelta = currentReceive - position.lastFundingReceiveIndex;
+        uint256 debt = position.fundingDebt;
 
-        if (payDelta != 0 || receiveDelta != 0) {
+        if (payDelta != 0 || receiveDelta != 0 || debt != 0) {
             uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
 
             int256 fundingPayment;
@@ -339,29 +372,22 @@ contract ClearingHouseLogic {
                 fundingPayment = -int256(Calculations.mulDiv(payDelta - receiveDelta, absSize, 1e18));
             }
 
-            _settlePnLInVault(account, marketId, fundingPayment, true);
-
-            if (fundingPayment > 0) {
-                uint256 credit = uint256(fundingPayment);
-                position.margin += credit;
-                _totalReservedMargin[account] += credit;
-            } else if (fundingPayment < 0) {
-                uint256 debit = uint256(-fundingPayment);
-                if (debit >= position.margin) {
-                    // The vault balance was already debited for the full amount
-                    // (capped at the balance) by _settlePnLInVault above, so the
-                    // overflow beyond the position margin must not be reserved again.
-                    _totalReservedMargin[account] = (_totalReservedMargin[account] > position.margin)
-                        ? (_totalReservedMargin[account] - position.margin)
-                        : 0;
-                    position.margin = 0;
-                } else {
-                    position.margin -= debit;
-                    _totalReservedMargin[account] -= debit;
-                }
+            // New funding is netted against funding still owed from earlier settlements. What the
+            // vault balance cannot pay stays on the position as debt instead of being written off.
+            int256 net = fundingPayment - int256(debt);
+            position.fundingDebt = 0;
+            if (net > 0) {
+                _settlePnLInVault(account, marketId, net, true);
+                position.margin += uint256(net);
+                _totalReservedMargin[account] += uint256(net);
+            } else if (net < 0) {
+                (uint256 paidX18, uint256 unpaidX18) = _chargeFunding(account, m.quoteToken, uint256(-net));
+                position.fundingDebt = unpaidX18;
+                // Only what the vault actually paid leaves the margin; the unpaid part is the debt.
+                _reduceMargin(account, position, paidX18);
             }
 
-            emit FundingSettled(marketId, account, fundingPayment);
+            if (payDelta != 0 || receiveDelta != 0) emit FundingSettled(marketId, account, fundingPayment);
         }
 
         position.lastFundingPayIndex = currentPay;
@@ -390,6 +416,53 @@ contract ClearingHouseLogic {
                 }
             }
             _isMarketActive[user][marketId] = false;
+        }
+    }
+
+    /// @dev Debits up to `debitX18` of funding (converted at the fixed PnL rate, rounded up) from the
+    /// account's vault balance. Returns the value paid and the value the balance could not cover.
+    function _chargeFunding(address account, address quoteToken, uint256 debitX18)
+        internal
+        returns (uint256 paidX18, uint256 unpaidX18)
+    {
+        uint256 owed = _pnlToQuoteUnits(debitX18, quoteToken, true);
+        uint256 available = ICollateralVault(vault).balanceOf(account, quoteToken);
+        uint256 paid = owed;
+        paidX18 = debitX18;
+        if (owed > available) {
+            paid = available;
+            paidX18 = Calculations.mulDiv(available, 1e18, ICollateralVault(vault).getConfig(quoteToken).baseUnit);
+            unpaidX18 = debitX18 - paidX18;
+        }
+        if (paid > 0) ICollateralVault(vault).settlePnL(account, quoteToken, -int256(paid));
+    }
+
+    /// @dev Lowers a position's margin and the account's reserved margin by `amount`, floored at zero.
+    function _reduceMargin(address account, IClearingHouse.PositionView storage position, uint256 amount) internal {
+        uint256 cut = amount < position.margin ? amount : position.margin;
+        position.margin -= cut;
+        _totalReservedMargin[account] = _totalReservedMargin[account] > cut ? _totalReservedMargin[account] - cut : 0;
+    }
+
+    /// @dev Settles funding debt carried by a position that a trade reduces. A close or flip settles
+    /// all of it, writing off what the balance cannot pay only in a liquidation (a voluntary trade
+    /// reverts). A partial reduction pays what the balance allows and keeps the rest as debt.
+    function _settleFundingDebt(
+        address account,
+        bytes32 marketId,
+        IClearingHouse.PositionView storage position,
+        address quoteToken,
+        bool closesSide,
+        bool isLiquidation
+    ) internal {
+        uint256 debt = position.fundingDebt;
+        position.fundingDebt = 0;
+        if (closesSide) {
+            _settlePnLInVault(account, marketId, -int256(debt), isLiquidation);
+        } else {
+            (uint256 paidX18, uint256 unpaidX18) = _chargeFunding(account, quoteToken, debt);
+            position.fundingDebt = unpaidX18;
+            _reduceMargin(account, position, paidX18);
         }
     }
 

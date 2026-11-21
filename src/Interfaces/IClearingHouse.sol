@@ -11,6 +11,9 @@ interface IClearingHouse {
         uint256 lastFundingPayIndex;
         uint256 lastFundingReceiveIndex;
         int256 realizedPnL;
+        // Funding the vault balance could not pay when it was settled, in quote value (1e18). Kept as a
+        // claim on the position, subtracted from its equity, and settled when the position closes.
+        uint256 fundingDebt;
     }
 
     struct MarketRiskParams {

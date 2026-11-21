@@ -198,9 +198,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         // Settle funding for all active markets to ensure margin values are current
         bytes32[] memory markets = _userActiveMarkets[msg.sender];
-        for (uint256 i = 0; i < markets.length; i++) {
-            _settleFundingInternal(markets[i], msg.sender);
-        }
+        _settleAccountFunding(msg.sender, bytes32(0), false);
 
         // Ensure the withdrawn token's remaining balance still covers all margin
         // reserved against it.
@@ -276,7 +274,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
                 }
             }
         }
-        int256 effectiveMarginAfter = int256(marginValueAfter) + unrealizedPnL;
+        // Funding debt the position carries counts against the margin left.
+        int256 debt = int256(position.fundingDebt);
+        int256 effectiveMarginAfter = int256(marginValueAfter) + unrealizedPnL - debt;
         if (!(effectiveMarginAfter >= int256(maintenanceMargin))) revert WouldBeLiquidatable();
 
         if (position.size != 0) {
@@ -290,7 +290,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
             uint256 requiredMargin =
                 absSize.mulDiv(imrPrice, 1e18).mulDiv(marketRiskParams[marketId].imrBps, BPS_DENOMINATOR);
-            int256 imrEquity = int256(marginValueAfter) + (unrealizedPnL < 0 ? unrealizedPnL : int256(0));
+            int256 imrEquity = int256(marginValueAfter) + (unrealizedPnL < 0 ? unrealizedPnL : int256(0)) - debt;
             if (!(imrEquity >= int256(requiredMargin))) revert IMRBreach();
         }
 
@@ -300,23 +300,6 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
 
-    /// @dev Settles funding for the target market and every other active market of `account` that
-    ///      uses the same quote token. Only those markets change the vault balance and reserved
-    ///      margin that the target market's health check reads, so markets on other quote tokens
-    ///      (whose feeds may be unavailable) cannot block a close or liquidation here.
-    function _settleFundingSameQuote(address account, bytes32 marketId) internal {
-        address targetQuote = IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken;
-        bytes32[] memory activeMarkets = _userActiveMarkets[account];
-        for (uint256 i = 0; i < activeMarkets.length; i++) {
-            if (IMarketRegistry(marketRegistry).getMarket(activeMarkets[i]).quoteToken == targetQuote) {
-                _settleFundingInternal(activeMarkets[i], account);
-            }
-        }
-        if (!_isMarketActive[account][marketId]) {
-            _settleFundingInternal(marketId, account);
-        }
-    }
-
     /// @notice Checks if an account's position in a given market is subject to liquidation.
     /// @param account The address of the user.
     /// @param marketId The ID of the market.
@@ -325,14 +308,41 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         return _isLiquidatable(account, marketId);
     }
 
+    /// @dev A position is liquidatable below maintenance margin, and also whenever it carries funding
+    ///      debt the vault balance cannot pay, counting funding not yet settled.
     function _isLiquidatable(address account, bytes32 marketId) internal view returns (bool) {
         if (positions[account][marketId].size == 0) return false;
         (int256 effectiveMargin, uint256 maintenanceMargin) = _marginState(account, marketId);
-        return effectiveMargin < int256(maintenanceMargin);
+        return effectiveMargin < int256(maintenanceMargin) || _carriesFundingDebt(account, marketId);
+    }
+
+    /// @dev True if settling funding now would leave the position with funding debt: its pending
+    ///      funding net of debt already carried is a debit, and the same net summed over the account's
+    ///      markets on this quote token is a debit larger than the vault balance (converted at the fixed
+    ///      PnL rate, rounded up, as settlement does). Settlement retries indebted markets after all
+    ///      credits land, so the account-wide sum decides whether debt survives.
+    function _carriesFundingDebt(address account, bytes32 marketId) internal view returns (bool) {
+        if (_getPendingFunding(account, marketId) - int256(positions[account][marketId].fundingDebt) >= 0) {
+            return false;
+        }
+        address quoteToken = IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken;
+        int256 net;
+        bytes32[] memory markets = _userActiveMarkets[account];
+        for (uint256 i = 0; i < markets.length; i++) {
+            if (IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken == quoteToken) {
+                net += _getPendingFunding(account, markets[i]) - int256(positions[account][markets[i]].fundingDebt);
+            }
+        }
+        if (net >= 0) return false;
+        uint256 owed = Calculations.mulDivRoundingUp(
+            uint256(-net), ICollateralVault(vault).getConfig(quoteToken).baseUnit, 1e18
+        );
+        return owed > ICollateralVault(vault).balanceOf(account, quoteToken);
     }
 
     /// @dev Effective margin (margin valued at the backing collateral, plus pending funding and
-    ///      unrealized PnL at the index) and maintenance margin of an open position.
+    ///      unrealized PnL at the index, minus carried funding debt) and maintenance margin of an
+    ///      open position.
     function _marginState(address account, bytes32 marketId)
         internal
         view
@@ -363,7 +373,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         // Calculate effective margin including unrealized PnL at oracle (risk) price
         int256 unrealizedPnL = _getUnrealizedPnLAtOracle(account, marketId);
-        effectiveMargin = int256(marginValue) + pendingFunding + unrealizedPnL;
+        effectiveMargin = int256(marginValue) + pendingFunding + unrealizedPnL - int256(position.fundingDebt);
         maintenanceMargin = _getMaintenanceMargin(account, marketId);
     }
 
@@ -552,15 +562,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @param size The amount of base asset to trade.
     /// @param amountLimit For longs (buying base): max quote to spend. For shorts (selling base): min quote to receive. 0 = no limit.
     function openPosition(bytes32 marketId, bool isLong, uint128 size, uint256 amountLimit) external override onlyAllowedTrader nonReentrant {
-        // Settle funding for all active markets to ensure margin values are current
+        // Settle funding for all active markets and the target market to ensure margin values are current
         bytes32[] memory activeMarkets = _userActiveMarkets[msg.sender];
-        for (uint256 i = 0; i < activeMarkets.length; i++) {
-            _settleFundingInternal(activeMarkets[i], msg.sender);
-        }
-        // Also settle for target market if not already active
-        if (activeMarkets.length == 0 || !_isMarketActive[msg.sender][marketId]) {
-            _settleFundingInternal(marketId, msg.sender);
-        }
+        _settleAccountFunding(msg.sender, marketId, false);
 
         // Block new positions if user has any liquidatable position
         for (uint256 i = 0; i < activeMarkets.length; i++) {
@@ -630,7 +634,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @param size The amount of base asset to trade for closing the position.
     /// @param amountLimit For closing longs (selling base): min quote to receive. For closing shorts (buying base): max quote to spend. 0 = no limit.
     function closePosition(bytes32 marketId, uint128 size, uint256 amountLimit) external override nonReentrant {
-        _settleFundingSameQuote(msg.sender, marketId);
+        _settleAccountFunding(msg.sender, marketId, true);
         if (_isLiquidatable(msg.sender, marketId)) revert PositionLiquidatable();
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
@@ -679,7 +683,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @param marketId The ID of the market.
     /// @param size The amount of the position to liquidate.
     function liquidate(address account, bytes32 marketId, uint128 size, uint256 amountLimit) external override nonReentrant onlyWhitelistedLiquidator {
-        _settleFundingSameQuote(account, marketId);
+        _settleAccountFunding(account, marketId, true);
         if (!_isLiquidatable(account, marketId)) revert NotLiquidatable();
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
         PositionView storage position = positions[account][marketId];
@@ -907,21 +911,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         if (p.size == 0) return type(uint256).max;
         uint256 notional = _getNotional(account, marketId);
         if (notional == 0) return type(uint256).max;
-        int256 unrealizedPnL = _getUnrealizedPnLAtOracle(account, marketId);
-        int256 pendingFunding = _getPendingFunding(account, marketId);
-        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
-        uint256 marginValue = p.margin;
-        {
-            uint256 reserved = _reservedMarginForToken(account, m.quoteToken);
-            if (reserved > 0) {
-                uint256 vaultBal = ICollateralVault(vault).balanceOf(account, m.quoteToken);
-                uint256 vaultValX18 = _quoteValueX18(m.quoteToken, vaultBal);
-                if (vaultValX18 < reserved) {
-                    marginValue = Calculations.mulDiv(p.margin, vaultValX18, reserved);
-                }
-            }
-        }
-        int256 effectiveMargin = int256(marginValue) + unrealizedPnL + pendingFunding;
+        (int256 effectiveMargin,) = _marginState(account, marketId);
         if (effectiveMargin <= 0) return 0;
         return uint256(effectiveMargin).mulDiv(1e18, notional);
     }
@@ -934,8 +924,10 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
 
     /// @notice Settles funding payments for a user in a perpetual market.
+    /// @dev Also settles the account's other markets on the same quote token, so a funding debt carried
+    ///      in one market is paid by a credit due in another whatever order they are settled in.
     function settleFunding(bytes32 marketId, address account) public override nonReentrant {
-        _settleFundingInternal(marketId, account);
+        _settleAccountFunding(account, marketId, true);
     }
 
     // =========================================================================
@@ -960,6 +952,19 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             abi.encodeWithSelector(
                 bytes4(keccak256("settleFundingInternal(bytes32,address)")),
                 marketId, account
+            )
+        );
+        if (!ok) assembly { returndatacopy(0, 0, returndatasize()) revert(0, returndatasize()) }
+    }
+
+    /// @dev Forwards to ClearingHouseLogic.settleAccountFunding via delegatecall.
+    ///      Settles the account's active markets (only those sharing marketId's quote token when
+    ///      sameQuoteOnly) and marketId itself (when non-zero), then retries markets left in funding debt.
+    function _settleAccountFunding(address account, bytes32 marketId, bool sameQuoteOnly) internal {
+        (bool ok,) = _logic.delegatecall(
+            abi.encodeWithSelector(
+                bytes4(keccak256("settleAccountFunding(address,bytes32,bool)")),
+                account, marketId, sameQuoteOnly
             )
         );
         if (!ok) assembly { returndatacopy(0, 0, returndatasize()) revert(0, returndatasize()) }
