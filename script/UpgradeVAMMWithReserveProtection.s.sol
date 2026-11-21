@@ -59,6 +59,7 @@ contract UpgradeVAMMWithReserveProtection is Script {
         uint256 newQuoteReserve = (NEW_BASE_RESERVE * NEW_PRICE_X18) / 1e18;
         console.log("  New Quote Reserve:", newQuoteReserve / 1e18, "USDC");
 
+        // resetReserves reverts while long and short open interest differ (audit finding 2).
         proxy.resetReserves(NEW_PRICE_X18, NEW_BASE_RESERVE);
         console.log("Reserves reset successfully!");
 

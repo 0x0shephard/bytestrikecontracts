@@ -633,11 +633,15 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	/// @notice Emergency function to reset reserves if they become depleted
 	/// @dev Only callable by owner. Use to rescue vAMM from broken state.
 	/// Price change is limited to MAX_PRICE_CHANGE_BPS (10%) per call to prevent instant liquidations.
+	/// Only allowed while long and short open interest are equal: with a net open position, a change
+	/// of depth or price changes what the net side gets back on exit, and no account pays for it.
+	/// Mark is otherwise brought to the index by funding, not by resets.
 	/// @param newPriceX18 New mark price to set (quote per base, 1e18)
 	/// @param newBaseReserve New base reserve amount (1e18 units)
 	function resetReserves(uint256 newPriceX18, uint256 newBaseReserve) external onlyOwner {
 		require(newPriceX18 > 0, "price=0");
 		require(newBaseReserve > 0, "base=0");
+		require(totalLongOI == totalShortOI, "Net OI open");
 		require(block.timestamp >= lastResetTimestamp + RESET_COOLDOWN, "Reset cooldown active");
 
 		// Check price change is within allowed limits to prevent instant liquidations
