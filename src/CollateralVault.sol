@@ -187,12 +187,10 @@ contract CollateralVault is ICollateralVault, AccessControl {
         require(amount > 0, "CV: amount=0");
         require(from != address(0) && to != address(0), "CV: zero address");
         require(userBalances[from][token] >= amount, "CV: insufficient balance");
-        CollateralConfig memory cfg = collateralConfigs[token];
+        // No accountCap check: seize only moves existing collateral between internal balances
+        // (liquidator incentive, fee router) and adds no deposit, so the deposit cap does not apply.
         userBalances[from][token] -= amount;
         userBalances[to][token] += amount;
-        if (cfg.accountCap != 0) {
-            require(userBalances[to][token] <= cfg.accountCap, "CV: account cap");
-        }
         emit Seize(from, to, token, amount);
     }
 
