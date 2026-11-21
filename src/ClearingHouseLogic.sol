@@ -367,16 +367,19 @@ contract ClearingHouseLogic {
         }
     }
 
+    /// @dev Books realized PnL or funding in the vault. Both legs of one zero-sum exchange are
+    /// converted at the same fixed rate (see _pnlToQuoteUnits), so the winner's credit and the
+    /// loser's debit net in tokens whatever quote-token price each settlement would read.
     function _settlePnLInVault(address account, bytes32 marketId, int256 realized) internal {
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
 
         if (realized > 0) {
-            uint256 profitInQuote = _notionalToQuoteUnitsDown(uint256(realized), m.quoteToken);
+            uint256 profitInQuote = _pnlToQuoteUnits(uint256(realized), m.quoteToken, false);
             if (profitInQuote > 0) {
                 ICollateralVault(vault).settlePnL(account, m.quoteToken, int256(profitInQuote));
             }
         } else {
-            uint256 lossInQuote = _notionalToQuoteUnits(uint256(-realized), m.quoteToken);
+            uint256 lossInQuote = _pnlToQuoteUnits(uint256(-realized), m.quoteToken, true);
             if (lossInQuote > 0) {
                 uint256 available = ICollateralVault(vault).balanceOf(account, m.quoteToken);
                 if (lossInQuote > available) {
@@ -480,12 +483,16 @@ contract ClearingHouseLogic {
         return Calculations.mulDivRoundingUp(notionalX18, cfg.baseUnit, priceX18);
     }
 
-    function _notionalToQuoteUnitsDown(uint256 notionalX18, address quoteToken) internal view returns (uint256) {
-        if (notionalX18 == 0) return 0;
-        ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
-        uint256 priceX18 = IOracle(ICollateralVault(vault).oracle()).getPrice(cfg.oracleSymbol);
-        if (!(priceX18 > 0)) revert QuoteOracleUnavailable();
-        return Calculations.mulDiv(notionalX18, cfg.baseUnit, priceX18);
+    /// @dev Converts realized PnL or funding (1e18 quote value) to quote-token units at a fixed
+    /// rate of one whole token (`baseUnit`, i.e. 10**decimals) per 1e18 of quote value, independent
+    /// of the live quote-token oracle. Profits round down, losses round up.
+    /// Fees, penalties and margin valuation keep using the live oracle price.
+    function _pnlToQuoteUnits(uint256 amountX18, address quoteToken, bool roundUp) internal view returns (uint256) {
+        if (amountX18 == 0) return 0;
+        uint256 baseUnit = ICollateralVault(vault).getConfig(quoteToken).baseUnit;
+        return roundUp
+            ? Calculations.mulDivRoundingUp(amountX18, baseUnit, 1e18)
+            : Calculations.mulDiv(amountX18, baseUnit, 1e18);
     }
 
     function _getRiskPrice(IMarketRegistry.Market memory m) internal view returns (uint256) {
