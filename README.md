@@ -550,6 +550,11 @@ Liquidation Penalty
 2. Wait minimum delay
 3. Admin reveals: `updatePrices(assetId, price, nonce)`
 
+**Publisher bounds**: a publisher (non-owner) reveal must be within `maxPriceMoveBps` (default 300 = 3%)
+of both the asset's last price and the owner's last revealed price (`ownerAnchorPrices`), so chained
+publisher reveals cannot compound. Only the owner can set the first price or move beyond the band; an
+owner reveal re-centres the anchor.
+
 **State**:
 ```solidity
 mapping(bytes32 assetId => uint256 price) public prices;

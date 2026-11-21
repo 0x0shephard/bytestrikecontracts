@@ -8,8 +8,10 @@ import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step
  * @author Sheep
  * @dev A simple price oracle that uses a commit-reveal scheme to prevent front-running (sandwich attacks).
  * A publisher first commits a hash of the price and a nonce, then reveals the price and nonce in a separate transaction.
- * Publishers can only move a price within maxPriceMoveBps of its last value and cannot set an asset's first price.
- * Only the owner can reveal outside those bounds.
+ * Publishers can only move a price within maxPriceMoveBps of its last value and within maxPriceMoveBps of the
+ * price the owner last revealed for the asset (its anchor), so chained publisher reveals cannot compound.
+ * Publishers cannot set an asset's first price. Only the owner can reveal outside those bounds, which also
+ * re-centres the anchor.
  */
 contract CuOracle is Ownable2Step {
     // --- Custom Errors ---
@@ -36,10 +38,10 @@ contract CuOracle is Ownable2Step {
 
     // --- Constants ---
     uint256 public constant BPS_DENOMINATOR = 10_000;
-    uint256 public constant DEFAULT_MAX_PRICE_MOVE_BPS = 2_000; // 20%
+    uint256 public constant DEFAULT_MAX_PRICE_MOVE_BPS = 300; // 3%, well inside the IMR - MMR gap
 
     // --- State Variables ---
-    uint256 public maxPriceMoveBps; // Largest move a publisher can make from an asset's last price
+    uint256 public maxPriceMoveBps; // Largest move a publisher can make from the last and the owner's price
     uint256 public minTimeInterval; // Minimum time between commits for same asset
     uint256 public minCommitRevealDelay; // Minimum time between commit and reveal
     uint256 public maxCommitAge; // Maximum time a commit is valid
@@ -74,6 +76,7 @@ contract CuOracle is Ownable2Step {
     mapping(bytes32 => PriceData) public latestPrices;
     mapping(address => bool) public allowedRoles;
     mapping(bytes32 => address) public commitOwners; // Who made each asset's pending commit
+    mapping(bytes32 => uint256) public ownerAnchorPrices; // Owner's last revealed price per asset
 
     // --- Modifiers ---
     modifier onlyAllowedRole() {
@@ -161,6 +164,9 @@ contract CuOracle is Ownable2Step {
 
         if (msg.sender != owner()) {
             _checkPriceMove(latestPrices[_assetId].price, _price);
+            _checkPriceMove(ownerAnchorPrices[_assetId], _price);
+        } else {
+            ownerAnchorPrices[_assetId] = _price;
         }
 
         // Clear the commit
@@ -233,7 +239,7 @@ contract CuOracle is Ownable2Step {
 
     /**
      * @dev Allows owner to update the largest price move a publisher can make.
-     * @param _newMaxPriceMoveBps The new limit in basis points of the last price.
+     * @param _newMaxPriceMoveBps The new limit in basis points of the last price and of the owner's anchor.
      */
     function updateMaxPriceMoveBps(uint256 _newMaxPriceMoveBps) external onlyOwner {
         if (_newMaxPriceMoveBps == 0 || _newMaxPriceMoveBps > BPS_DENOMINATOR) revert InvalidPriceMoveLimit();
@@ -284,6 +290,7 @@ contract CuOracle is Ownable2Step {
         delete commitTimestamps[_assetId];
         delete lastCommitTimestamp[_assetId];
         delete latestPrices[_assetId];
+        delete ownerAnchorPrices[_assetId];
 
         emit AssetRemoved(_assetId);
     }
@@ -291,8 +298,9 @@ contract CuOracle is Ownable2Step {
     // --- Internal Functions ---
 
     /**
-     * @dev Rejects a publisher's first price for an asset and any move above maxPriceMoveBps.
-     * @param _previousPrice The asset's last price, or zero if it has none.
+     * @dev Rejects a publisher price when there is no reference price and any move above maxPriceMoveBps.
+     * Applied against the asset's last price and against the owner's anchor, however old that is.
+     * @param _previousPrice The reference price (last price or owner anchor), or zero if there is none.
      * @param _newPrice The price being revealed.
      */
     function _checkPriceMove(uint256 _previousPrice, uint256 _newPrice) internal view {

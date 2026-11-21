@@ -57,10 +57,10 @@ contract KeyManagementCutoverTest is Test {
 
     function testAllowedPublisherCanCommitAndRevealPrice() external {
         _publish(owner, price);
-        _publish(publisher, 4.2e18);
+        _publish(publisher, 4.1e18);
 
         CuOracle.PriceData memory data = cuOracle.getLatestPrice(assetId);
-        assertEq(data.price, 4.2e18);
+        assertEq(data.price, 4.1e18);
         assertEq(data.lastUpdatedAt, currentTime - 2);
     }
 
@@ -75,16 +75,17 @@ contract KeyManagementCutoverTest is Test {
     function testPublisherCanMoveExactlyToTheLimit() external {
         _publish(owner, price);
 
-        _publish(publisher, 4.8e18);
-        assertEq(_latestPrice(), 4.8e18);
+        // Default bound is 3% of both the last price and the owner's anchor (audit finding 18).
+        _publish(publisher, 4.12e18);
+        assertEq(_latestPrice(), 4.12e18);
 
-        _publish(publisher, 3.84e18);
-        assertEq(_latestPrice(), 3.84e18);
+        _publish(publisher, 3.9964e18);
+        assertEq(_latestPrice(), 3.9964e18);
     }
 
     function testPublisherCannotMovePriceUpPastTheLimit() external {
         _publish(owner, price);
-        uint256 tooHigh = 4.8e18 + 1;
+        uint256 tooHigh = 4.12e18 + 1;
         _commit(publisher, tooHigh);
 
         vm.prank(publisher);
@@ -96,7 +97,7 @@ contract KeyManagementCutoverTest is Test {
 
     function testPublisherCannotMovePriceDownPastTheLimit() external {
         _publish(owner, price);
-        uint256 tooLow = 3.2e18 - 1;
+        uint256 tooLow = 3.88e18 - 1;
         _commit(publisher, tooLow);
 
         vm.prank(publisher);
