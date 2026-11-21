@@ -420,7 +420,8 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 	/// @notice Updates the cumulative funding index using the current mark price and oracle index price.
 	/// @dev Funding rate is clamped by frMaxBpsPerHour and accumulated into the long/short cumulative indices.
-	/// @dev Gracefully handles oracle failures by advancing the timestamp (preventing accumulation of outage time).
+	/// @dev Reads the index oracle before accruing. If the oracle reverts or returns zero, the funding
+	///      timestamp is advanced without accruing, so time during an index outage is never charged.
 	/// @dev Caps timeElapsed to 1 hour so a single update never covers more than one funding interval.
 	uint256 public constant MAX_FUNDING_ELAPSED = 1 hours; // 1 hour cap per update
 
@@ -492,14 +493,20 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		// Snapshot long pay before accrual to compute the delta for the event
 		uint256 longPayBefore = _cumulativeLongPayPerUnitX18;
 
-		// Accrue any pending funding at the current cached oracle price
-		_accrueFunding();
+		// Read the index first: funding accrues only while the index oracle is live.
+		uint256 price;
+		try IOracle(oracle).getPrice() returns (uint256 p) {
+			price = p;
+		} catch {}
 
-		// Refresh cached oracle price for future accruals
-		try IOracle(oracle).getPrice() returns (uint256 price) {
-			if (price > 0) _cachedIndexPriceX18 = price;
-		} catch {
-			// Keep old cached price; timestamp already advanced by _accrueFunding
+		if (price > 0) {
+			// Accrue pending funding at the cached price, then refresh the cache
+			_accrueFunding();
+			_cachedIndexPriceX18 = price;
+		} else {
+			// Index outage (revert or zero): advance the clock without accruing so
+			// outage time is never charged to payers.
+			lastFundingTimestamp = uint64(block.timestamp);
 		}
 
 		// Derive the signed funding rate delta from the long pay index change
@@ -559,7 +566,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	/// @param newOracle Address of the oracle contract; must not be zero.
 	function setOracle(address newOracle) external onlyOwner {
 		require(newOracle != address(0), "oracle=0");
-		_accrueFunding(); // Flush funding at old oracle price
+		_pokeFundingInternal(); // Flush funding at old oracle price; skipped (clock advanced) while it is down
 		oracle = newOracle;
 		try IOracle(newOracle).getPrice() returns (uint256 price) {
 			if (price > 0) _cachedIndexPriceX18 = price;
