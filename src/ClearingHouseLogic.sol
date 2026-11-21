@@ -38,6 +38,8 @@ contract ClearingHouseLogic {
     mapping(bytes32 => IClearingHouse.OpenInterestCaps) private _slot13OpenInterestCaps; // slot 13
     mapping(bytes32 => uint256) private _slot14LiquidationPriceBandBps; // slot 14
     mapping(bytes32 => uint256) internal fundingSurplus; // slot 15
+    mapping(address => mapping(address => uint256)) internal pendingTradeFees; // slot 16
+    mapping(address => mapping(address => uint256)) internal pendingLiqPenalties; // slot 17
 
     // =========================================================================
     // Constants
@@ -547,9 +549,16 @@ contract ClearingHouseLogic {
         uint256 feeInQuoteDecimals = _notionalToQuoteUnits(fee, m.quoteToken);
         if (feeInQuoteDecimals == 0) return;
 
-        (uint256 actualReceived, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, feeInQuoteDecimals, true);
+        // The fee is booked to the router's vault balance first. Withdrawing it to the router and
+        // splitting it run as one self-call (ClearingHouse.pushFee); if that fails (withdrawals or
+        // the token paused, a blacklisted router or fund) the fee stays booked for sweepFees, so the
+        // trade itself never reverts on the push.
+        (uint256 seized, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, feeInQuoteDecimals);
         if (!(shortfall == 0)) revert InsufficientQuoteForFee();
-        IFeeRouter(m.feeRouter).onTradeFee(actualReceived);
+        (bool ok,) = address(this).call(
+            abi.encodeWithSignature("pushFee(address,address,uint256,bool)", m.feeRouter, m.quoteToken, seized, false)
+        );
+        if (!ok) pendingTradeFees[m.feeRouter][m.quoteToken] += seized;
     }
 
     /// @dev Requires quote collateral value >= reserved margin + amount. With amount 0 it still
@@ -569,8 +578,7 @@ contract ClearingHouseLogic {
         address account,
         address recipient,
         address quoteToken,
-        uint256 amount,
-        bool withdrawToRecipient
+        uint256 amount
     ) internal returns (uint256 actualReceived, uint256 shortfall) {
         if (amount == 0) {
             return (0, 0);
@@ -588,9 +596,6 @@ contract ClearingHouseLogic {
 
         if (seized > 0) {
             ICollateralVault(vault).seize(account, recipient, quoteToken, seized);
-            if (withdrawToRecipient) {
-                actualReceived = ICollateralVault(vault).withdrawFor(recipient, quoteToken, seized, recipient);
-            }
         }
         shortfall = amount - seized;
     }

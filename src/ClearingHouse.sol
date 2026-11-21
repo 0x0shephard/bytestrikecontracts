@@ -78,6 +78,12 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @dev Mirrored in ClearingHouseLogic, which books it at funding settlement.
     mapping(bytes32 marketId => uint256 amount) public fundingSurplus; // slot 15
 
+    /// @notice Trade fees booked to a fee router's vault balance because pushing them out failed.
+    /// @dev Mirrored in ClearingHouseLogic, which routes trade fees.
+    mapping(address feeRouter => mapping(address token => uint256 amount)) public pendingTradeFees; // slot 16
+    /// @notice Liquidation penalty shares booked to a fee router's vault balance because pushing them out failed.
+    mapping(address feeRouter => mapping(address token => uint256 amount)) public pendingLiqPenalties; // slot 17
+
     /// @notice Band used when a market has none set: 5%.
     uint256 public constant DEFAULT_LIQUIDATION_PRICE_BAND_BPS = 500;
 
@@ -135,6 +141,10 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     error TraderNotAllowed();
     error WouldBeLiquidatable();
     error ZeroAddress();
+
+    /// @notice Emitted when booked fees and penalty shares are pushed to their fee router.
+    event FeesSwept(address indexed feeRouter, address indexed token, uint256 tradeFees, uint256 liqPenalties);
+    error NotSelf();
 
     /// @notice Emitted when a market's funding surplus is moved to its insurance fund.
     event FundingSurplusSwept(bytes32 indexed marketId, address indexed insuranceFund, uint256 amount);
@@ -775,7 +785,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             insurancePayout = 0;
             uint256 uncompensatedBadDebt = 0;
             uint256 liqIncentiveInQuote = _notionalToQuoteUnits(liqIncentive, m.quoteToken);
-            (, uint256 liqShortfall) = _collectQuote(account, msg.sender, m.quoteToken, liqIncentiveInQuote, false);
+            (, uint256 liqShortfall) = _collectQuote(account, msg.sender, m.quoteToken, liqIncentiveInQuote);
             if (liqShortfall > 0) {
                 if (m.insuranceFund != address(0)) {
                     uint256 fundBalance = _insuranceTrackedBalance(m.insuranceFund);
@@ -1074,8 +1084,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         address account,
         address recipient,
         address quoteToken,
-        uint256 amount,
-        bool withdrawToRecipient
+        uint256 amount
     ) internal returns (uint256 actualReceived, uint256 shortfall) {
         if (amount == 0) {
             return (0, 0);
@@ -1096,9 +1105,6 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         if (seized > 0) {
             ICollateralVault(vault).seize(account, recipient, quoteToken, seized);
-            if (withdrawToRecipient) {
-                actualReceived = ICollateralVault(vault).withdrawFor(recipient, quoteToken, seized, recipient);
-            }
         }
         shortfall = amount - seized;
     }
@@ -1184,7 +1190,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         if (penaltyInQuoteDecimals == 0) return;
 
-        (uint256 actualReceived, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, penaltyInQuoteDecimals, true);
+        (uint256 seized, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, penaltyInQuoteDecimals);
         // The insurance fund pays nothing toward the protocol's penalty share, so the whole
         // uncollected share is recorded.
         if (shortfall > 0) {
@@ -1192,8 +1198,38 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             emit BadDebtRecorded(account, marketId, shortfall);
         }
 
-        if (actualReceived > 0) {
-            IFeeRouter(m.feeRouter).onLiquidationPenalty(actualReceived);
+        // Booked to the router's vault balance; pushed and split in one self-call, or left booked
+        // for sweepFees if that fails, so a liquidation never reverts on the push.
+        if (seized > 0) {
+            (bool ok,) = address(this).call(abi.encodeCall(this.pushFee, (m.feeRouter, m.quoteToken, seized, true)));
+            if (!ok) pendingLiqPenalties[m.feeRouter][m.quoteToken] += seized;
         }
+    }
+
+    /// @notice Pushes trade fees and liquidation penalty shares that stayed booked in the vault to
+    ///         their fee router, which splits them.
+    /// @dev Callable by anyone: the amounts can only go to the router. Reverts, keeping them booked,
+    ///      while the push still fails (e.g. withdrawals of the token paused).
+    function sweepFees(address feeRouter, address token) external nonReentrant {
+        uint256 tradeFees = pendingTradeFees[feeRouter][token];
+        uint256 liqPenalties = pendingLiqPenalties[feeRouter][token];
+        delete pendingTradeFees[feeRouter][token];
+        delete pendingLiqPenalties[feeRouter][token];
+        if (tradeFees > 0) _sendFee(feeRouter, token, tradeFees, false);
+        if (liqPenalties > 0) _sendFee(feeRouter, token, liqPenalties, true);
+        emit FeesSwept(feeRouter, token, tradeFees, liqPenalties);
+    }
+
+    /// @notice Withdraws a fee booked on a fee router's vault balance to the router and runs its split.
+    /// @dev Self-call only, so a failing withdrawal or split reverts both and the fee stays booked.
+    function pushFee(address feeRouter, address token, uint256 amount, bool isLiquidationPenalty) external {
+        if (msg.sender != address(this)) revert NotSelf();
+        _sendFee(feeRouter, token, amount, isLiquidationPenalty);
+    }
+
+    function _sendFee(address feeRouter, address token, uint256 amount, bool isLiquidationPenalty) internal {
+        uint256 received = ICollateralVault(vault).withdrawFor(feeRouter, token, amount, feeRouter);
+        if (isLiquidationPenalty) IFeeRouter(feeRouter).onLiquidationPenalty(received);
+        else IFeeRouter(feeRouter).onTradeFee(received);
     }
 }
