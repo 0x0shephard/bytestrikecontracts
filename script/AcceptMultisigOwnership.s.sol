@@ -17,15 +17,14 @@ contract AcceptMultisigOwnership is Script {
     address internal constant DEFAULT_INSURANCE_FUND = 0x132Ba3d3073FDa7440fb0594210C47eC19087eaD;
 
     function run() external {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
-        address signer = vm.addr(pk);
+        address signer = msg.sender;
         address expectedOwner = vm.envAddress("MAIN_ADMIN_MULTISIG");
 
         console.log("Accepting Ownable2Step ownership");
         console.log("signer:", signer);
         console.log("expected owner:", expectedOwner);
 
-        vm.startBroadcast(pk);
+        vm.startBroadcast();
 
         _acceptIfPending(vm.envOr("FEE_ROUTER", DEFAULT_FEE_ROUTER), expectedOwner, "FeeRouter");
         _acceptIfPending(vm.envOr("INSURANCE_FUND", DEFAULT_INSURANCE_FUND), expectedOwner, "InsuranceFund");

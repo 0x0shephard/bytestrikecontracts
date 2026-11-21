@@ -27,8 +27,7 @@ contract FixIndexPrice is Script {
     uint256 constant NONCE = 99999;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  FIX INDEX PRICE");
@@ -38,7 +37,7 @@ contract FixIndexPrice is Script {
         console.log("ETH Price: $3.79");
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Step 1: Register ETH asset if needed
         console.log("Step 1: Registering ETH asset...");
@@ -64,7 +63,7 @@ contract FixIndexPrice is Script {
         vm.roll(block.number + 2);
         vm.warp(block.timestamp + 30);
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Step 2: Reveal price
         console.log("");

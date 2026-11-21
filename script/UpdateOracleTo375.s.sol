@@ -16,8 +16,6 @@ contract UpdateOracleTo375 is Script {
     address constant ORACLE = 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad;
     
     function run() external {
-        // Get private key from environment or use the one passed via --private-key
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         
         // New price: $3.75 in 1e18 format
         uint256 newPrice = 3_75e16; // 3.75 * 1e18 = 3750000000000000000
@@ -29,7 +27,7 @@ contract UpdateOracleTo375 is Script {
         console.log("New Price: $3.75");
         console.log("");
         
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         
         IMockOracle oracle = IMockOracle(ORACLE);
         

@@ -17,8 +17,7 @@ contract ConfigureOraclesProperly is Script {
     address constant CHAINLINK_ORACLE = 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  CONFIGURE ORACLES PROPERLY");
@@ -32,7 +31,7 @@ contract ConfigureOraclesProperly is Script {
         console.log("  3. Chainlink Oracle keeps USDC price");
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Step 1: Update vAMM to use CuOracle
         console.log("Step 1: Updating vAMM oracle to CuOracle...");

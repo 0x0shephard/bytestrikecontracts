@@ -47,8 +47,10 @@ interface IClearingHouseAdmin is IOwnableDirect {
 /// @notice Moves ByteStrike Sepolia admin authority away from a single deployer EOA.
 /// @dev Run with the current privileged wallet. Ownable2Step recipients must accept ownership separately.
 ///
+/// Sign with the current privileged wallet via `--account <keystore-name> --sender <address>`
+/// (or `--ledger`); no private key is read from the environment.
+///
 /// Required env:
-/// - PRIVATE_KEY
 /// - MAIN_ADMIN_MULTISIG
 /// - ORACLE_ADMIN_MULTISIG
 /// - ORACLE_PUBLISHER
@@ -71,8 +73,7 @@ contract MultisigKeyCutover is Script {
     address internal constant DEFAULT_COLLATERAL_ORACLE = 0x27F4970bd037c09440823755657c5fcF107532ae;
 
     function run() external {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
-        address broadcaster = vm.addr(pk);
+        address broadcaster = msg.sender;
 
         address oldAdmin = vm.envOr("OLD_ADMIN", broadcaster);
         address oldOraclePublisher = vm.envOr("OLD_ORACLE_PUBLISHER", oldAdmin);
@@ -112,7 +113,7 @@ contract MultisigKeyCutover is Script {
         console.log("oracle publisher:", oraclePublisher);
         console.log("treasury multisig:", treasury);
 
-        vm.startBroadcast(pk);
+        vm.startBroadcast();
 
         _cutoverMarketRegistry(registry, oldAdmin, mainAdmin, riskParamAdmin, pauseGuardian);
         _cutoverCollateralVault(vault, oldAdmin, mainAdmin);

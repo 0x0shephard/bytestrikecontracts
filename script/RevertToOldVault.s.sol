@@ -17,13 +17,12 @@ contract RevertToOldVault is Script {
     address constant OLD_VAULT = 0xfe2c9c2A1f0c700d88C78dCBc2E7bD1a8BB30DF0;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
         console.log("Reverting ClearingHouse to old vault...");
         console.log("ClearingHouse:", CLEARING_HOUSE_PROXY);
         console.log("Old Vault:", OLD_VAULT);
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // NOTE: setVault() was removed from ClearingHouse. This script is no longer functional.
         revert("setVault() removed - vault migration requires a full re-deploy");

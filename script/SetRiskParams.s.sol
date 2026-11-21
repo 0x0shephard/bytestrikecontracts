@@ -28,9 +28,8 @@ contract SetRiskParams is Script {
     uint256 constant MIN_POSITION_SIZE = 0;       // 0 = no minimum
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         ClearingHouse clearingHouse = ClearingHouse(CLEARING_HOUSE);
 

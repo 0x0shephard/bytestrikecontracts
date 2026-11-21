@@ -30,8 +30,7 @@ contract CleanupVaultTokens is Script {
     address constant USDC = 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7;    // Keep enabled
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
         address user = deployer;
 
         console.log("=========================================");
@@ -56,7 +55,7 @@ contract CleanupVaultTokens is Script {
         console.log("    Balance:", bal3, "(KEEP THIS)");
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Disable old tokens
         console.log("Disabling old tokens...");

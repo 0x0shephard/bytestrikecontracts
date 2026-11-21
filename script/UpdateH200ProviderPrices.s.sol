@@ -31,15 +31,14 @@ contract UpdateH200ProviderPrices is Script {
     uint256 constant GCP_H200_PRICE = 6_600_000_000_000_000_000; // $6.60/hour
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=== Updating H200 Provider Prices ===");
         console.log("Caller:", deployer);
         console.log("MultiAssetOracle:", MULTI_ASSET_ORACLE);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         MultiAssetOracle oracle = MultiAssetOracle(MULTI_ASSET_ORACLE);
 

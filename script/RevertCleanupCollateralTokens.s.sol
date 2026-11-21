@@ -26,8 +26,7 @@ contract RevertCleanupCollateralTokens is Script {
     address constant OLD_MUSDC = 0x71075745A2A63dff3BD4819e9639D0E412c14AA9;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  REVERT CLEANUP - RE-ENABLE TOKENS");
@@ -55,7 +54,7 @@ contract RevertCleanupCollateralTokens is Script {
             }
         }
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         console.log("STEP 2: Re-enabling previously disabled tokens...");
         console.log("");

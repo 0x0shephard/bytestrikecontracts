@@ -67,14 +67,13 @@ contract SetupH100Live is Script {
     uint128 constant POSITION_SIZE   = 1e18;       // 1 H100 GPU hour
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=== SetupH100Live ===");
         console.log("Deployer:", deployer);
         console.log("H100-PERP-LIVE ID:", vm.toString(H100_PERP_LIVE));
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // ── 1. Mint USDC to deployer ─────────────────────────────────────────
         MockERC20(USDC_LIVE).mint(deployer, DEPOSIT_AMOUNT * 2);  // 20k buffer

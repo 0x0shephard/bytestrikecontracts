@@ -23,7 +23,6 @@ import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
 ///      short in the same market simultaneously.
 ///
 /// @dev Required environment variables:
-///      PRIVATE_KEY      — Admin wallet (funds both seed wallets via vault.deposit onBehalfOf)
 ///      SEED_LONG_PK     — Seed long wallet private key
 ///      SEED_SHORT_PK    — Seed short wallet private key
 ///
@@ -34,7 +33,8 @@ import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
 ///      MARKET_ID        — keccak256 market identifier
 ///
 /// Usage:
-///      forge script script/SeedMarket.s.sol --rpc-url $RPC_URL --broadcast
+///      forge script script/SeedMarket.s.sol --rpc-url $RPC_URL --account <admin-keystore> --sender <admin> --broadcast
+///      (the admin wallet funds both seed wallets via vault.deposit onBehalfOf)
 contract SeedMarket is Script {
 
     // =========== Configure before running ===========
@@ -56,11 +56,10 @@ contract SeedMarket is Script {
     // ================================================
 
     function run() external {
-        uint256 adminPk     = vm.envUint("PRIVATE_KEY");
         uint256 seedLongPk  = vm.envUint("SEED_LONG_PK");
         uint256 seedShortPk = vm.envUint("SEED_SHORT_PK");
 
-        address admin     = vm.addr(adminPk);
+        address admin     = msg.sender;
         address seedLong  = vm.addr(seedLongPk);
         address seedShort = vm.addr(seedShortPk);
 
@@ -81,7 +80,7 @@ contract SeedMarket is Script {
 
         // ── Step 1: Admin deposits collateral on behalf of both seed wallets ──────────
         console.log("Step 1: Admin funds seed wallets via vault...");
-        vm.startBroadcast(adminPk);
+        vm.startBroadcast();
 
         uint256 totalNeeded = SEED_COLLATERAL * 2;
         IERC20(USDC).approve(COLLATERAL_VAULT, totalNeeded);

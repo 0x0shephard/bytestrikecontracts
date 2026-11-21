@@ -32,8 +32,7 @@ contract SetupETHPerpV2 is Script {
     bytes32 public marketId;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  SETUP ETH-PERP-V2 MARKET");
@@ -47,7 +46,7 @@ contract SetupETHPerpV2 is Script {
         console.log("Market ID:", vm.toString(marketId));
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // STEP 1: Add market to registry
         console.log("STEP 1: Adding market to MarketRegistry...");

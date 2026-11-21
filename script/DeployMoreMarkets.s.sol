@@ -57,7 +57,6 @@ contract DeployMoreMarkets is Script {
     }
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         bytes32 nonceBase  = vm.envBytes32("NONCE_BASE");
 
         Spec[] memory s = _buildSpecs();
@@ -72,7 +71,7 @@ contract DeployMoreMarkets is Script {
         console.log(" Batch deploy: ", s.length, "markets");
         console.log("============================================");
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
 
         for (uint256 i = 0; i < s.length; i++) {
             (marketIds[i], assetIds[i], nonces[i], adapters[i], vammProxies[i]) =

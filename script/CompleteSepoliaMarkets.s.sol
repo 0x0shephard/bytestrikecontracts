@@ -50,13 +50,12 @@ contract CompleteSepoliaMarkets is Script {
     }
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
         require(nonceBase != bytes32(0), "NONCE_BASE=0");
 
         Spec[] memory specs = _buildSpecs();
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
 
         _pauseBrokenOriginals();
 
@@ -205,7 +204,6 @@ contract CompleteSepoliaMarketsSeed is Script {
     }
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         uint256 seedLongPk = vm.envUint("SEED_LONG_PK");
         uint256 seedShortPk = vm.envUint("SEED_SHORT_PK");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
@@ -213,7 +211,7 @@ contract CompleteSepoliaMarketsSeed is Script {
 
         SeedSpec[] memory specs = _buildSpecs();
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         CuOracle(CU_ORACLE).updatePrices(H100_ASSET_ID, H100_PRICE_X18, _h100Nonce(nonceBase));
         for (uint256 i = 0; i < specs.length; i++) {
             bytes32 marketId = keccak256(bytes(specs[i].name));
@@ -234,19 +232,19 @@ contract CompleteSepoliaMarketsSeed is Script {
         vm.stopBroadcast();
 
         for (uint256 i = 0; i < specs.length; i++) {
-            _seedOne(specs[i], deployerPk, seedLongPk, seedShortPk);
+            _seedOne(specs[i], seedLongPk, seedShortPk);
         }
 
         console.log("Phase B complete: markets seeded and unpaused.");
     }
 
-    function _seedOne(SeedSpec memory spec, uint256 deployerPk, uint256 seedLongPk, uint256 seedShortPk) internal {
+    function _seedOne(SeedSpec memory spec, uint256 seedLongPk, uint256 seedShortPk) internal {
         bytes32 marketId = keccak256(bytes(spec.name));
         uint256 notional = (uint256(SEED_SIZE) * spec.priceX18) / 1e18;
         uint256 maxQuoteIn = (notional * LONG_MAX_BPS) / BPS;
         uint256 minQuoteOut = (notional * SHORT_MIN_BPS) / BPS;
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         MarketRegistry(REGISTRY).pauseMarket(marketId, false);
         vm.stopBroadcast();
 
@@ -304,12 +302,11 @@ contract CommitH100NonHyperScalersV2 is Script {
     uint256 constant PRICE_X18 = 295e16;
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
         bytes32 nonce = keccak256(abi.encode(nonceBase, MARKET_ID, ASSET_ID, "bytestrike-sepolia-complete-v1"));
         bytes32 commitment = keccak256(abi.encodePacked(PRICE_X18, nonce));
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         CuOracle(CU_ORACLE).commitPrice(ASSET_ID, commitment);
         vm.stopBroadcast();
     }
@@ -323,12 +320,11 @@ contract CommitH100Refresh is Script {
     uint256 constant H100_PRICE_X18 = 422e16;
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
         bytes32 nonce = keccak256(abi.encode(nonceBase, H100_ASSET_ID, "bytestrike-sepolia-h100-refresh-v1"));
         bytes32 commitment = keccak256(abi.encodePacked(H100_PRICE_X18, nonce));
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         CuOracle(CU_ORACLE).commitPrice(H100_ASSET_ID, commitment);
         vm.stopBroadcast();
     }
@@ -347,11 +343,10 @@ contract CommitAllSepoliaPrices is Script {
     }
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
         SeedSpec[] memory specs = _buildSpecs();
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         _commit(H100_ASSET_ID, H100_PRICE_X18, _h100Nonce(nonceBase));
         for (uint256 i = 0; i < specs.length; i++) {
             bytes32 marketId = keccak256(bytes(specs[i].name));
@@ -444,16 +439,16 @@ abstract contract SepoliaSeedBase is Script {
         ClearingHouse(payable(CH)).deposit(USDC, depositAmount);
     }
 
-    function _seedRange(uint256 start, uint256 end, uint256 deployerPk, uint256 seedLongPk, uint256 seedShortPk) internal {
+    function _seedRange(uint256 start, uint256 end, uint256 seedLongPk, uint256 seedShortPk) internal {
         SeedSpec[] memory specs = _buildSpecs();
         if (end > specs.length) end = specs.length;
 
         for (uint256 i = start; i < end; i++) {
-            _seedOne(specs[i], deployerPk, seedLongPk, seedShortPk);
+            _seedOne(specs[i], seedLongPk, seedShortPk);
         }
     }
 
-    function _seedOne(SeedSpec memory spec, uint256 deployerPk, uint256 seedLongPk, uint256 seedShortPk) internal {
+    function _seedOne(SeedSpec memory spec, uint256 seedLongPk, uint256 seedShortPk) internal {
         bytes32 marketId = keccak256(bytes(spec.name));
         uint256 notional = (uint256(SEED_SIZE) * spec.priceX18) / 1e18;
         uint256 maxQuoteIn = (notional * LONG_MAX_BPS) / BPS;
@@ -461,7 +456,7 @@ abstract contract SepoliaSeedBase is Script {
         address seedLong = vm.addr(seedLongPk);
         address seedShort = vm.addr(seedShortPk);
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         if (!MarketRegistry(REGISTRY).isActive(marketId)) {
             MarketRegistry(REGISTRY).pauseMarket(marketId, false);
         }
@@ -525,7 +520,6 @@ contract SeedSepoliaMarketFreshByIndex is SepoliaSeedBase {
     function run() external {
         uint256 index = vm.envUint("SEED_INDEX");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
 
         SeedSpec[] memory specs = _buildSpecs();
         require(index < specs.length, "bad index");
@@ -545,7 +539,7 @@ contract SeedSepoliaMarketFreshByIndex is SepoliaSeedBase {
         address freshLong = vm.addr(freshLongPk);
         address freshShort = vm.addr(freshShortPk);
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         _fundFreshWallet(freshLong);
         _fundFreshWallet(freshShort);
         if (!MarketRegistry(REGISTRY).isActive(marketId)) {
@@ -596,10 +590,9 @@ contract SeedSepoliaMarketFreshByIndex is SepoliaSeedBase {
 
 contract RevealSepoliaPrices is SepoliaSeedBase {
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         _revealAll(nonceBase);
         vm.stopBroadcast();
     }
@@ -607,10 +600,9 @@ contract RevealSepoliaPrices is SepoliaSeedBase {
 
 contract RevealSepoliaReplacementPrices is SepoliaSeedBase {
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         _revealOne(nonceBase, "B200-PERP-V2", "B200", 715e16);
         _revealOne(nonceBase, "H200-PERP-V2", "H200", 353e16);
         _revealOne(nonceBase, "H100-non-HyperScalers-PERP-V2", "H100-non-HyperScalers", 295e16);
@@ -634,11 +626,10 @@ contract CommitRemainingSepoliaPrices is Script {
     }
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
         SeedSpec[5] memory specs = _remainingSpecs();
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         for (uint256 i = 0; i < specs.length; i++) {
             bytes32 marketId = keccak256(bytes(specs[i].name));
             bytes32 assetId = keccak256(bytes(specs[i].assetSymbol));
@@ -671,11 +662,10 @@ contract RevealRemainingSepoliaPrices is Script {
     }
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
         SeedSpec[5] memory specs = _remainingSpecs();
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         for (uint256 i = 0; i < specs.length; i++) {
             bytes32 marketId = keccak256(bytes(specs[i].name));
             bytes32 assetId = keccak256(bytes(specs[i].assetSymbol));
@@ -714,31 +704,31 @@ contract PrepareSepoliaSeedWallets is SepoliaSeedBase {
 
 contract SeedSepoliaMarkets0_5 is SepoliaSeedBase {
     function run() external {
-        _seedRange(0, 5, vm.envUint("PRIVATE_KEY"), vm.envUint("SEED_LONG_PK"), vm.envUint("SEED_SHORT_PK"));
+        _seedRange(0, 5, vm.envUint("SEED_LONG_PK"), vm.envUint("SEED_SHORT_PK"));
     }
 }
 
 contract SeedSepoliaMarketByIndex is SepoliaSeedBase {
     function run() external {
         uint256 index = vm.envUint("SEED_INDEX");
-        _seedRange(index, index + 1, vm.envUint("PRIVATE_KEY"), vm.envUint("SEED_LONG_PK"), vm.envUint("SEED_SHORT_PK"));
+        _seedRange(index, index + 1, vm.envUint("SEED_LONG_PK"), vm.envUint("SEED_SHORT_PK"));
     }
 }
 
 contract SeedSepoliaMarkets5_10 is SepoliaSeedBase {
     function run() external {
-        _seedRange(5, 10, vm.envUint("PRIVATE_KEY"), vm.envUint("SEED_LONG_PK"), vm.envUint("SEED_SHORT_PK"));
+        _seedRange(5, 10, vm.envUint("SEED_LONG_PK"), vm.envUint("SEED_SHORT_PK"));
     }
 }
 
 contract SeedSepoliaMarkets10_15 is SepoliaSeedBase {
     function run() external {
-        _seedRange(10, 15, vm.envUint("PRIVATE_KEY"), vm.envUint("SEED_LONG_PK"), vm.envUint("SEED_SHORT_PK"));
+        _seedRange(10, 15, vm.envUint("SEED_LONG_PK"), vm.envUint("SEED_SHORT_PK"));
     }
 }
 
 contract SeedSepoliaMarkets15_19 is SepoliaSeedBase {
     function run() external {
-        _seedRange(15, 19, vm.envUint("PRIVATE_KEY"), vm.envUint("SEED_LONG_PK"), vm.envUint("SEED_SHORT_PK"));
+        _seedRange(15, 19, vm.envUint("SEED_LONG_PK"), vm.envUint("SEED_SHORT_PK"));
     }
 }

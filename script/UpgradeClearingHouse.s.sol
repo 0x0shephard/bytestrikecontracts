@@ -19,8 +19,7 @@ contract UpgradeClearingHouse is Script {
     address constant DEFAULT_CLEARING_HOUSE_PROXY = 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         address proxyAddress = DEFAULT_CLEARING_HOUSE_PROXY;
         // Allow overriding the proxy via environment variable for other deployments
@@ -38,7 +37,7 @@ contract UpgradeClearingHouse is Script {
         console.log("Proxy Address:", proxyAddress);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Step 1: Deploy new implementation
         console.log("Step 1: Deploying new ClearingHouse implementation...");

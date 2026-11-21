@@ -80,7 +80,6 @@ abstract contract B200ProviderBase is Script {
 
 contract DeployB200ProviderMarkets is B200ProviderBase {
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
         require(nonceBase != bytes32(0), "NONCE_BASE=0");
 
@@ -91,7 +90,7 @@ contract DeployB200ProviderMarkets is B200ProviderBase {
         address[] memory adapters = new address[](specs.length);
         address[] memory vamms = new address[](specs.length);
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         for (uint256 i = 0; i < specs.length; i++) {
             (marketIds[i], assetIds[i], nonces[i], adapters[i], vamms[i]) = _prepareOne(specs[i], nonceBase);
         }
@@ -203,7 +202,6 @@ contract DeployB200ProviderMarkets is B200ProviderBase {
 
 contract SeedB200ProviderMarkets is B200ProviderBase {
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         bytes32 nonceBase = vm.envBytes32("NONCE_BASE");
         require(nonceBase != bytes32(0), "NONCE_BASE=0");
 
@@ -213,7 +211,7 @@ contract SeedB200ProviderMarkets is B200ProviderBase {
         address seedLong = vm.addr(seedLongPk);
         address seedShort = vm.addr(seedShortPk);
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         _fundSeedWallet(seedLong);
         _fundSeedWallet(seedShort);
         for (uint256 i = 0; i < specs.length; i++) {
@@ -225,7 +223,7 @@ contract SeedB200ProviderMarkets is B200ProviderBase {
         vm.stopBroadcast();
 
         for (uint256 i = 0; i < specs.length; i++) {
-            _seedOne(specs[i], deployerPk, seedLongPk, seedShortPk);
+            _seedOne(specs[i], seedLongPk, seedShortPk);
         }
 
         console.log("B200 provider markets seeded and unpaused.");
@@ -243,12 +241,12 @@ contract SeedB200ProviderMarkets is B200ProviderBase {
         }
     }
 
-    function _seedOne(Spec memory spec, uint256 deployerPk, uint256 seedLongPk, uint256 seedShortPk) internal {
+    function _seedOne(Spec memory spec, uint256 seedLongPk, uint256 seedShortPk) internal {
         bytes32 marketId = keccak256(bytes(spec.name));
         IMarketRegistry.Market memory market = MarketRegistry(REGISTRY).getMarket(marketId);
         require(market.vamm != address(0), "missing market");
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         if (!MarketRegistry(REGISTRY).isActive(marketId)) {
             MarketRegistry(REGISTRY).pauseMarket(marketId, false);
         }

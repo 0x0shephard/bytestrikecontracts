@@ -17,13 +17,12 @@ contract SwitchToNewVault is Script {
     address constant NEW_VAULT = 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
         console.log("Switching ClearingHouse to new vault...");
         console.log("ClearingHouse:", CLEARING_HOUSE_PROXY);
         console.log("New Vault:", NEW_VAULT);
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // NOTE: setVault() was removed from ClearingHouse. This script is no longer functional.
         revert("setVault() removed - vault migration requires a full re-deploy");

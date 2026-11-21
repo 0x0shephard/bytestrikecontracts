@@ -26,9 +26,8 @@ contract UpdateMarketToNewVAMM is Script {
     bytes32 constant NEW_MARKET_ID = keccak256("ETH-PERP-V2"); // New market ID
     
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         
         MarketRegistry registry = MarketRegistry(MARKET_REGISTRY);
         

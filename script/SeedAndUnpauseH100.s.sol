@@ -17,8 +17,8 @@ import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
 /// @dev MUST be run AT LEAST ONE BLOCK after DeploySepoliaH100 because
 ///      CuOracle::updatePrices requires `block.timestamp >= commitTime + 1s`.
 ///
+/// @dev Sign as the deployer (oracle owner; unpauses market) via `--account <keystore-name>`.
 /// @dev Required env vars:
-///        PRIVATE_KEY     - deployer (oracle owner; unpauses market)
 ///        SEED_LONG_PK    - seed long wallet (already funded with USDC by Phase 1)
 ///        SEED_SHORT_PK   - seed short wallet (already funded with USDC by Phase 1)
 ///        H100_NONCE      - same 32-byte nonce used in Phase 4 commit
@@ -42,7 +42,6 @@ contract SeedAndUnpauseH100 is Script {
     uint256 constant SHORT_MIN_QUOTE_OUT_X18 = 350e18;  // $350 minimum receive
 
     function run() external {
-        uint256 deployerPk  = vm.envUint("PRIVATE_KEY");
         uint256 seedLongPk  = vm.envUint("SEED_LONG_PK");
         uint256 seedShortPk = vm.envUint("SEED_SHORT_PK");
         bytes32 nonce       = vm.envBytes32("H100_NONCE");
@@ -55,7 +54,7 @@ contract SeedAndUnpauseH100 is Script {
         address vault         = vm.parseJsonAddress(j, ".vault");
         address usdc          = vm.parseJsonAddress(j, ".usdc");
 
-        address deployer  = vm.addr(deployerPk);
+        address deployer  = msg.sender;
         address seedLong  = vm.addr(seedLongPk);
         address seedShort = vm.addr(seedShortPk);
 
@@ -70,7 +69,7 @@ contract SeedAndUnpauseH100 is Script {
         console.log("");
 
         // ── Step 1: deployer reveals oracle price ─────────────────────────────
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         CuOracle(cuOracle).updatePrices(H100_ASSET_ID, INITIAL_PRICE_X18, nonce);
         vm.stopBroadcast();
         console.log("Step 1: oracle price revealed at $4.22");
@@ -106,7 +105,7 @@ contract SeedAndUnpauseH100 is Script {
         console.log("  entry price: ", shortPos.entryPriceX18);
 
         // ── Step 4: deployer unpauses the market ──────────────────────────────
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         MarketRegistry(registryAddr).pauseMarket(H100_PERP, false);
         vm.stopBroadcast();
         console.log("Step 4: H100-PERP market unpaused");

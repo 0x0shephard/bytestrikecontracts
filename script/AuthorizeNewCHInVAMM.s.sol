@@ -22,8 +22,7 @@ contract AuthorizeNewCHInVAMM is Script {
     address constant OLD_CH = 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=== AUTHORIZE NEW CLEARINGHOUSE IN VAMM ===");
         console.log("Deployer:", deployer);
@@ -44,7 +43,7 @@ contract AuthorizeNewCHInVAMM is Script {
 
         require(currentOwner == deployer, "Deployer is not vAMM owner");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         console.log("Setting new ClearingHouse in vAMM...");
         vamm.setClearinghouse(NEW_CH);

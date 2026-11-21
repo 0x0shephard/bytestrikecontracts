@@ -14,8 +14,7 @@ contract AuthorizeClearingHouseInIF is Script {
     address constant CLEARING_HOUSE = 0x0BE85ed0948779a01efFB6b017ae87A4E9EB7FD6;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  AUTHORIZE CLEARINGHOUSE IN IF");
@@ -26,7 +25,7 @@ contract AuthorizeClearingHouseInIF is Script {
         console.log("ClearingHouse:", CLEARING_HOUSE);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         IInsuranceFund(INSURANCE_FUND).setAuthorized(CLEARING_HOUSE, true);
         console.log("ClearingHouse authorized!");

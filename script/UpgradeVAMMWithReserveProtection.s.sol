@@ -22,7 +22,6 @@ contract UpgradeVAMMWithReserveProtection is Script {
     uint256 constant NEW_BASE_RESERVE = 1_000_000_000e18; // 1 billion GPU-HRS
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
         console.log("=================================");
         console.log("Upgrading vAMM with Reserve Protection");
@@ -30,7 +29,7 @@ contract UpgradeVAMMWithReserveProtection is Script {
         console.log("Proxy Address:", VAMM_PROXY);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Deploy new implementation
         console.log("Deploying new vAMM implementation...");

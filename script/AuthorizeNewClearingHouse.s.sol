@@ -24,8 +24,7 @@ contract AuthorizeNewClearingHouse is Script {
     address constant COLLATERAL_VAULT_NEW = 0x86A10164eB8F55EA6765185aFcbF5e073b249Dd2;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         // Get new ClearingHouse address from environment
         address newClearingHouse = vm.envAddress("NEW_CH");
@@ -35,7 +34,7 @@ contract AuthorizeNewClearingHouse is Script {
         console.log("New ClearingHouse:", newClearingHouse);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Step 1: Authorize in CollateralVault
         console.log("Step 1: Setting ClearingHouse in CollateralVault...");

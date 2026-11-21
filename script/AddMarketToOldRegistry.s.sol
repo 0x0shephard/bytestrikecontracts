@@ -21,8 +21,7 @@ contract AddMarketToOldRegistry is Script {
     address constant ETH_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  ADD ETH-PERP-V2 TO OLD REGISTRY");
@@ -35,7 +34,7 @@ contract AddMarketToOldRegistry is Script {
         // Market ID for ETH-PERP-V2
         bytes32 marketId = 0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5;
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Create market config
         IMarketRegistry.AddMarketConfig memory config = IMarketRegistry.AddMarketConfig({

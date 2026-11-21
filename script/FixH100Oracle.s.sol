@@ -24,14 +24,13 @@ contract FixH100Oracle is Script {
     uint256 constant ORACLE_MAX_AGE = 86400; // 24 hours
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=== Fixing H100 Oracle ===");
         console.log("Deployer:", deployer);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Deploy H100 Oracle Adapter
         console.log("Step 1: Deploying H100 Oracle Adapter...");

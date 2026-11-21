@@ -82,8 +82,7 @@ contract FixSafeHarborAndAttackMode is BCScript {
     function run() external {
         _assertBattleChainEndpoints();
 
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         address[] memory contracts = new address[](13);
         contracts[0]  = 0x2E3f3D9aC763C3c7D8F5A9D6A94dD745D76D9e8f; // CuOracle
@@ -107,7 +106,7 @@ contract FixSafeHarborAndAttackMode is BCScript {
             _recoveryAddress()
         );
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // 1. Create + adopt agreement on new registry
         address agreement = createAndAdoptAgreement(

@@ -597,6 +597,26 @@ forge test --gas-report
 forge coverage
 ```
 
+### Running Scripts (Signing)
+
+Broadcasting scripts never read a private key from the environment. Each script calls a bare
+`vm.startBroadcast()` and signs with the wallet passed on the command line:
+
+```bash
+# One-time: import the deployer/admin key into an encrypted keystore
+cast wallet import <keystore-name> --interactive
+
+# Run a script with the keystore (or use --ledger for a hardware wallet)
+forge script script/<Script>.s.sol:<Contract> \
+  --rpc-url <rpc> \
+  --account <keystore-name> \
+  --sender <signer-address> \
+  --broadcast
+```
+
+Inside scripts, the signer address is `msg.sender`. Seed-trade scripts still read the
+non-privileged seed wallets (`SEED_LONG_PK`, `SEED_SHORT_PK`) from the environment.
+
 ---
 
 ## Deployed Contracts (Sepolia Testnet)

@@ -23,8 +23,7 @@ contract TestOpenPositionFinal is Script {
     bytes32 constant MARKET_ID = 0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address trader = vm.addr(deployerPrivateKey);
+        address trader = msg.sender;
 
         console.log("=========================================");
         console.log("  TEST OPEN LONG POSITION");
@@ -42,7 +41,7 @@ contract TestOpenPositionFinal is Script {
         uint256 usdcBalance = usdc.balanceOf(trader);
         console.log("USDC Wallet Balance:", usdcBalance / 1e6, "USDC");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // STEP 1: Deposit USDC
         console.log("");

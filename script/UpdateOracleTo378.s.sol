@@ -17,8 +17,6 @@ contract UpdateOracleTo378 is Script {
     address constant ORACLE = 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad;
 
     function run() external {
-        // Get private key from environment or use the one passed via --private-key
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
         // New price: $3.78 in 1e18 format
         uint256 newPrice = 3_78e16; // 3.78 * 1e18 = 3780000000000000000
@@ -30,7 +28,7 @@ contract UpdateOracleTo378 is Script {
         console.log("New Price: $3.78 (H100 GPU rental rate)");
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         IUpdatableOracle oracle = IUpdatableOracle(ORACLE);
 

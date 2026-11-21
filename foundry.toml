@@ -17,7 +17,7 @@ optimizer_runs = 1
 via_ir = true
 cbor_metadata = true
 bytecode_hash = "ipfs"
-fs_permissions = [{ access = "read-write", path = "./deployments/" }]
+fs_permissions = [{ access = "read-write", path = "./deployments/" }, { access = "read", path = "./script/" }]
 
 # RPC endpoints
 [rpc_endpoints]

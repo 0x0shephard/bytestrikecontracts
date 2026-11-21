@@ -15,7 +15,7 @@ interface ICuOracleAdapterView {
 }
 
 /// @notice Replaces the per-market Sepolia CuOracleAdapters with 12h maxAge adapters.
-/// @dev Broadcast with PRIVATE_KEY set to an account that can call MarketRegistry.setOracle
+/// @dev Broadcast with `--account <keystore-name>` for an account that can call MarketRegistry.setOracle
 ///      and vAMM.setOracle for the active frontend markets.
 contract MigrateSepoliaAdapters12h is Script {
     address constant CU_ORACLE = 0x97f557594bA32e51c0eA215B1886111F24E957af;
@@ -41,11 +41,10 @@ contract MigrateSepoliaAdapters12h is Script {
     }
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         MarketSpec[] memory specs = _activeFrontendMarkets();
         MigrationResult[] memory results = new MigrationResult[](specs.length);
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         for (uint256 i = 0; i < specs.length; i++) {
             results[i] = _migrateOne(specs[i]);
         }

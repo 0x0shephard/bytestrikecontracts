@@ -30,8 +30,7 @@ contract FixUSDCCollateralAndOracle is Script {
     address constant ORACLE = 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c; // CuOracle used by CollateralVault
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  FIX USDC COLLATERAL & ORACLE");
@@ -43,7 +42,7 @@ contract FixUSDCCollateralAndOracle is Script {
         console.log("Oracle:", ORACLE);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         CollateralVault vault = CollateralVault(COLLATERAL_VAULT);
         Oracle oracle = Oracle(ORACLE);

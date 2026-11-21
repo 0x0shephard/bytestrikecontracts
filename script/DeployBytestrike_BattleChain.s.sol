@@ -25,11 +25,13 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
 /// @notice Full ByteStrike protocol deployment for BattleChain testnet (chain 627).
 ///
 /// Prerequisites:
-///   - Set BATTLECHAIN_RPC_URL and PRIVATE_KEY in your environment.
+///   - Set BATTLECHAIN_RPC_URL in your environment and import the deployer key into an
+///     encrypted keystore (`cast wallet import <keystore-name> --interactive`).
 ///
 /// Run:
 ///   forge script script/DeployBytestrike_BattleChain.s.sol \
 ///     --rpc-url battlechain_testnet \
+///     --account <keystore-name> --sender <deployer-address> \
 ///     --broadcast \
 ///     --skip-simulation \
 ///     --legacy
@@ -100,10 +102,9 @@ contract DeployBytestrike_BattleChain is BCScript {
     // -------------------------------------------------------------------------
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // ===== 1. Mock tokens =====
         MockERC20 usdc = new MockERC20("USD Coin", "USDC", 6);

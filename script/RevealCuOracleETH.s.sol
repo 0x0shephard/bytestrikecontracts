@@ -24,8 +24,7 @@ contract RevealCuOracleETH is Script {
     uint256 constant NONCE = 12345;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  REVEAL ETH PRICE IN CUORACLE");
@@ -38,7 +37,7 @@ contract RevealCuOracleETH is Script {
         console.log("Nonce:", NONCE);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         console.log("Revealing price...");
         ICuOracle(CU_ORACLE).updatePrices(ETH_ASSET_ID, ETH_PRICE, NONCE);

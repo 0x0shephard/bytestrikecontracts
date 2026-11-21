@@ -28,9 +28,8 @@ contract CloseStuckPosition is Script {
     bytes32 constant MARKET_ID = 0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5; // H100-PERP
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
-        address trader = vm.addr(deployerPrivateKey);
+        address trader = msg.sender;
 
         console.log("=================================");
         console.log("Closing Stuck Short Position");
@@ -63,7 +62,7 @@ contract CloseStuckPosition is Script {
         console.log("  Closing size:", absSize / 1e18, "GPU-HRS");
         console.log("  Price limit: Market (0 = no limit)");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Close the full position at market price (0 = no limit)
         ch.closePosition(

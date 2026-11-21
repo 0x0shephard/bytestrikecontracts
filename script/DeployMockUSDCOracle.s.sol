@@ -43,13 +43,12 @@ contract MockPriceFeed {
 
 contract DeployMockUSDCOracle is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("Deploying Mock USDC Price Feed...");
         console.log("Deployer:", deployer);
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Deploy mock price feed with $1.00 price (8 decimals: 100000000 = $1.00)
         MockPriceFeed mockUSDCFeed = new MockPriceFeed(100000000);

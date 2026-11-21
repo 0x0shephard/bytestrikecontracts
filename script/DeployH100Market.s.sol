@@ -21,6 +21,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 /// Run:
 ///   forge script script/DeployH100Market.s.sol \
 ///     --rpc-url battlechain_testnet \
+///     --account <keystore-name> --sender <deployer-address> \
 ///     --broadcast \
 ///     --legacy
 ///
@@ -28,7 +29,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 ///   cast send 0x2E3f3D9aC763C3c7D8F5A9D6A94dD745D76D9e8f \
 ///     "updatePrices(bytes32,uint256,bytes32)" \
 ///     <H100_ASSET_ID> 3000000000000000000 <NONCE> \
-///     --rpc-url $BATTLECHAIN_RPC_URL --private-key $PRIVATE_KEY --legacy
+///     --rpc-url $BATTLECHAIN_RPC_URL --account <keystore-name> --legacy
 contract DeployH100Market is Script {
     // ── Existing deployed contracts ──────────────────────────────────────────
     CuOracle constant CU_ORACLE        = CuOracle(0x2E3f3D9aC763C3c7D8F5A9D6A94dD745D76D9e8f);
@@ -63,8 +64,7 @@ contract DeployH100Market is Script {
     bytes32 constant SEED_NONCE = keccak256("h100-seed-v1");
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         bytes32 commitment = keccak256(abi.encodePacked(INITIAL_PRICE, SEED_NONCE));
 
@@ -75,7 +75,7 @@ contract DeployH100Market is Script {
         console.log("Commitment:    ", vm.toString(commitment));
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // 1. Register H100 in existing CuOracle (onlyOwner)
         CU_ORACLE.registerAsset(H100_ASSET_ID);

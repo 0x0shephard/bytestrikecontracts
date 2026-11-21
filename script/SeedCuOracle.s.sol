@@ -29,7 +29,6 @@ contract SeedCuOracle is Script {
     bytes32 constant NONCE = keccak256("bytestrike-seed-v1");
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
         bytes32 commitment = keccak256(abi.encodePacked(INITIAL_PRICE, NONCE));
 
@@ -45,7 +44,7 @@ contract SeedCuOracle is Script {
 
         // ── Step 1: Commit ──────────────────────────────────────────────────
         console.log("Step 1: Committing price hash...");
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         ORACLE.commitPrice(CU_ASSET_ID, commitment);
         vm.stopBroadcast();
         console.log("Commit tx sent.");
@@ -56,7 +55,7 @@ contract SeedCuOracle is Script {
 
         // ── Step 2: Reveal ──────────────────────────────────────────────────
         console.log("Step 2: Revealing price...");
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         ORACLE.updatePrices(CU_ASSET_ID, INITIAL_PRICE, NONCE);
         vm.stopBroadcast();
 

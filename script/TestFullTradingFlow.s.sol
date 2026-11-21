@@ -24,8 +24,7 @@ contract TestFullTradingFlow is Script {
     bytes32 constant H100_MARKET = 0x2bc0c3f3ef82289c7da8a9335c83ea4f2b5b8bd62b67c4f4e0dba00b304c2937;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=== FULL TRADING FLOW TEST ===");
         console.log("User:", deployer);
@@ -50,7 +49,7 @@ contract TestFullTradingFlow is Script {
         console.log("  Account value:", uint256(accountValue >= 0 ? accountValue : -accountValue) / 1e18, "USD (1e18)");
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Step 1: Mint if needed
         if (balance < 1000e6) {

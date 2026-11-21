@@ -16,8 +16,7 @@ contract TestOpenPositionSimple is Script {
     bytes32 constant MARKET_ID = 0x923fe13d72f8a442cb473c31c3f8b89b76ea47edc7f5071ccdae6717ad84fe6e;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address trader = vm.addr(deployerPrivateKey);
+        address trader = msg.sender;
 
         console.log("=== SIMPLE POSITION OPEN TEST ===");
         console.log("Trader:", trader);
@@ -30,7 +29,7 @@ contract TestOpenPositionSimple is Script {
         uint256 usdcBalance = usdc.balanceOf(trader);
         console.log("USDC Balance:", usdcBalance);
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Deposit large amount to avoid any shortfall
         uint256 depositAmount = 100000000000000; // 100M USDC

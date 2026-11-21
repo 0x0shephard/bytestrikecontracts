@@ -30,8 +30,7 @@ contract DeploySimpleETHOracle is Script {
     address constant VAMM = 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  DEPLOY SIMPLE ETH ORACLE");
@@ -41,7 +40,7 @@ contract DeploySimpleETHOracle is Script {
         console.log("ETH Price: $3.79");
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Deploy oracle
         console.log("Step 1: Deploying SimpleETHOracle...");

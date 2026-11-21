@@ -21,7 +21,7 @@ import {MarketRegistry} from "../src/MarketRegistry.sol";
 ///        3. seed_short same.
 ///        4. For each market: deployer.unpause -> seed_long opens long -> seed_short opens short.
 ///
-/// @dev Required env: PRIVATE_KEY, SEED_LONG_PK, SEED_SHORT_PK, NONCE_BASE
+/// @dev Sign as the deployer via `--account <keystore-name>`. Required env: SEED_LONG_PK, SEED_SHORT_PK, NONCE_BASE
 contract SeedMoreMarkets is Script {
 
     address constant CU_ORACLE = 0x97f557594bA32e51c0eA215B1886111F24E957af;
@@ -46,7 +46,6 @@ contract SeedMoreMarkets is Script {
     }
 
     function run() external {
-        uint256 deployerPk  = vm.envUint("PRIVATE_KEY");
         uint256 seedLongPk  = vm.envUint("SEED_LONG_PK");
         uint256 seedShortPk = vm.envUint("SEED_SHORT_PK");
         bytes32 nonceBase   = vm.envBytes32("NONCE_BASE");
@@ -58,7 +57,7 @@ contract SeedMoreMarkets is Script {
         console.log("============================================");
 
         // ── Phase A: deployer reveals every oracle price ──────────────────────
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         for (uint256 i = 0; i < s.length; i++) {
             bytes32 assetId = keccak256(bytes(s[i].assetSymbol));
             bytes32 nonce   = keccak256(abi.encode(nonceBase, assetId));
@@ -83,7 +82,7 @@ contract SeedMoreMarkets is Script {
 
         // ── Phase D: per-market unpause + seed long + seed short ──────────────
         for (uint256 i = 0; i < s.length; i++) {
-            _seedOne(s[i], deployerPk, seedLongPk, seedShortPk);
+            _seedOne(s[i], seedLongPk, seedShortPk);
         }
 
         console.log("============================================");
@@ -93,7 +92,6 @@ contract SeedMoreMarkets is Script {
 
     function _seedOne(
         SeedSpec memory spec,
-        uint256 deployerPk,
         uint256 seedLongPk,
         uint256 seedShortPk
     ) internal {
@@ -105,7 +103,7 @@ contract SeedMoreMarkets is Script {
         uint256 minQuoteOut = (notional * SHORT_MIN_BPS) / BPS;
 
         // 1. Deployer unpauses the market (race window opens).
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         MarketRegistry(REGISTRY).pauseMarket(marketId, false);
         vm.stopBroadcast();
 

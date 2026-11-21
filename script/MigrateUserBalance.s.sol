@@ -25,8 +25,7 @@ contract MigrateUserBalance is Script {
     address constant CORRECT_MUSDC = 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7;
 
     function run() external {
-        uint256 userPrivateKey = vm.envUint("PRIVATE_KEY");
-        address user = vm.addr(userPrivateKey);
+        address user = msg.sender;
 
         console.log("=========================================");
         console.log("  USER BALANCE MIGRATION");
@@ -58,7 +57,7 @@ contract MigrateUserBalance is Script {
             return;
         }
 
-        vm.startBroadcast(userPrivateKey);
+        vm.startBroadcast();
 
         // STEP 1: Withdraw from old vault
         console.log("STEP 1: Withdrawing from old vault...");

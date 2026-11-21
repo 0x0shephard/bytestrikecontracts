@@ -14,8 +14,7 @@ contract RegisterUSDCInOldVault is Script {
     address constant MOCK_USDC = 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  REGISTER USDC IN OLD VAULT");
@@ -26,7 +25,7 @@ contract RegisterUSDCInOldVault is Script {
         console.log("Mock USDC:", MOCK_USDC);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         ICollateralVault.CollateralConfig memory config = ICollateralVault.CollateralConfig({
             token: MOCK_USDC,

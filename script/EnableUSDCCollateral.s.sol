@@ -15,8 +15,7 @@ contract EnableUSDCCollateral is Script {
     address constant MOCK_USDC = 0x71075745A2A63dff3BD4819e9639D0E412c14AA9;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  ENABLE USDC COLLATERAL");
@@ -27,7 +26,7 @@ contract EnableUSDCCollateral is Script {
         console.log("USDC:", MOCK_USDC);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         CollateralVault vault = CollateralVault(COLLATERAL_VAULT);
 

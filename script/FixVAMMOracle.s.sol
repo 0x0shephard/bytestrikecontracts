@@ -18,8 +18,7 @@ contract FixVAMMOracle is Script {
     address constant CHAINLINK_ORACLE = 0x3cA2Da03e4b6dB8fe5a24c22Cf5EB2A34B59cbad;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  FIX VAMM ORACLE");
@@ -36,7 +35,7 @@ contract FixVAMMOracle is Script {
         console.log("Current Oracle:", currentOracle);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         console.log("Setting oracle...");
         IVAMM(VAMM).setOracle(CHAINLINK_ORACLE);

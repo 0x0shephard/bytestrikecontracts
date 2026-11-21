@@ -14,8 +14,7 @@ contract FundInsuranceFund is Script {
     address constant MOCK_USDC = 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  FUND INSURANCE FUND");
@@ -28,7 +27,7 @@ contract FundInsuranceFund is Script {
         console.log("Deployer USDC balance:", deployerBalance);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Transfer 10,000 USDC to InsuranceFund
         uint256 fundAmount = 10_000 * 1e6;

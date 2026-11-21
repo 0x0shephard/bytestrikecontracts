@@ -20,8 +20,7 @@ contract SetCuOracleETHPrice is Script {
     uint256 constant ETH_PRICE = 3_790_000_000_000_000_000; // 3.79e18
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  SET ETH INDEX PRICE IN CUORACLE");
@@ -33,7 +32,7 @@ contract SetCuOracleETHPrice is Script {
         console.log("Target Price (USD): 3.79");
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         try ICuOracle(CU_ORACLE).updatePrice(ETH_PRICE) {
             console.log("Price updated successfully!");

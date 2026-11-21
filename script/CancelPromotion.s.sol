@@ -51,9 +51,8 @@ contract CancelPromotion is BCScript {
         if (info.state != STATE_PROMOTION_REQUESTED) revert NoPendingPromotion();
         if (block.timestamp >= info.promotionRequestedTimestamp + 3 days) revert PromotionAlreadyFinalized();
 
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         registry.cancelPromotion(AGREEMENT);
         vm.stopBroadcast();
 

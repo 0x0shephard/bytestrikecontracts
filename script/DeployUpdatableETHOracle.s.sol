@@ -15,8 +15,7 @@ contract DeployUpdatableETHOracle is Script {
     uint256 constant INITIAL_PRICE = 3_790_000_000_000_000_000; // $3.79
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  DEPLOY UPDATABLE ETH ORACLE");
@@ -26,7 +25,7 @@ contract DeployUpdatableETHOracle is Script {
         console.log("Initial ETH Price: $3.79");
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Deploy oracle
         console.log("Step 1: Deploying UpdatableETHOracle...");
@@ -66,13 +65,13 @@ contract DeployUpdatableETHOracle is Script {
         console.log("To update price:");
         console.log("  cast send", address(oracle));
         console.log("    'updatePrice(uint256)' <NEW_PRICE_IN_WEI>");
-        console.log("    --private-key $PRIVATE_KEY");
+        console.log("    --account <keystore-name>");
         console.log("    --rpc-url $SEPOLIA_RPC_URL");
         console.log("");
         console.log("Example (set to $4.00):");
         console.log("  cast send", address(oracle));
         console.log("    'updatePrice(uint256)' 4000000000000000000");
-        console.log("    --private-key $PRIVATE_KEY");
+        console.log("    --account <keystore-name>");
         console.log("    --rpc-url $SEPOLIA_RPC_URL");
     }
 }

@@ -20,12 +20,11 @@ contract RegisterOracleAssets is Script {
     uint256 constant H100_NON_HYPERSCALERS_PRICE = 2_946_243_092_754_190_000;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
         console.log("=== Registering Oracle Assets ===");
         console.log("MultiAssetOracle:", MULTI_ASSET_ORACLE);
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         MultiAssetOracle oracle = MultiAssetOracle(MULTI_ASSET_ORACLE);
 

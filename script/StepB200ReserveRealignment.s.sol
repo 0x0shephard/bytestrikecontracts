@@ -27,11 +27,10 @@ contract StepB200ReserveRealignment is Script {
     }
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         uint256 baseReserve = vm.envOr("B200_RESET_BASE_RESERVE", DEFAULT_BASE_RESERVE);
         MarketSpec[] memory specs = _markets();
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         for (uint256 i = 0; i < specs.length; i++) {
             _stepOne(specs[i], baseReserve);
         }

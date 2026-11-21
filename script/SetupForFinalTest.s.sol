@@ -16,8 +16,7 @@ contract SetupForFinalTest is Script {
     address constant MOCK_USDC = 0x8C68933688f94BF115ad2F9C8c8e251AE5d4ade7;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  SETUP FOR FINAL TEST");
@@ -31,7 +30,7 @@ contract SetupForFinalTest is Script {
         console.log("Deployer USDC balance:", deployerBalance);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // 1. Deposit 100,000 USDC to old vault
         uint256 depositAmount = 100_000 * 1e6;

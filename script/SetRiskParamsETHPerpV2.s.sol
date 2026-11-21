@@ -22,8 +22,7 @@ contract SetRiskParamsETHPerpV2 is Script {
     uint256 constant MIN_POSITION_SIZE = 0; // 0 = no minimum
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  SET RISK PARAMS FOR ETH-PERP-V2");
@@ -40,7 +39,7 @@ contract SetRiskParamsETHPerpV2 is Script {
         console.log("  Penalty Cap: $1000");
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         ClearingHouse(CLEARING_HOUSE).setRiskParams(
             ETH_PERP_V2,

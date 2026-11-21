@@ -69,9 +69,8 @@ contract PromoteToProduction is BCScript {
         }
         if (info.state != STATE_UNDER_ATTACK) revert WrongState(info.state, STATE_UNDER_ATTACK);
 
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         registry.promote(AGREEMENT);
         vm.stopBroadcast();
 

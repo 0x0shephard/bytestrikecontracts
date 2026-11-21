@@ -21,8 +21,7 @@ contract TestDecimalFix is Script {
     bytes32 constant ETH_PERP_V2 = 0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address trader = vm.addr(deployerPrivateKey);
+        address trader = msg.sender;
 
         console.log("=========================================");
         console.log("  TESTING DECIMAL CONVERSION FIX");
@@ -53,7 +52,7 @@ contract TestDecimalFix is Script {
         console.log("  Margin:", posBefore.margin);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Open a small position: 0.0001 ETH
         // At $3.75, notional = 0.0001 * 3.75 = $0.000375

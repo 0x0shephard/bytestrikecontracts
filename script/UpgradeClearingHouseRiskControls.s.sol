@@ -15,15 +15,15 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
  *      If the proxy owner is a multisig, the script only deploys the implementation and prints the
  *      upgrade calldata for the multisig to execute.
  *
- *      Env: PRIVATE_KEY (required), CLEARING_HOUSE_PROXY and CLEARING_HOUSE_LOGIC (default to Sepolia).
+ *      Sign with --account <keystore-name> --sender <address> (or --ledger).
+ *      Env: CLEARING_HOUSE_PROXY and CLEARING_HOUSE_LOGIC (default to Sepolia).
  */
 contract UpgradeClearingHouseRiskControls is Script {
     address constant SEPOLIA_PROXY = 0xDf4DDD4019097B335dD507f916984A1A53E40a0d;
     address constant SEPOLIA_LOGIC = 0x8a7FD495fECBc46e427A309d0f3cC5FC9355860d;
 
     function run() external {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
-        address broadcaster = vm.addr(pk);
+        address broadcaster = msg.sender;
         address proxyAddr = vm.envOr("CLEARING_HOUSE_PROXY", SEPOLIA_PROXY);
         address logic = vm.envOr("CLEARING_HOUSE_LOGIC", SEPOLIA_LOGIC);
         require(logic.code.length > 0, "Logic not deployed");
@@ -36,7 +36,7 @@ contract UpgradeClearingHouseRiskControls is Script {
         console.log("Proxy owner:", owner);
         console.log("Broadcaster:", broadcaster);
 
-        vm.startBroadcast(pk);
+        vm.startBroadcast();
         ClearingHouse newImpl = new ClearingHouse(logic);
         bool canUpgrade = broadcaster == owner;
         if (canUpgrade) proxy.upgradeToAndCall(address(newImpl), "");

@@ -26,8 +26,9 @@ import {ICollateralVault} from "../src/Interfaces/ICollateralVault.sol";
 ///         market registration, risk params, and oracle commit. Phase 5 (reveal +
 ///         seed trades + unpause) runs in a separate script after a 1-block delay.
 ///
+/// @dev Sign with the deployer EOA (must have >= 0.5 Sepolia ETH) via
+///      `--account <keystore-name> --sender <address>` or `--ledger`.
 /// @dev Required env vars:
-///        PRIVATE_KEY        - deployer EOA, must have >= 0.5 Sepolia ETH
 ///        SEED_LONG_ADDR     - address that will open the seed long
 ///        SEED_SHORT_ADDR    - address that will open the seed short
 ///        TREASURY_ADDR      - FeeRouter treasury admin
@@ -108,8 +109,7 @@ contract DeploySepoliaH100 is Script {
     Deployment internal d;
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
-        d.deployer  = vm.addr(deployerPk);
+        d.deployer  = msg.sender;
         d.treasury  = vm.envAddress("TREASURY_ADDR");
         d.seedLong  = vm.envAddress("SEED_LONG_ADDR");
         d.seedShort = vm.envAddress("SEED_SHORT_ADDR");
@@ -124,7 +124,7 @@ contract DeploySepoliaH100 is Script {
 
         _logHeader();
 
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
 
         _phase1_tokens();
         _phase2_oracles();
@@ -356,7 +356,7 @@ contract DeploySepoliaH100 is Script {
         console.log(" 1. Wait for at least 1 block (CuOracle minCommitRevealDelay).");
         console.log(" 2. Run script/SeedAndUnpauseH100.s.sol with the SAME H100_NONCE:");
         console.log("    forge script script/SeedAndUnpauseH100.s.sol \\");
-        console.log("      --rpc-url sepolia --broadcast --legacy");
+        console.log("      --rpc-url sepolia --account <keystore-name> --sender <deployer> --broadcast --legacy");
         console.log("");
         console.log(" Nonce in use (do NOT reuse for future commits):");
         console.logBytes32(nonce);

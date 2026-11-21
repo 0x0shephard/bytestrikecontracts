@@ -28,8 +28,7 @@ contract SetupCuOracleETH is Script {
     uint256 constant NONCE = 12345;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  SETUP ETH IN CUORACLE");
@@ -41,7 +40,7 @@ contract SetupCuOracleETH is Script {
         console.log("ETH Price: $3.79");
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // Step 1: Grant role to deployer if needed
         console.log("Step 1: Granting role to deployer...");

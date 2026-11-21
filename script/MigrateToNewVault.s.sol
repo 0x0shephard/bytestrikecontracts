@@ -35,8 +35,7 @@ contract MigrateToNewVault is Script {
     address constant USER_TO_MIGRATE = 0xCc624fFA5df1F3F4b30aa8abd30186a86254F406;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("=========================================");
         console.log("  VAULT MIGRATION - COMPLETE WORKFLOW");
@@ -52,7 +51,7 @@ contract MigrateToNewVault is Script {
         console.log("STEP 1: Deploying new ClearingHouse V4 implementation...");
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         ClearingHouseLogic chLogic = new ClearingHouseLogic();
         ClearingHouse newClearingHouseImpl = new ClearingHouse(address(chLogic));
