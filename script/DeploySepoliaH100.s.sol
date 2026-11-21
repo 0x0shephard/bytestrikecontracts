@@ -77,7 +77,9 @@ contract DeploySepoliaH100 is Script {
     // ========= Oracle parameters =========
     uint256 constant CU_ORACLE_MIN_INTERVAL = 1;        // 1s testnet — production should raise
     uint256 constant CU_ORACLE_MAX_AGE      = 12 hours;
-    uint256 constant ORACLE_STALE_PERIOD    = 86_400;   // 24h on testnet (slow Sepolia feeds)
+    // USDC/USD stale period: 24h on Sepolia, whose USDC/USD feed has a 24h heartbeat. There is no
+    // default; on Arbitrum One use 600 (the feed's heartbeat is 255s).
+    uint256 constant USDC_STALE_PERIOD      = 86_400;
 
     // ========= Collateral params (USDC) =========
     uint16  constant USDC_HAIRCUT_BPS       = 100;             // 1%
@@ -163,7 +165,7 @@ contract DeploySepoliaH100 is Script {
         d.oracle = new Oracle();
         d.oracle.setPriceFeed("USDC", USDC_USD_FEED);
         d.oracle.setBaseUnit("USDC", USDC_UNIT);
-        d.oracle.setPriceStalePeriod(ORACLE_STALE_PERIOD);
+        d.oracle.setPriceStalePeriodForToken("USDC", USDC_STALE_PERIOD);
 
         // Commit-reveal oracle for the H100 index price.
         d.cuOracle = new CuOracle(d.deployer, CU_ORACLE_MIN_INTERVAL);

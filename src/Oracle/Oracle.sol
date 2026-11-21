@@ -12,6 +12,7 @@ error ChainlinkOracle_ZeroPrice();
 error Oracle_InvalidAddress();
 error SequencerDown();
 error PriceIsStale();
+error Oracle_StalePeriodNotSet();
 error GracePeriodNotOver();
 error PriceOutOfBounds();
 error Oracle_RenounceOwnershipDisabled();
@@ -24,9 +25,10 @@ error Oracle_RenounceOwnershipDisabled();
 contract Oracle is Ownable2Step {
     mapping(string => AggregatorV3Interface) public priceFeeds;
     mapping(string => uint256) public baseUnits;
+    /// @notice Maximum age of a price update per feed. There is no default: a feed whose period was
+    ///         never set cannot be read, so each period must be set from that feed's heartbeat.
     mapping(string => uint256) public priceStalePeriods;
     AggregatorV3Interface public sequencerUptimeFeed;
-    uint256 public priceStalePeriod; // Maximum age of a price update
 
     /// @notice Grace period to wait after sequencer comes back online before trusting prices
     /// @dev Recommended by Chainlink to avoid stale prices right after sequencer restarts
@@ -37,12 +39,8 @@ contract Oracle is Ownable2Step {
     event BaseUnitSet(string indexed tokenSymbol, uint256 baseUnit);
     event SequencerUptimeFeedSet(address indexed uptimeFeedAddress);
     event PriceStalePeriodSetForToken(string indexed tokenSymbol, uint256 newStalePeriod);
-    event PriceStalePeriodSet(uint256 indexed newStalePeriod);
 
-    constructor() Ownable(msg.sender) {
-        priceStalePeriod = 3600; // Default to 1 hour
-        emit PriceStalePeriodSet(priceStalePeriod);
-    }
+    constructor() Ownable(msg.sender) {}
 
     // --- Price Oracle Functions ---
 
@@ -115,18 +113,11 @@ contract Oracle is Ownable2Step {
     }
 
     /**
-     * @notice Sets the maximum age for a price update to be considered valid.
-     * @param _stalePeriod The new stale period in seconds.
-     */
-    function setPriceStalePeriod(uint256 _stalePeriod) external onlyOwner {
-        priceStalePeriod = _stalePeriod;
-        emit PriceStalePeriodSet(_stalePeriod);
-    }
-
-    /**
-     * @notice Sets the maximum age for a price update for a specific token.
+     * @notice Sets the maximum age for a price update for a specific token's feed.
+     * @dev Set it from the feed's published heartbeat plus a small margin (e.g. 600s for the 255s
+     *      Arbitrum One USDC/USD feed). Setting 0 makes the feed unreadable.
      * @param _tokenSymbol The symbol of the token (e.g., "ETH").
-     * @param _stalePeriod The new stale period in seconds. Set to 0 to use the global default.
+     * @param _stalePeriod The new stale period in seconds.
      */
     function setPriceStalePeriodForToken(string memory _tokenSymbol, uint256 _stalePeriod) external onlyOwner {
         priceStalePeriods[_tokenSymbol] = _stalePeriod;
@@ -150,9 +141,7 @@ contract Oracle is Ownable2Step {
     function _getLatestPrice(string memory symbol) internal view returns (uint256 uPrice, uint256 timeStamp) {
         // L2 Sequencer Uptime Check
         uint256 stalePeriod = priceStalePeriods[symbol];
-        if (stalePeriod == 0) {
-            stalePeriod = priceStalePeriod;
-        }
+        if (stalePeriod == 0) revert Oracle_StalePeriodNotSet();
 
         if (address(sequencerUptimeFeed) != address(0)) {
             try sequencerUptimeFeed.latestRoundData() returns (

@@ -63,9 +63,12 @@ contract DeployBytestrike is Script, DeployConfig {
         oracle.setBaseUnit("BTC", 1e8);
         console.log("Base units configured");
 
-        // Set staleness period (1 hour)
-        oracle.setPriceStalePeriod(3600);
-        console.log("Stale period set to 1 hour");
+        // Stale period per feed; there is no default and an unset feed cannot be read. Sepolia
+        // testnet values. On Arbitrum One set each from the feed's heartbeat (USDC/USD: 600).
+        oracle.setPriceStalePeriodForToken("ETH", 3600);
+        oracle.setPriceStalePeriodForToken("USDC", 3600);
+        oracle.setPriceStalePeriodForToken("BTC", 3600);
+        console.log("Stale periods set to 1 hour (testnet)");
 
         // ===== 2. Deploy MarketRegistry =====
         console.log("\n=== Deploying MarketRegistry ===");

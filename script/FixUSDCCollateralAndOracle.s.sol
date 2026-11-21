@@ -96,6 +96,8 @@ contract FixUSDCCollateralAndOracle is Script {
             // Set base unit for USDC (1e6 for 6 decimals)
             oracle.setBaseUnit("USDC", 1e6);
             console.log("Oracle base unit set for USDC: 1e6");
+            // The Oracle has no default stale period; set the feed's explicitly (testnet value).
+            oracle.setPriceStalePeriodForToken("USDC", 86_400);
             console.log("");
 
             // Test oracle price

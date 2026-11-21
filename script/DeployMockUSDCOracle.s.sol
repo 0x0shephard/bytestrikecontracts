@@ -71,6 +71,12 @@ contract DeployMockUSDCOracle is Script {
         require(success2, "Failed to set base unit");
         console.log("Set USDC base unit in Oracle");
 
+        // The Oracle has no default stale period; set the feed's explicitly (testnet value).
+        (bool success3,) = oracle.call(
+            abi.encodeWithSignature("setPriceStalePeriodForToken(string,uint256)", "USDC", 86_400)
+        );
+        require(success3, "Failed to set stale period");
+
         vm.stopBroadcast();
 
         console.log("");
