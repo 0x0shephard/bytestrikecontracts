@@ -165,12 +165,23 @@ contract ClearingHouseLogic {
             _settlePnLInVault(account, marketId, realized, isLiquidation);
         }
 
+        // Margin share of the closed slice, taken from the margin before any realized loss.
+        bool reducing = s0 != 0 && ((s0 > 0) != (baseDelta > 0));
+        uint256 sliceMargin;
+        if (reducing) {
+            uint256 reduceAmt = absBaseDelta <= absS0 ? absBaseDelta : absS0;
+            sliceMargin = (position.margin * reduceAmt) / absS0;
+        }
+
         if (realized > 0) {
             uint256 credit = uint256(realized);
             position.margin += credit;
             _totalReservedMargin[account] += credit;
         } else if (realized < 0) {
+            // The closed slice's own margin absorbs its loss; only the excess is charged to the
+            // margin of the size that stays open.
             uint256 loss = uint256(-realized);
+            loss = loss > sliceMargin ? loss - sliceMargin : 0;
             if (loss >= position.margin) {
                 _totalReservedMargin[account] = _totalReservedMargin[account] > position.margin
                     ? _totalReservedMargin[account] - position.margin
@@ -194,8 +205,15 @@ contract ClearingHouseLogic {
             position.margin += marginRequired;
             _totalReservedMargin[account] += marginRequired;
         } else {
-            uint256 reduceAmt = absBaseDelta <= absS0 ? absBaseDelta : absS0;
-            uint256 marginRelease = (position.margin * reduceAmt) / absS0;
+            // After a loss, release the slice's pre-loss margin share (its loss was netted against
+            // it above). After a gain or at break-even, release a proportional share.
+            uint256 marginRelease;
+            if (realized < 0) {
+                marginRelease = sliceMargin <= position.margin ? sliceMargin : position.margin;
+            } else {
+                uint256 reduceAmt = absBaseDelta <= absS0 ? absBaseDelta : absS0;
+                marginRelease = (position.margin * reduceAmt) / absS0;
+            }
             position.margin -= marginRelease;
             _totalReservedMargin[account] -= marginRelease;
 
@@ -249,7 +267,10 @@ contract ClearingHouseLogic {
                     }
                 }
             }
-            if (!(marginValue >= requiredMargin)) revert IMRBreach();
+            // IMR applies to trades that open, increase or flip. A trade that only shrinks the
+            // position on the same side adds no exposure and is bounded by the maintenance check.
+            bool onlyReduces = s0 != 0 && (s0 > 0) == (s1 > 0) && absS1 < absS0;
+            if (!onlyReduces && !(marginValue >= requiredMargin)) revert IMRBreach();
 
             {
                 int256 unrealizedPnL = _computeUnrealizedPnL(position, oraclePrice);

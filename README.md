@@ -342,7 +342,8 @@ Flow:
    - Return remaining margin to collateral
    - Remove from _userActiveMarkets
 9. If partially closed:
-   - Verify remaining position meets margin requirements
+   - The closed slice's loss is netted against that slice's margin share; only the excess reaches the remaining margin
+   - Verify the remaining position stays above maintenance margin (IMR applies only to opens, increases and flips)
 ```
 
 ### Margin System
