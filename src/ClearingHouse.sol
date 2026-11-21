@@ -66,7 +66,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Per-market caps on aggregate open interest (gross and net, base units).
     mapping(bytes32 marketId => OpenInterestCaps) public openInterestCaps; // slot 13
 
-    /// @notice Per-market limit on how far below (long) or above (short) the index a liquidation may fill, in bps.
+    /// @notice Per-market limit on how far below (long) or above (short) the index the pre-trade vAMM
+    ///         mark may be for a liquidation to proceed, in bps.
     /// @dev 0 means DEFAULT_LIQUIDATION_PRICE_BAND_BPS. Read through liquidationPriceBandBps().
     mapping(bytes32 marketId => uint256 bandBps) internal _liquidationPriceBandBps; // slot 14
 
@@ -102,7 +103,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     error InvalidRegistry();
     error InvalidSize();
     error InvalidVault();
-    error LiquidationPriceOutOfBand(uint256 fillPriceX18, uint256 indexPriceX18);
+    error LiquidationPriceOutOfBand(uint256 markPriceX18, uint256 indexPriceX18);
     error MMRZero();
     error MarginBelowPenalty();
     error MarketNotActive();
@@ -325,8 +326,19 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
     function _isLiquidatable(address account, bytes32 marketId) internal view returns (bool) {
+        if (positions[account][marketId].size == 0) return false;
+        (int256 effectiveMargin, uint256 maintenanceMargin) = _marginState(account, marketId);
+        return effectiveMargin < int256(maintenanceMargin);
+    }
+
+    /// @dev Effective margin (margin valued at the backing collateral, plus pending funding and
+    ///      unrealized PnL at the index) and maintenance margin of an open position.
+    function _marginState(address account, bytes32 marketId)
+        internal
+        view
+        returns (int256 effectiveMargin, uint256 maintenanceMargin)
+    {
         PositionView storage position = positions[account][marketId];
-        if (position.size == 0) return false;
 
         // Include unsettled funding in effective margin so off-chain callers
         // (keepers, UIs) see accurate liquidation status without requiring
@@ -351,11 +363,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         // Calculate effective margin including unrealized PnL at oracle (risk) price
         int256 unrealizedPnL = _getUnrealizedPnLAtOracle(account, marketId);
-        int256 effectiveMargin = int256(marginValue) + pendingFunding + unrealizedPnL;
-
-        // Position is liquidatable if effective margin falls below maintenance margin
-        uint256 maintenanceMargin = _getMaintenanceMargin(account, marketId);
-        return effectiveMargin < int256(maintenanceMargin);
+        effectiveMargin = int256(marginValue) + pendingFunding + unrealizedPnL;
+        maintenanceMargin = _getMaintenanceMargin(account, marketId);
     }
 
     /// @notice Sets the risk parameters for a market.
@@ -657,7 +666,10 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
     /// @notice Liquidates a position that is below the maintenance margin requirement.
-    /// @dev Can only be called by a whitelisted liquidator.
+    /// @dev Can only be called by a whitelisted liquidator. Reverts if the vAMM mark before the close
+    ///      is outside the market's band around the index (on the side that hurts the position). The
+    ///      penalty is charged on the filled size. A partial liquidation must leave the remainder with
+    ///      a margin ratio no worse than before, unless the vAMM reserve floor clamped the fill.
     /// @param account The address of the user whose position is being liquidated.
     /// @param marketId The ID of the market.
     /// @param size The amount of the position to liquidate.
@@ -667,8 +679,11 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
         PositionView storage position = positions[account][marketId];
         MarketRiskParams memory rp = marketRiskParams[marketId];
+        // Pre-trade size and effective margin, to compare the remainder of a partial liquidation with.
+        uint256 absSizeBefore = uint256(position.size > 0 ? position.size : -position.size);
+        (int256 effectiveMarginBefore,) = _marginState(account, marketId);
         {
-            uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
+            uint256 absSize = absSizeBefore;
             if (!(size > 0 && uint256(size) <= absSize)) revert InvalidSize();
 
             // Check remaining position meets min size (prevent dust after partial liquidation)
@@ -688,10 +703,10 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         {
             IVAMM vamm = IVAMM(m.vamm);
             bool closingLong = position.size > 0;
+            _checkLiquidationMark(marketId, closingLong, vamm.getMarkPrice(), riskPrice);
             (int256 baseDelta, int256 quoteDelta, ) = closingLong
                 ? vamm.sellBase(size, amountLimit)
                 : vamm.buyBase(size, amountLimit);
-            _checkLiquidationFill(marketId, closingLong, baseDelta, quoteDelta, riskPrice);
             _applyTrade(account, marketId, baseDelta, quoteDelta, true);
             filled = uint256(baseDelta >= 0 ? baseDelta : -baseDelta);
         }
@@ -718,8 +733,18 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
                 liqIncentive = penalty - routeAmount;
             }
 
-            // Deduct penalty from margin first
-            uint256 marginApplied = penalty <= position.margin ? penalty : position.margin;
+            // The penalty is paid from free collateral first, which now holds the closed slice's
+            // released margin. Only the part free collateral cannot cover is taken from the
+            // margin of the size that stays open.
+            uint256 marginApplied;
+            {
+                uint256 balance = ICollateralVault(vault).balanceOf(account, m.quoteToken);
+                uint256 freeValue = balance == 0 ? 0 : _quoteValueX18(m.quoteToken, balance);
+                uint256 reservedForToken = _reservedMarginForToken(account, m.quoteToken);
+                freeValue = freeValue > reservedForToken ? freeValue - reservedForToken : 0;
+                marginApplied = penalty > freeValue ? penalty - freeValue : 0;
+                if (marginApplied > position.margin) marginApplied = position.margin;
+            }
             if (marginApplied > 0) {
                 position.margin -= marginApplied;
                 _totalReservedMargin[account] = (_totalReservedMargin[account] >= marginApplied)
@@ -763,9 +788,16 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             }
         }
 
-        // After partial liquidation, the remaining position must no longer be liquidatable.
-        if (position.size != 0) {
-            if (_isLiquidatable(account, marketId)) revert MustLiquidateMore();
+        // A partial liquidation must not leave the remainder with a worse margin ratio than the
+        // position had before (effective margin per unit of size; the index is unchanged). A fill
+        // the vAMM reserve floor clamped below the requested size is exempt, so the rest can be
+        // liquidated once reserves allow.
+        if (position.size != 0 && filled == uint256(size)) {
+            uint256 absSizeAfter = uint256(position.size > 0 ? position.size : -position.size);
+            (int256 effectiveMarginAfter,) = _marginState(account, marketId);
+            if (effectiveMarginAfter * int256(absSizeBefore) < effectiveMarginBefore * int256(absSizeAfter)) {
+                revert MustLiquidateMore();
+            }
         }
 
         emit LiquidationExecuted(
@@ -787,7 +819,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         return band == 0 ? DEFAULT_LIQUIDATION_PRICE_BAND_BPS : band;
     }
 
-    /// @notice Sets how far a liquidation fill may be worse than the index. 0 restores the default (5%).
+    /// @notice Sets how far the pre-trade mark may be worse than the index for a liquidation. 0 restores the default (5%).
     /// @param bandBps Band in bps; at most 10,000.
     function setLiquidationPriceBand(bytes32 marketId, uint256 bandBps) external onlyAdmin {
         if (!(IMarketRegistry(marketRegistry).getMarket(marketId).vamm != address(0))) revert MarketNotFound();
@@ -796,28 +828,26 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         emit LiquidationPriceBandSet(marketId, bandBps);
     }
 
-    /// @notice Reverts if a liquidation filled worse than the index by more than the market's band.
+    /// @notice Reverts if the vAMM mark before a liquidation is worse than the index by more than the
+    ///         market's band.
     /// @dev Stops an attacker from pushing the vAMM price just before a liquidation to turn the
-    ///      victim's loss into bad debt. Only the side that hurts the protocol is checked: selling a
-    ///      long below the index, or buying back a short above it. A better-than-index fill always passes.
-    function _checkLiquidationFill(
+    ///      victim's loss into bad debt. Only the side that hurts the protocol is checked: a mark below
+    ///      the index when closing a long, or above it when closing a short. The close's own price
+    ///      impact is not limited, so a position of any size can be liquidated from an unpushed mark.
+    function _checkLiquidationMark(
         bytes32 marketId,
         bool closingLong,
-        int256 baseDelta,
-        int256 quoteDelta,
+        uint256 markPriceX18,
         uint256 indexPriceX18
     ) internal view {
-        uint256 absBase = uint256(baseDelta >= 0 ? baseDelta : -baseDelta);
-        uint256 absQuote = uint256(quoteDelta >= 0 ? quoteDelta : -quoteDelta);
-        uint256 fillPriceX18 = Calculations.mulDiv(absQuote, PRECISION, absBase);
         uint256 band = liquidationPriceBandBps(marketId);
 
         if (closingLong) {
             uint256 floorPx = Calculations.mulDiv(indexPriceX18, BPS_DENOMINATOR - band, BPS_DENOMINATOR);
-            if (fillPriceX18 < floorPx) revert LiquidationPriceOutOfBand(fillPriceX18, indexPriceX18);
+            if (markPriceX18 < floorPx) revert LiquidationPriceOutOfBand(markPriceX18, indexPriceX18);
         } else {
             uint256 ceilPx = Calculations.mulDiv(indexPriceX18, BPS_DENOMINATOR + band, BPS_DENOMINATOR);
-            if (fillPriceX18 > ceilPx) revert LiquidationPriceOutOfBand(fillPriceX18, indexPriceX18);
+            if (markPriceX18 > ceilPx) revert LiquidationPriceOutOfBand(markPriceX18, indexPriceX18);
         }
     }
 

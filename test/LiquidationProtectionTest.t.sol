@@ -104,12 +104,12 @@ contract LiquidationProtectionTest is BaseTest {
         assertEq(getPosition(alice).size, 0);
     }
 
-    function test_BandIsMeasuredOnTheWholeFill() public {
+    function test_BandIsMeasuredOnThePreTradeMark() public {
         _openThinLong();
         setOraclePrice(1_990 * PRICE_PRECISION);
         _attackerPushes(false);
 
-        // Even a tiny band violation by the fill's average price is caught.
+        // Even a tiny band violation by the pushed pre-trade mark is caught.
         _setBand(1);
         vm.prank(liquidator);
         vm.expectPartialRevert(ClearingHouse.LiquidationPriceOutOfBand.selector);

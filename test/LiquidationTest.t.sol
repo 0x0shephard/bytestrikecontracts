@@ -127,14 +127,17 @@ contract LiquidationTest is BaseTest {
 
         assertTrue(isLiquidatable(alice), "Should be liquidatable");
 
-        // Partial liquidation that leaves position still liquidatable must revert
+        // A partial liquidation whose slice loss is covered by the slice's own margin leaves the
+        // remainder's margin ratio no worse than before, so it goes through even though the
+        // remainder is still liquidatable.
         vm.prank(liquidator);
-        vm.expectRevert(ClearingHouse.MustLiquidateMore.selector);
         clearingHouse.liquidate(alice, ETH_PERP, liquidateSize, 0);
+        assertEq(getPosition(alice).size, int256(uint256(totalSize - liquidateSize)));
+        assertTrue(isLiquidatable(alice), "Remainder still liquidatable");
 
-        // Full liquidation succeeds
+        // Liquidating the rest succeeds
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, totalSize, 0);
+        clearingHouse.liquidate(alice, ETH_PERP, totalSize - liquidateSize, 0);
 
         IClearingHouse.PositionView memory pos = getPosition(alice);
         assertEq(pos.size, 0, "Position should be fully closed");
