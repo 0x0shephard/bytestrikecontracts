@@ -5,6 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ICollateralVault} from "../src/Interfaces/ICollateralVault.sol";
+import {IInsuranceFund} from "../src/Interfaces/IInsuranceFund.sol";
 
 /**
  * @title SetupForFinalTest
@@ -40,10 +41,11 @@ contract SetupForFinalTest is Script {
         console.log("Deposited successfully!");
         console.log("");
 
-        // 2. Transfer 50,000 USDC to InsuranceFund
+        // 2. Donate 50,000 USDC to InsuranceFund (donate books it in the tracked, payable balance)
         uint256 fundAmount = 50_000 * 1e6;
         console.log("Step 2: Funding InsuranceFund with", fundAmount, "USDC");
-        IERC20(MOCK_USDC).transfer(INSURANCE_FUND, fundAmount);
+        IERC20(MOCK_USDC).approve(INSURANCE_FUND, fundAmount);
+        IInsuranceFund(INSURANCE_FUND).donate(fundAmount);
         console.log("Funded successfully!");
 
         vm.stopBroadcast();

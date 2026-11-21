@@ -22,6 +22,9 @@ interface IInsuranceFund {
     /// @notice Admin updates authorized caller (e.g., clearinghouse) that can request payouts.
     event AuthorizedUpdated(address indexed caller, bool allowed);
 
+    /// @notice Emitted when quote tokens received by plain transfer are booked into the tracked balance.
+    event Synced(uint256 amount);
+
     /// @notice Admin rescues arbitrary tokens accidentally sent to the fund.
     event TokenRescued(address indexed token, address indexed to, uint256 amount);
 
@@ -45,6 +48,10 @@ interface IInsuranceFund {
     /// @notice Enable or disable a fee router that is allowed to notify fee intake.
     function setFeeRouter(address router, bool allowed) external;
 
+    /// @notice Book quote tokens sent to the fund by plain transfer into the tracked balance.
+    /// @dev Owner-only. Returns the amount booked (token balance minus tracked balance, or 0).
+    function sync() external returns (uint256 booked);
+
     /// @notice Rescue arbitrary tokens mistakenly sent to this contract.
     /// @dev Admin-only in implementation; quote token rescue should typically be disallowed or guarded.
     function rescueToken(address token, address to, uint256 amount) external;
@@ -62,8 +69,9 @@ interface IInsuranceFund {
     /// @notice Returns whether an address is authorized to request payouts.
     function isAuthorized(address caller) external view returns (bool);
 
-    /// @notice Current available balance in quote token as tracked by the fund.
-    /// @dev Implementations may compute this as ERC20(quoteToken).balanceOf(address(this)).
+    /// @notice Raw quote token balance held by the fund.
+    /// @dev Can exceed the payable amount (`totalReceived() - totalPaid()`) after a plain transfer;
+    /// size payouts by the tracked balance, not by this value.
     function balance() external view returns (uint256);
 
     /// @notice Cumulative accounting: total fees and donations received.

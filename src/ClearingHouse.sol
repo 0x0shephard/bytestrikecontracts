@@ -720,10 +720,10 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             (, uint256 liqShortfall) = _collectQuote(account, msg.sender, m.quoteToken, liqIncentiveInQuote, false);
             if (liqShortfall > 0) {
                 if (m.insuranceFund != address(0)) {
-                    uint256 fundBalance = IInsuranceFund(m.insuranceFund).balance();
+                    uint256 fundBalance = _insuranceTrackedBalance(m.insuranceFund);
                     uint256 actualPayout = liqShortfall > fundBalance ? fundBalance : liqShortfall;
-                    // The fund checks its tracked balance, which can be below its token balance after a
-                    // direct transfer. If the payout reverts, record the shortfall as bad debt and finish.
+                    // Sized by the fund's tracked balance, which is what payout enforces. If the
+                    // payout still reverts, record the shortfall as bad debt and finish.
                     if (actualPayout > 0) {
                         try IInsuranceFund(m.insuranceFund).payout(msg.sender, actualPayout) {
                             insurancePayout = actualPayout;
@@ -1008,6 +1008,12 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         shortfall = amount - seized;
     }
 
+    /// @dev Amount the insurance fund can pay out: its tracked balance, not its raw token balance
+    /// (a plain transfer raises the latter without making it payable).
+    function _insuranceTrackedBalance(address fund) internal view returns (uint256) {
+        return IInsuranceFund(fund).totalReceived() - IInsuranceFund(fund).totalPaid();
+    }
+
     /// @notice Internal function to route liquidation penalties.
     function _routeLiqPenalty(
         address account,
@@ -1023,7 +1029,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         (uint256 actualReceived, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, penaltyInQuoteDecimals, true);
         if (shortfall > 0 && m.insuranceFund != address(0)) {
-            uint256 fundBalance = IInsuranceFund(m.insuranceFund).balance();
+            uint256 fundBalance = _insuranceTrackedBalance(m.insuranceFund);
             uint256 actualPayout = shortfall > fundBalance ? fundBalance : shortfall;
             uint256 uncovered = shortfall - actualPayout;
             if (uncovered > 0) {

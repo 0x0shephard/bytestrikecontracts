@@ -94,6 +94,19 @@ contract InsuranceFund is IInsuranceFund, Ownable2Step {
     }
 
     /// @inheritdoc IInsuranceFund
+    /// @dev Books quote tokens that reached the fund without `donate`/`onFeeReceived` (plain
+    /// transfers) into `_totalReceived`, so they become available for payouts.
+    function sync() external override onlyOwner returns (uint256 booked) {
+        uint256 tokenBalance = IERC20(_quoteToken).balanceOf(address(this));
+        uint256 tracked = _totalReceived - _totalPaid;
+        if (tokenBalance > tracked) {
+            booked = tokenBalance - tracked;
+            _totalReceived += booked;
+            emit Synced(booked);
+        }
+    }
+
+    /// @inheritdoc IInsuranceFund
     function rescueToken(address token, address to, uint256 amount) external override onlyOwner {
         require(token != _quoteToken, "IF: cannot rescue quote");
         require(to != address(0), "IF: to=0");
