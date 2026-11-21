@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
+import {IMarketRegistry} from "../src/Interfaces/IMarketRegistry.sol";
 
 interface IOwnable2StepAccept {
     function owner() external view returns (address);
@@ -12,66 +13,60 @@ interface IOwnable2StepAccept {
 
 /// @notice Acceptance phase for Ownable2Step contracts after MultisigKeyCutover.
 /// @dev Must be executed by the pending owner. For a Safe, submit these calls from the Safe UI/transaction builder.
+///
+/// Required env:
+/// - MAIN_ADMIN_MULTISIG
+/// - MARKET_IDS: comma-separated bytes32 ids of every market; vAMMs are resolved through MarketRegistry
+///
+/// Optional env:
+/// - ORACLE_ADMIN_MULTISIG defaults to MAIN_ADMIN_MULTISIG
+/// - MARKET_REGISTRY, FEE_ROUTER, INSURANCE_FUND, CU_ORACLE, COLLATERAL_ORACLE (default to Sepolia)
+/// - ACCEPT_MAIN (default true): accept FeeRouter, InsuranceFund and every vAMM as MAIN_ADMIN_MULTISIG
+/// - ACCEPT_ORACLES (default true): accept CuOracle and the collateral Oracle as ORACLE_ADMIN_MULTISIG
+///   When the two multisigs differ, run once per signer with the other flag set to false.
+///
+/// Every accepted contract is checked to be owned by its expected owner before the run ends.
 contract AcceptMultisigOwnership is Script {
+    address internal constant DEFAULT_REGISTRY = 0x236b75D39203506ee3180Ef2E1c7460a188C43c6;
     address internal constant DEFAULT_FEE_ROUTER = 0xBCEA366b30eb1dcAC6968AECcc215E8797553a5e;
     address internal constant DEFAULT_INSURANCE_FUND = 0x132Ba3d3073FDa7440fb0594210C47eC19087eaD;
+    address internal constant DEFAULT_CU_ORACLE = 0x97f557594bA32e51c0eA215B1886111F24E957af;
+    address internal constant DEFAULT_COLLATERAL_ORACLE = 0x27F4970bd037c09440823755657c5fcF107532ae;
 
     function run() external {
         address signer = msg.sender;
-        address expectedOwner = vm.envAddress("MAIN_ADMIN_MULTISIG");
+        address mainAdmin = vm.envAddress("MAIN_ADMIN_MULTISIG");
+        address oracleAdmin = vm.envOr("ORACLE_ADMIN_MULTISIG", mainAdmin);
+        bool acceptMain = vm.envOr("ACCEPT_MAIN", true);
+        bool acceptOracles = vm.envOr("ACCEPT_ORACLES", true);
 
         console.log("Accepting Ownable2Step ownership");
         console.log("signer:", signer);
-        console.log("expected owner:", expectedOwner);
+        console.log("main admin:", mainAdmin);
+        console.log("oracle admin:", oracleAdmin);
 
         vm.startBroadcast();
 
-        _acceptIfPending(vm.envOr("FEE_ROUTER", DEFAULT_FEE_ROUTER), expectedOwner, "FeeRouter");
-        _acceptIfPending(vm.envOr("INSURANCE_FUND", DEFAULT_INSURANCE_FUND), expectedOwner, "InsuranceFund");
-        _acceptVamms(expectedOwner);
-        _acceptOracles();
+        if (acceptMain) {
+            _acceptIfPending(vm.envOr("FEE_ROUTER", DEFAULT_FEE_ROUTER), mainAdmin, "FeeRouter");
+            _acceptIfPending(vm.envOr("INSURANCE_FUND", DEFAULT_INSURANCE_FUND), mainAdmin, "InsuranceFund");
+            _acceptVamms(vm.envOr("MARKET_REGISTRY", DEFAULT_REGISTRY), mainAdmin);
+        }
+        if (acceptOracles) {
+            _acceptIfPending(vm.envOr("CU_ORACLE", DEFAULT_CU_ORACLE), oracleAdmin, "CuOracle");
+            _acceptIfPending(vm.envOr("COLLATERAL_ORACLE", DEFAULT_COLLATERAL_ORACLE), oracleAdmin, "Collateral Oracle");
+        }
 
         vm.stopBroadcast();
     }
 
-    /// @dev Opt-in because older deployed oracles have no pendingOwner or acceptOwnership.
-    ///      Set ACCEPT_CU_ORACLE and ACCEPT_COLLATERAL_ORACLE only for Ownable2Step deployments.
-    ///      The signer must be ORACLE_ADMIN_MULTISIG, which may differ from MAIN_ADMIN_MULTISIG.
-    function _acceptOracles() internal {
-        address cuOracle = vm.envOr("ACCEPT_CU_ORACLE", address(0));
-        address collateralOracle = vm.envOr("ACCEPT_COLLATERAL_ORACLE", address(0));
-        if (cuOracle == address(0) && collateralOracle == address(0)) return;
-
-        address oracleAdmin = vm.envAddress("ORACLE_ADMIN_MULTISIG");
-        if (cuOracle != address(0)) _acceptIfPending(cuOracle, oracleAdmin, "CuOracle");
-        if (collateralOracle != address(0)) _acceptIfPending(collateralOracle, oracleAdmin, "Collateral Oracle");
-    }
-
-    function _acceptVamms(address expectedOwner) internal {
-        address[19] memory vamms = [
-            0x9916716B80b353FdDEe6E5c480422d6BF73e3642,
-            0x1a2150a6C3d4005b6515486CD5580D80D0a91df0,
-            0x3EC9bCC775dD69aA8b5D358c782f80a785B12d0e,
-            0x3F63a0f4B1E4DB3eff51d5a6495f6f5E9A5E4741,
-            0x69852D155Ddb624E9511382242cBfF1DC985bFef,
-            0x8a0b25E83F714E7d14AC8C7251673711ad0BE7e7,
-            0x6c35F2C88c99EcD7794cB4BcC1465C7129113a22,
-            0xa245588f6867F78866F38e947983Bdca6D12E937,
-            0xA52c4170Da956Da2d270B4F52309657664e10819,
-            0xd2F9b28ce16d0ed8Ff2cCCf638F0484b2f6508d4,
-            0x18c6103BDC17A8c7F1aE315Ccbdc9349205f248E,
-            0xc4C187F1a499Bf1f565F9816bD0427F676B772c2,
-            0x079A30C8Aa3D34FcF17B9e288bd05C04Df203e23,
-            0x15df002e93168Cf574Bdad50D05AC2bAAaC6Cd6a,
-            0x2395987E973CdFc4e145b1220D3ee34FC7c8E084,
-            0x8a68985e036E7fD635eC8E8AFd8a86A61187D723,
-            0x0D8132954F4BefAE87a240AFE6584320bED12322,
-            0x564d5076B7229Fffa7Ca369C7752b2EC4376aBF6,
-            0xDF3D211986E47946e079E85F24A2f22fd5C4C280
-        ];
-
-        for (uint256 i = 0; i < vamms.length; i++) {
-            _acceptIfPending(vamms[i], expectedOwner, "vAMM");
+    function _acceptVamms(address registry, address expectedOwner) internal {
+        bytes32[] memory marketIds = vm.envBytes32("MARKET_IDS", ",");
+        require(marketIds.length != 0, "MARKET_IDS empty");
+        for (uint256 i = 0; i < marketIds.length; i++) {
+            address vamm = IMarketRegistry(registry).getMarket(marketIds[i]).vamm;
+            require(vamm != address(0), "MARKET_IDS: unknown market");
+            _acceptIfPending(vamm, expectedOwner, "vAMM");
         }
     }
 

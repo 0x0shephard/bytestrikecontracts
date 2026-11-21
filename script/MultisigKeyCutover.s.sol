@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
+import {IMarketRegistry} from "../src/Interfaces/IMarketRegistry.sol";
 
 interface IAccessControlled {
     function DEFAULT_ADMIN_ROLE() external view returns (bytes32);
@@ -24,6 +25,10 @@ interface ICollateralVaultRoles is IAccessControlled {
 interface IOwnableDirect {
     function owner() external view returns (address);
     function transferOwnership(address newOwner) external;
+}
+
+interface IOwnable2StepView {
+    function pendingOwner() external view returns (address);
 }
 
 interface IFeeRouterAdmin is IOwnableDirect {
@@ -56,13 +61,20 @@ interface IClearingHouseAdmin is IOwnableDirect {
 /// - ORACLE_PUBLISHER
 /// - TREASURY_MULTISIG
 /// - PAUSE_GUARDIAN_MULTISIG
+/// - MARKET_IDS: comma-separated bytes32 ids of EVERY market (from MarketRegistry MarketAdded logs).
+///   vAMMs are resolved through MarketRegistry.getMarket; a missing id is not detected, so the list
+///   must be complete.
 ///
 /// Optional env:
 /// - RISK_PARAM_MULTISIG defaults to MAIN_ADMIN_MULTISIG
 /// - OLD_ADMIN defaults to broadcaster
 /// - OLD_ORACLE_PUBLISHER defaults to OLD_ADMIN
 /// - OLD_LIQUIDATOR, NEW_LIQUIDATOR
-/// - TRANSFER_COLLATERAL_ORACLE defaults to false because older deployed Oracle.sol had no transferOwnership
+/// - TRANSFER_COLLATERAL_ORACLE defaults to true (Oracle.sol is Ownable2Step); set false only for a legacy
+///   deployment whose collateral Oracle cannot transfer ownership
+///
+/// The run ends with end-state checks and reverts unless every handed-over contract is owned by, or
+/// pending to, its new owner and the old admin no longer holds the registry/vault admin roles.
 contract MultisigKeyCutover is Script {
     address internal constant DEFAULT_CLEARING_HOUSE = 0xDf4DDD4019097B335dD507f916984A1A53E40a0d;
     address internal constant DEFAULT_VAULT = 0x44345dFCD97973329A88aaE8c1432ea90525Ed13;
@@ -94,7 +106,7 @@ contract MultisigKeyCutover is Script {
         address insuranceFund = vm.envOr("INSURANCE_FUND", DEFAULT_INSURANCE_FUND);
         address cuOracle = vm.envOr("CU_ORACLE", DEFAULT_CU_ORACLE);
         address collateralOracle = vm.envOr("COLLATERAL_ORACLE", DEFAULT_COLLATERAL_ORACLE);
-        bool transferCollateralOracle = vm.envOr("TRANSFER_COLLATERAL_ORACLE", false);
+        bool transferCollateralOracle = vm.envOr("TRANSFER_COLLATERAL_ORACLE", true);
 
         _requireNonZero(mainAdmin, "MAIN_ADMIN_MULTISIG");
         _requireNonZero(oracleAdmin, "ORACLE_ADMIN_MULTISIG");
@@ -121,19 +133,29 @@ contract MultisigKeyCutover is Script {
         _cutoverFeeRouter(feeRouter, mainAdmin, treasury);
         _cutoverInsuranceFund(insuranceFund, mainAdmin);
         _cutoverCuOracle(cuOracle, oracleAdmin, oraclePublisher, oldOraclePublisher);
-        _cutoverVamms(mainAdmin);
+        _cutoverVamms(registry, mainAdmin);
 
         if (transferCollateralOracle) {
             _transferDirectOwner("Collateral Oracle", collateralOracle, oracleAdmin);
         } else {
-            console.log("Collateral Oracle transfer skipped. Older deployed Oracle.sol has no transferOwnership.");
+            console.log("WARNING: Collateral Oracle transfer skipped (TRANSFER_COLLATERAL_ORACLE=false).");
         }
 
         vm.stopBroadcast();
 
+        // End-state checks: fail the run if anything is still controlled by the old admin.
+        _requireRolesHandedOff(registry, vault, oldAdmin, mainAdmin);
+        require(IOwnableDirect(clearingHouse).owner() == mainAdmin, "ClearingHouse not handed off");
+        _requireHandedOff(feeRouter, mainAdmin, "FeeRouter not handed off");
+        _requireHandedOff(insuranceFund, mainAdmin, "InsuranceFund not handed off");
+        _requireHandedOff(cuOracle, oracleAdmin, "CuOracle not handed off");
+        if (transferCollateralOracle) {
+            _requireHandedOff(collateralOracle, oracleAdmin, "Collateral Oracle not handed off");
+        }
+
         console.log("Cutover submission complete.");
         console.log("Next: multisig must accept ownership for vAMMs, FeeRouter and InsuranceFund.");
-        console.log("Oracles on Ownable2Step code must also be accepted by the oracle admin multisig.");
+        console.log("CuOracle and Collateral Oracle (Ownable2Step) must be accepted by the oracle admin multisig.");
     }
 
     function _cutoverMarketRegistry(
@@ -223,31 +245,48 @@ contract MultisigKeyCutover is Script {
         }
     }
 
-    function _cutoverVamms(address mainAdmin) internal {
-        address[19] memory vamms = [
-            0x9916716B80b353FdDEe6E5c480422d6BF73e3642,
-            0x1a2150a6C3d4005b6515486CD5580D80D0a91df0,
-            0x3EC9bCC775dD69aA8b5D358c782f80a785B12d0e,
-            0x3F63a0f4B1E4DB3eff51d5a6495f6f5E9A5E4741,
-            0x69852D155Ddb624E9511382242cBfF1DC985bFef,
-            0x8a0b25E83F714E7d14AC8C7251673711ad0BE7e7,
-            0x6c35F2C88c99EcD7794cB4BcC1465C7129113a22,
-            0xa245588f6867F78866F38e947983Bdca6D12E937,
-            0xA52c4170Da956Da2d270B4F52309657664e10819,
-            0xd2F9b28ce16d0ed8Ff2cCCf638F0484b2f6508d4,
-            0x18c6103BDC17A8c7F1aE315Ccbdc9349205f248E,
-            0xc4C187F1a499Bf1f565F9816bD0427F676B772c2,
-            0x079A30C8Aa3D34FcF17B9e288bd05C04Df203e23,
-            0x15df002e93168Cf574Bdad50D05AC2bAAaC6Cd6a,
-            0x2395987E973CdFc4e145b1220D3ee34FC7c8E084,
-            0x8a68985e036E7fD635eC8E8AFd8a86A61187D723,
-            0x0D8132954F4BefAE87a240AFE6584320bED12322,
-            0x564d5076B7229Fffa7Ca369C7752b2EC4376aBF6,
-            0xDF3D211986E47946e079E85F24A2f22fd5C4C280
-        ];
-
+    /// @dev vAMMs are resolved from MarketRegistry using MARKET_IDS, never from a literal address list.
+    function _cutoverVamms(address registry, address mainAdmin) internal {
+        address[] memory vamms = marketVamms(registry);
         for (uint256 i = 0; i < vamms.length; i++) {
             _transferDirectOwner("vAMM pending owner", vamms[i], mainAdmin);
+            _requireHandedOff(vamms[i], mainAdmin, "vAMM not handed off");
+        }
+    }
+
+    /// @notice Resolves the vAMM of every market id in MARKET_IDS through MarketRegistry.
+    function marketVamms(address registry) public view returns (address[] memory vamms) {
+        bytes32[] memory marketIds = vm.envBytes32("MARKET_IDS", ",");
+        require(marketIds.length != 0, "MARKET_IDS empty");
+        vamms = new address[](marketIds.length);
+        for (uint256 i = 0; i < marketIds.length; i++) {
+            address vamm = IMarketRegistry(registry).getMarket(marketIds[i]).vamm;
+            require(vamm != address(0), "MARKET_IDS: unknown market");
+            vamms[i] = vamm;
+        }
+    }
+
+    function _requireHandedOff(address target, address newOwner, string memory err) internal view {
+        if (IOwnableDirect(target).owner() == newOwner) return;
+        address pending;
+        try IOwnable2StepView(target).pendingOwner() returns (address p) {
+            pending = p;
+        } catch {}
+        require(pending == newOwner, err);
+    }
+
+    function _requireRolesHandedOff(address registry, address vault, address oldAdmin, address mainAdmin) internal view {
+        IMarketRegistryRoles r = IMarketRegistryRoles(registry);
+        require(r.hasRole(r.DEFAULT_ADMIN_ROLE(), mainAdmin), "MarketRegistry admin not handed off");
+        ICollateralVaultRoles v = ICollateralVaultRoles(vault);
+        require(v.hasRole(v.DEFAULT_ADMIN_ROLE(), mainAdmin), "CollateralVault admin not handed off");
+        if (oldAdmin != mainAdmin) {
+            require(!r.hasRole(r.DEFAULT_ADMIN_ROLE(), oldAdmin), "MarketRegistry old admin remains");
+            require(!r.hasRole(r.MARKET_ADMIN_ROLE(), oldAdmin), "MarketRegistry old market admin remains");
+            require(!r.hasRole(r.PARAM_ADMIN_ROLE(), oldAdmin), "MarketRegistry old param admin remains");
+            require(!r.hasRole(r.PAUSE_GUARDIAN_ROLE(), oldAdmin), "MarketRegistry old pause guardian remains");
+            require(!v.hasRole(v.DEFAULT_ADMIN_ROLE(), oldAdmin), "CollateralVault old admin remains");
+            require(!v.hasRole(v.VAULT_ADMIN_ROLE(), oldAdmin), "CollateralVault old vault admin remains");
         }
     }
 

@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
+import {IMarketRegistry} from "../src/Interfaces/IMarketRegistry.sol";
 
 interface IVerifyAccessControl {
     function DEFAULT_ADMIN_ROLE() external view returns (bytes32);
@@ -39,7 +40,12 @@ interface IVerifyClearingHouse is IVerifyOwnable {
     function whitelistedLiquidators(address liquidator) external view returns (bool);
 }
 
-/// @notice Prints the post-cutover key/role state for evidence.
+/// @notice Prints the post-cutover key/role state for evidence and reverts unless the cutover is complete.
+/// @dev Required env: MAIN_ADMIN_MULTISIG, ORACLE_ADMIN_MULTISIG, MARKET_IDS (comma-separated bytes32 ids of
+///      every market; vAMMs are resolved through MarketRegistry). Asserts ClearingHouse, FeeRouter,
+///      InsuranceFund and every vAMM are owned by MAIN_ADMIN_MULTISIG, CuOracle and the collateral Oracle by
+///      ORACLE_ADMIN_MULTISIG, and that MAIN_ADMIN_MULTISIG (not OLD_ADMIN) holds the MarketRegistry and
+///      CollateralVault admin roles.
 contract VerifyProtocolKeyState is Script {
     address internal constant DEFAULT_CLEARING_HOUSE = 0xDf4DDD4019097B335dD507f916984A1A53E40a0d;
     address internal constant DEFAULT_VAULT = 0x44345dFCD97973329A88aaE8c1432ea90525Ed13;
@@ -51,8 +57,8 @@ contract VerifyProtocolKeyState is Script {
 
     function run() external view {
         address oldAdmin = vm.envOr("OLD_ADMIN", address(0xCc624fFA5df1F3F4b30aa8abd30186a86254F406));
-        address mainAdmin = vm.envOr("MAIN_ADMIN_MULTISIG", address(0));
-        address oracleAdmin = vm.envOr("ORACLE_ADMIN_MULTISIG", address(0));
+        address mainAdmin = vm.envAddress("MAIN_ADMIN_MULTISIG");
+        address oracleAdmin = vm.envAddress("ORACLE_ADMIN_MULTISIG");
         address oraclePublisher = vm.envOr("ORACLE_PUBLISHER", address(0));
         address treasury = vm.envOr("TREASURY_MULTISIG", address(0));
         address pauseGuardian = vm.envOr("PAUSE_GUARDIAN_MULTISIG", address(0));
@@ -82,7 +88,42 @@ contract VerifyProtocolKeyState is Script {
         _printVault(vault, oldAdmin, mainAdmin);
         _printCuOracle(cuOracle, oraclePublisher, oldAdmin);
         _printLiquidator(clearingHouse, liquidator);
-        _printVammOwners(mainAdmin, oldAdmin);
+        _printVammOwners(registry, mainAdmin, oldAdmin);
+
+        _requireOwnership(clearingHouse, feeRouter, insuranceFund, cuOracle, collateralOracle, mainAdmin, oracleAdmin);
+        _requireRoles(registry, vault, oldAdmin, mainAdmin);
+        console.log("Cutover end state verified.");
+    }
+
+    function _requireOwnership(
+        address clearingHouse,
+        address feeRouter,
+        address insuranceFund,
+        address cuOracle,
+        address collateralOracle,
+        address mainAdmin,
+        address oracleAdmin
+    ) internal view {
+        require(IVerifyOwnable(clearingHouse).owner() == mainAdmin, "ClearingHouse owner != main admin");
+        require(IVerifyOwnable(feeRouter).owner() == mainAdmin, "FeeRouter owner != main admin");
+        require(IVerifyOwnable(insuranceFund).owner() == mainAdmin, "InsuranceFund owner != main admin");
+        require(IVerifyCuOracle(cuOracle).owner() == oracleAdmin, "CuOracle owner != oracle admin");
+        require(IVerifyOwnable(collateralOracle).owner() == oracleAdmin, "Collateral Oracle owner != oracle admin");
+    }
+
+    function _requireRoles(address registry, address vault, address oldAdmin, address mainAdmin) internal view {
+        IVerifyMarketRegistry r = IVerifyMarketRegistry(registry);
+        require(r.hasRole(r.DEFAULT_ADMIN_ROLE(), mainAdmin), "MarketRegistry: main admin missing");
+        IVerifyCollateralVault v = IVerifyCollateralVault(vault);
+        require(v.hasRole(v.DEFAULT_ADMIN_ROLE(), mainAdmin), "CollateralVault: main admin missing");
+        if (oldAdmin != mainAdmin) {
+            require(!r.hasRole(r.DEFAULT_ADMIN_ROLE(), oldAdmin), "MarketRegistry: old admin remains");
+            require(!r.hasRole(r.MARKET_ADMIN_ROLE(), oldAdmin), "MarketRegistry: old market admin remains");
+            require(!r.hasRole(r.PARAM_ADMIN_ROLE(), oldAdmin), "MarketRegistry: old param admin remains");
+            require(!r.hasRole(r.PAUSE_GUARDIAN_ROLE(), oldAdmin), "MarketRegistry: old pause guardian remains");
+            require(!v.hasRole(v.DEFAULT_ADMIN_ROLE(), oldAdmin), "CollateralVault: old admin remains");
+            require(!v.hasRole(v.VAULT_ADMIN_ROLE(), oldAdmin), "CollateralVault: old vault admin remains");
+        }
     }
 
     function _printOwners(
@@ -150,39 +191,23 @@ contract VerifyProtocolKeyState is Script {
         console.log("");
     }
 
-    function _printVammOwners(address mainAdmin, address oldAdmin) internal view {
-        address[19] memory vamms = [
-            0x9916716B80b353FdDEe6E5c480422d6BF73e3642,
-            0x1a2150a6C3d4005b6515486CD5580D80D0a91df0,
-            0x3EC9bCC775dD69aA8b5D358c782f80a785B12d0e,
-            0x3F63a0f4B1E4DB3eff51d5a6495f6f5E9A5E4741,
-            0x69852D155Ddb624E9511382242cBfF1DC985bFef,
-            0x8a0b25E83F714E7d14AC8C7251673711ad0BE7e7,
-            0x6c35F2C88c99EcD7794cB4BcC1465C7129113a22,
-            0xa245588f6867F78866F38e947983Bdca6D12E937,
-            0xA52c4170Da956Da2d270B4F52309657664e10819,
-            0xd2F9b28ce16d0ed8Ff2cCCf638F0484b2f6508d4,
-            0x18c6103BDC17A8c7F1aE315Ccbdc9349205f248E,
-            0xc4C187F1a499Bf1f565F9816bD0427F676B772c2,
-            0x079A30C8Aa3D34FcF17B9e288bd05C04Df203e23,
-            0x15df002e93168Cf574Bdad50D05AC2bAAaC6Cd6a,
-            0x2395987E973CdFc4e145b1220D3ee34FC7c8E084,
-            0x8a68985e036E7fD635eC8E8AFd8a86A61187D723,
-            0x0D8132954F4BefAE87a240AFE6584320bED12322,
-            0x564d5076B7229Fffa7Ca369C7752b2EC4376aBF6,
-            0xDF3D211986E47946e079E85F24A2f22fd5C4C280
-        ];
+    function _printVammOwners(address registry, address mainAdmin, address oldAdmin) internal view {
+        bytes32[] memory marketIds = vm.envBytes32("MARKET_IDS", ",");
+        require(marketIds.length != 0, "MARKET_IDS empty");
 
         console.log("vAMM owner summary");
         uint256 mainCount;
         uint256 oldCount;
-        for (uint256 i = 0; i < vamms.length; i++) {
-            address owner = IVerifyOwnable(vamms[i]).owner();
+        for (uint256 i = 0; i < marketIds.length; i++) {
+            address vamm = IMarketRegistry(registry).getMarket(marketIds[i]).vamm;
+            require(vamm != address(0), "MARKET_IDS: unknown market");
+            address owner = IVerifyOwnable(vamm).owner();
             if (owner == mainAdmin) mainCount++;
             if (owner == oldAdmin) oldCount++;
         }
         console.log("vAMMs owned by main multisig:", mainCount);
         console.log("vAMMs still owned by old admin:", oldCount);
+        require(mainCount == marketIds.length, "vAMM not owned by main admin");
     }
 
     function _printRole(string memory label, bool value) internal pure {
