@@ -56,6 +56,12 @@ contract FundingTest is BaseTest {
         openLongPosition(alice, size, 0);
         _ensureCounterpartyShort(size);
 
+        // With no vAMM fee a balanced book leaves the mark at the index, so move the index below
+        // the mark to give longs something to pay.
+        setOraclePrice(1990 * PRICE_PRECISION);
+        vm.prank(address(clearingHouse));
+        vamm.pokeFunding(); // refresh the cached index
+
         uint256 fundingBefore = getCumulativeFunding();
 
         // Skip time to allow funding to accrue
@@ -301,8 +307,10 @@ contract FundingTest is BaseTest {
         openLongPosition(alice, size, 0);
         _ensureCounterpartyShort(size);
 
-        // Change oracle price to create mark-index divergence
-        setOraclePrice(2100 * PRICE_PRECISION);
+        // Change oracle price to create mark-index divergence (index below mark, so longs pay)
+        setOraclePrice(1900 * PRICE_PRECISION);
+        vm.prank(address(clearingHouse));
+        vamm.pokeFunding(); // refresh the cached index
 
         skipTime(1 hours);
 
@@ -625,7 +633,7 @@ contract FundingTest is BaseTest {
 
         // setParams should flush funding before applying new params
         vm.prank(admin);
-        vamm.setParams(TRADE_FEE_BPS, FUNDING_MAX_BPS_PER_HOUR, 2e18); // double kFunding
+        vamm.setParams(VAMM_FEE_BPS, FUNDING_MAX_BPS_PER_HOUR, 2e18); // double kFunding
 
         uint256 fundingAfterSetParams = getCumulativeFunding();
 

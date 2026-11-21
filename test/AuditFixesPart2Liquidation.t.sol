@@ -10,7 +10,7 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
     /// @dev Quote the vAMM pays for selling `dx` base (mirrors vAMM.sellBase without the clamp).
     function _quoteOutForSell(uint256 dx) internal view returns (uint256) {
         (uint256 x, uint256 y) = getReserves();
-        uint256 f = 10_000 - uint256(TRADE_FEE_BPS);
+        uint256 f = 10_000 - uint256(VAMM_FEE_BPS);
         return (y * dx * f) / (x * 10_000 + dx * f);
     }
 

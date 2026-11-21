@@ -138,7 +138,7 @@ contract DeployBytestrike is Script, DeployConfig {
             vammParams.initialPriceX18,
             vammParams.initialBaseReserve,
             vammParams.liquidity,
-            tradingParams.feeBps,
+            0, // vAMM fee is fixed at 0; the trading fee is the market fee
             tradingParams.frMaxBpsPerHour,
             tradingParams.kFundingX18
         );
@@ -155,7 +155,7 @@ contract DeployBytestrike is Script, DeployConfig {
         console.log("vAMM initialized with:");
         console.log("  - Initial price: 3000 ETH/USD");
         console.log("  - Base reserve: 1000 ETH");
-        console.log("  - Fee: 0.1%");
+        console.log("  - vAMM fee: 0 (trading fee is the market fee)");
 
         vm.stopBroadcast();
 

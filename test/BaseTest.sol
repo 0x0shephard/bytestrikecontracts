@@ -45,7 +45,8 @@ abstract contract BaseTest is Test {
     uint128 public constant LIQUIDITY_INDEX = 1e24;
 
     // Fee configuration
-    uint16 public constant TRADE_FEE_BPS = 10; // 0.1%
+    uint16 public constant TRADE_FEE_BPS = 10; // 0.1% market fee, routed to FeeRouter
+    uint16 public constant VAMM_FEE_BPS = 0; // vAMM swap fee is fixed at 0 (audit finding 16)
     uint256 public constant FUNDING_MAX_BPS_PER_HOUR = 100; // 1%
     uint256 public constant FUNDING_K = 1e18;
     uint16 public constant FEE_TO_INSURANCE_BPS = 5000; // 50%
@@ -110,7 +111,7 @@ abstract contract BaseTest is Test {
             INITIAL_ETH_PRICE,
             INITIAL_BASE_RESERVE,
             LIQUIDITY_INDEX,
-            TRADE_FEE_BPS,
+            VAMM_FEE_BPS,
             FUNDING_MAX_BPS_PER_HOUR,
             FUNDING_K
         );

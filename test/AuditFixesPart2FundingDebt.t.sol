@@ -141,7 +141,7 @@ contract AuditFixesPart2FundingDebtTest is BaseTest {
             1_900e18,
             INITIAL_BASE_RESERVE,
             LIQUIDITY_INDEX,
-            TRADE_FEE_BPS,
+            VAMM_FEE_BPS,
             FUNDING_MAX_BPS_PER_HOUR,
             FUNDING_K
         );

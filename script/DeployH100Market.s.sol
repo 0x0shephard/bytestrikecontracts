@@ -51,7 +51,7 @@ contract DeployH100Market is Script {
     uint256 constant INITIAL_PRICE        = 3e18;       // $3.00 per H100 hour
     uint256 constant INITIAL_BASE_RESERVE = 1_000e18;   // 1,000 H100 virtual reserve
     uint128 constant LIQUIDITY            = 1e24;
-    uint16  constant FEE_BPS              = 10;          // 0.1% trade fee
+    uint16  constant FEE_BPS              = 20; // market fee: 0.2%, incl. the 10 bps formerly charged inside the vAMM
     uint256 constant FR_MAX_BPS_PER_HOUR  = 100;         // 1% max funding/hr
     uint256 constant K_FUNDING_X18        = 1e18;
     uint256 constant IMR_BPS              = 1_000;       // 10% initial margin
@@ -98,7 +98,7 @@ contract DeployH100Market is Script {
             INITIAL_PRICE,
             INITIAL_BASE_RESERVE,
             LIQUIDITY,
-            FEE_BPS,
+            0, // vAMM fee is fixed at 0; the trading fee is the market fee (FEE_BPS)
             FR_MAX_BPS_PER_HOUR,
             K_FUNDING_X18
         );

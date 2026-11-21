@@ -33,7 +33,7 @@ contract CompleteSepoliaMarkets is Script {
 
     uint256 constant INITIAL_BASE_RESERVE = 10_000e18;
     uint128 constant LIQUIDITY = 1e24;
-    uint16 constant FEE_BPS = 10;
+    uint16 constant FEE_BPS = 20; // market fee; the vAMM fee is fixed at 0 and its 10 bps moved here
     uint256 constant FR_MAX_BPS_PER_HOUR = 100;
     uint256 constant K_FUNDING_X18 = 1e18;
     uint256 constant CU_ORACLE_MAX_AGE = 12 hours;
@@ -139,7 +139,7 @@ contract CompleteSepoliaMarkets is Script {
     function _deployVamm(address adapter, uint256 priceX18) internal returns (address) {
         bytes memory init = abi.encodeCall(
             vAMM.initialize,
-            (CH, adapter, priceX18, INITIAL_BASE_RESERVE, LIQUIDITY, FEE_BPS, FR_MAX_BPS_PER_HOUR, K_FUNDING_X18)
+            (CH, adapter, priceX18, INITIAL_BASE_RESERVE, LIQUIDITY, 0, FR_MAX_BPS_PER_HOUR, K_FUNDING_X18)
         );
         return address(new ERC1967Proxy(VAMM_IMPL, init));
     }

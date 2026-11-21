@@ -29,7 +29,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	uint256 private reserveQuote;  // Y
 
 	// ========= Params / indices =========
-	uint16 public feeBps;                // fee on input, in bps
+	uint16 public feeBps;                // swap fee on input, in bps; fixed at 0 (slot kept for layout)
 	uint256 public frMaxBpsPerHour;      // funding clamp per hour (bps)
 	uint256 public kFundingX18;          // funding scaling factor (1e18 = 1.0)
 	// ========= Reserve Protection =========
@@ -99,7 +99,8 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	/// @param initialPriceX18 initial mark price (quote per base, 1e18).
 	/// @param initialBaseReserve virtual base reserve (1e18 units).
 	/// @param liquidity_ fee index denominator.
-	/// @param feeBps_ trade fee bps (e.g., 10 = 0.1%).
+	/// @param feeBps_ swap fee bps; must be 0. The trading fee is the market fee ClearingHouse routes to
+	///        FeeRouter, a vAMM fee would stay in the reserves and drift the mark.
 	/// @param frMaxBpsPerHour_ funding clamp per hour (bps).
 	/// @param kFundingX18_ funding scaling factor (1e18 = 1.0).
 	function initialize(
@@ -117,7 +118,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(initialPriceX18 > 0, "price=0");
 		require(initialBaseReserve > 0, "baseRes=0");
 		require(liquidity_ > 0, "L=0");
-		require(feeBps_ <= 300, "Fee too high");
+		require(feeBps_ == 0, "vAMM fee must be 0");
 		require(frMaxBpsPerHour_ > 0, "frMax=0");
 		require(kFundingX18_ > 0, "kFunding=0");
 
@@ -420,7 +421,8 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	}
 
 	/// @notice Updates core trading and funding parameters for the vAMM.
-	/// @param feeBps_ New trade fee in basis points (max 3% to match MarketRegistry.MAX_FEE_BPS).
+	/// @param feeBps_ Swap fee in basis points; must be 0 (kept in the signature and storage layout).
+	///        Setting it to 0 also clears a fee left on a vAMM initialized before this rule.
 	/// @param frMaxBpsPerHour_ Maximum allowed funding rate drift per hour in basis points.
 	/// @param kFundingX18_ Funding sensitivity scaling factor.
 	function setParams(
@@ -430,7 +432,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	) external onlyOwner {
 		// Settle accumulated funding under current parameters before applying new ones
 		_pokeFundingInternal();
-		require(feeBps_ <= 300, "Fee too high"); // Max 3% (matches MarketRegistry.MAX_FEE_BPS)
+		require(feeBps_ == 0, "vAMM fee must be 0");
 		require(frMaxBpsPerHour_ > 0, "frMax=0");
 		require(kFundingX18_ > 0, "kFunding=0");
 		feeBps = feeBps_;

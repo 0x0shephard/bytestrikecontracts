@@ -53,7 +53,7 @@ contract DeployWithMocks is Script {
         initialOraclePriceX18 = vm.envOr("INITIAL_ORACLE_PRICE_X18", uint256(2000 * 1e18)); // $2000
         initialBaseReserve = vm.envOr("INITIAL_BASE_RESERVE", uint256(1000 * 1e18)); // 1000 ETH
         liquidityIndex = uint128(vm.envOr("INITIAL_LIQUIDITY_INDEX", uint256(1e24)));
-        tradeFeeBps = uint16(vm.envOr("TRADE_FEE_BPS", uint256(10))); // 0.1%
+        tradeFeeBps = uint16(vm.envOr("TRADE_FEE_BPS", uint256(20))); // 0.2% market fee (vAMM fee is fixed at 0)
         fundingMaxBpsPerHour = vm.envOr("FUNDING_MAX_BPS_PER_HOUR", uint256(100)); // 1% max per hour
         fundingKx18 = vm.envOr("FUNDING_K_X18", uint256(1e18));
         insuranceFundTradeFeeShareBps = uint16(vm.envOr("FEE_ROUTER_TRADE_FEE_TO_INSURANCE_BPS", uint256(5000))); // 50%
@@ -128,7 +128,7 @@ contract DeployWithMocks is Script {
                 initialOraclePriceX18,
                 initialBaseReserve,
                 liquidityIndex,
-                tradeFeeBps,
+                0, // vAMM fee is fixed at 0; tradeFeeBps is the market fee
                 fundingMaxBpsPerHour,
                 fundingKx18
             )

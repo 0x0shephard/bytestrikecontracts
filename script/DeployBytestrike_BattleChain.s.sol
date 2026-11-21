@@ -72,8 +72,8 @@ contract DeployBytestrike_BattleChain is BCScript {
     uint256 constant INITIAL_BASE_RESERVE = 1_000e18;
     /// vAMM liquidity denominator
     uint128 constant LIQUIDITY = 1e24;
-    /// Trade fee: 0.1%
-    uint16 constant FEE_BPS = 10;
+    /// Market trade fee: 0.2% (the vAMM fee is fixed at 0)
+    uint16 constant FEE_BPS = 20; // market fee: 0.2%, incl. the 10 bps formerly charged inside the vAMM
     /// Max funding rate per hour: 1%
     uint256 constant FR_MAX_BPS_PER_HOUR = 100;
     /// Funding scaling factor: 1.0
@@ -184,7 +184,7 @@ contract DeployBytestrike_BattleChain is BCScript {
             INITIAL_CU_PRICE,
             INITIAL_BASE_RESERVE,
             LIQUIDITY,
-            FEE_BPS,
+            0, // vAMM fee is fixed at 0; the trading fee is the market fee (FEE_BPS)
             FR_MAX_BPS_PER_HOUR,
             K_FUNDING_X18
         );

@@ -54,7 +54,7 @@ contract DeploySepoliaH100 is Script {
     uint256 constant INITIAL_PRICE_X18    = 4_220_000_000_000_000_000;     // $4.22
     uint256 constant INITIAL_BASE_RESERVE = 10_000e18;                      // 10k H100-hr virtual
     uint128 constant LIQUIDITY            = 1e24;
-    uint16  constant FEE_BPS              = 10;                             // 0.1%
+    uint16  constant FEE_BPS              = 20; // market fee: 0.2%, incl. the 10 bps formerly charged inside the vAMM
     uint256 constant FR_MAX_BPS_PER_HOUR  = 100;                            // L-18: non-zero
     uint256 constant K_FUNDING_X18        = 1e18;                           // L-18: non-zero
     uint256 constant IMR_BPS              = 1_000;                          // 10% (user spec)
@@ -226,7 +226,7 @@ contract DeploySepoliaH100 is Script {
                 INITIAL_PRICE_X18,
                 INITIAL_BASE_RESERVE,
                 LIQUIDITY,
-                FEE_BPS,
+                0, // vAMM fee is fixed at 0; the trading fee is the market fee (FEE_BPS)
                 FR_MAX_BPS_PER_HOUR,
                 K_FUNDING_X18
             )

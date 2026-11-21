@@ -23,7 +23,7 @@ contract AuditFixesPart2SurplusMarginTest is BaseTest {
             INITIAL_ETH_PRICE,
             INITIAL_BASE_RESERVE,
             LIQUIDITY_INDEX,
-            TRADE_FEE_BPS,
+            VAMM_FEE_BPS,
             FUNDING_MAX_BPS_PER_HOUR,
             FUNDING_K
         );

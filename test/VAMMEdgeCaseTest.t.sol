@@ -207,7 +207,9 @@ contract VAMMEdgeCaseTest is BaseTest {
 
         uint256 feeGrowthAfter = vamm.feeGrowthGlobalX128();
 
-        assertTrue(feeGrowthAfter > feeGrowthBefore, "Fee growth should increase");
+        // The vAMM swap fee is fixed at 0 (audit finding 16): the trading fee is the market fee
+        // routed to FeeRouter, so no fee accrues inside the vAMM.
+        assertEq(feeGrowthAfter, feeGrowthBefore, "vAMM accrues no swap fee");
     }
 
     // ============ Admin Function Tests ============

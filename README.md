@@ -196,7 +196,7 @@ uint8 public observationIndex;
 uint32 public observationWindow;  // TWAP window in seconds
 
 // Parameters
-uint16 public feeBps;             // Swap fee
+uint16 public feeBps;             // Swap fee, fixed at 0 (the trading fee is the market fee)
 uint256 public frMaxBpsPerHour;   // Max funding rate per hour
 uint256 public kFundingX18;       // Funding rate sensitivity
 ```
@@ -210,7 +210,7 @@ markPrice = quoteReserve * 1e18 / baseReserve
 ```solidity
 // For buying `baseOut` units of base:
 quoteIn = (baseOut * quoteReserve) / (baseReserve - baseOut)
-// Fee applied: actualQuoteIn = quoteIn * (10000 + feeBps) / 10000
+// vAMM feeBps is fixed at 0, so swaps stay on the x*y=k curve
 
 // Reserve updates:
 baseReserve -= baseOut
@@ -221,7 +221,7 @@ quoteReserve += quoteIn
 ```solidity
 // For selling `baseIn` units of base:
 quoteOut = (baseIn * quoteReserve) / (baseReserve + baseIn)
-// Fee applied: actualQuoteOut = quoteOut * (10000 - feeBps) / 10000
+// vAMM feeBps is fixed at 0, so swaps stay on the x*y=k curve
 
 // Reserve updates:
 baseReserve += baseIn
@@ -510,8 +510,10 @@ if (canLiquidate) {
 
 ### Trading Fees
 - Charged on every position open/close
-- Calculated: `notionalValue * feeBps / 10000`
-- Typical: 10 bps (0.1%)
+- Calculated: `notionalValue * feeBps / 10000` using the market's feeBps
+- Typical: 20 bps (0.2%)
+- The vAMM swap fee is fixed at 0: a fee kept in the virtual reserves would drift the mark
+  and leave USDC in the vault that no account owns
 - Precision: Uses `mulDivRoundingUp` for low-decimal tokens
 
 ### Fee Distribution

@@ -41,7 +41,7 @@ contract DeployMoreMarkets is Script {
     // ========= Common vAMM init params =========
     uint256 constant INITIAL_BASE_RESERVE = 10_000e18;
     uint128 constant LIQUIDITY            = 1e24;
-    uint16  constant FEE_BPS              = 10;
+    uint16  constant FEE_BPS              = 20; // market fee: 0.2%, incl. the 10 bps formerly charged inside the vAMM
     uint256 constant FR_MAX_BPS_PER_HOUR  = 100;   // L-18: non-zero
     uint256 constant K_FUNDING_X18        = 1e18;  // L-18: non-zero
     uint256 constant CU_ORACLE_MAX_AGE    = 12 hours;
@@ -112,7 +112,7 @@ contract DeployMoreMarkets is Script {
                 s.priceX18,
                 INITIAL_BASE_RESERVE,
                 LIQUIDITY,
-                FEE_BPS,
+                0, // vAMM fee is fixed at 0; the trading fee is the market fee (FEE_BPS)
                 FR_MAX_BPS_PER_HOUR,
                 K_FUNDING_X18
             )

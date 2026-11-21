@@ -25,7 +25,7 @@ contract DeployNewVAMM is Script {
         // = 1,000,000 * 3.75 = 3,750,000
         
         uint128 liquidity = 1_000_000; // Liquidity index
-        uint16 feeBps = 10; // 0.1% fee
+        uint16 feeBps = 0; // vAMM fee is fixed at 0; the trading fee is the market fee
         uint256 frMaxBpsPerHour = 100; // 1% max funding per hour
         uint256 kFundingX18 = 1e18; // 1.0 funding coefficient
         
