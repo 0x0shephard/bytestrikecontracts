@@ -313,12 +313,13 @@ contract ClearingHouseLogic {
             } else if (fundingPayment < 0) {
                 uint256 debit = uint256(-fundingPayment);
                 if (debit >= position.margin) {
-                    uint256 shortfall = debit - position.margin;
+                    // The vault balance was already debited for the full amount
+                    // (capped at the balance) by _settlePnLInVault above, so the
+                    // overflow beyond the position margin must not be reserved again.
                     _totalReservedMargin[account] = (_totalReservedMargin[account] > position.margin)
                         ? (_totalReservedMargin[account] - position.margin)
                         : 0;
                     position.margin = 0;
-                    _recoverShortfall(account, marketId, shortfall);
                 } else {
                     position.margin -= debit;
                     _totalReservedMargin[account] -= debit;
@@ -379,24 +380,6 @@ contract ClearingHouseLogic {
                     ICollateralVault(vault).settlePnL(account, m.quoteToken, -int256(lossInQuote));
                 }
             }
-        }
-    }
-
-    function _recoverShortfall(address account, bytes32 marketId, uint256 shortfall) internal {
-        if (shortfall == 0) return;
-
-        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
-        uint256 quoteBalance = ICollateralVault(vault).balanceOf(account, m.quoteToken);
-        uint256 quoteValueX18 = _quoteValueX18(m.quoteToken, quoteBalance);
-        uint256 reservedForToken = _reservedMarginForToken(account, m.quoteToken);
-        uint256 freeCollateral = quoteValueX18 > reservedForToken
-            ? quoteValueX18 - reservedForToken
-            : 0;
-        uint256 recovered = shortfall > freeCollateral ? freeCollateral : shortfall;
-
-        if (recovered > 0) {
-            _totalReservedMargin[account] += recovered;
-            positions[account][marketId].margin += recovered;
         }
     }
 
