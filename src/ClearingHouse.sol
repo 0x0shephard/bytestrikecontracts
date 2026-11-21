@@ -287,6 +287,23 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
 
+    /// @dev Settles funding for the target market and every other active market of `account` that
+    ///      uses the same quote token. Only those markets change the vault balance and reserved
+    ///      margin that the target market's health check reads, so markets on other quote tokens
+    ///      (whose feeds may be unavailable) cannot block a close or liquidation here.
+    function _settleFundingSameQuote(address account, bytes32 marketId) internal {
+        address targetQuote = IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken;
+        bytes32[] memory activeMarkets = _userActiveMarkets[account];
+        for (uint256 i = 0; i < activeMarkets.length; i++) {
+            if (IMarketRegistry(marketRegistry).getMarket(activeMarkets[i]).quoteToken == targetQuote) {
+                _settleFundingInternal(activeMarkets[i], account);
+            }
+        }
+        if (!_isMarketActive[account][marketId]) {
+            _settleFundingInternal(marketId, account);
+        }
+    }
+
     /// @notice Checks if an account's position in a given market is subject to liquidation.
     /// @param account The address of the user.
     /// @param marketId The ID of the market.
@@ -587,15 +604,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @param size The amount of base asset to trade for closing the position.
     /// @param amountLimit For closing longs (selling base): min quote to receive. For closing shorts (buying base): max quote to spend. 0 = no limit.
     function closePosition(bytes32 marketId, uint128 size, uint256 amountLimit) external override nonReentrant {
-        // Settle funding for all active markets so vault balances and
-        // _totalReservedMargin are current before any shortfall recovery.
-        bytes32[] memory activeMarkets = _userActiveMarkets[msg.sender];
-        for (uint256 i = 0; i < activeMarkets.length; i++) {
-            _settleFundingInternal(activeMarkets[i], msg.sender);
-        }
-        if (activeMarkets.length == 0 || !_isMarketActive[msg.sender][marketId]) {
-            _settleFundingInternal(marketId, msg.sender);
-        }
+        _settleFundingSameQuote(msg.sender, marketId);
         if (_isLiquidatable(msg.sender, marketId)) revert PositionLiquidatable();
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
@@ -641,15 +650,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @param marketId The ID of the market.
     /// @param size The amount of the position to liquidate.
     function liquidate(address account, bytes32 marketId, uint128 size, uint256 amountLimit) external override nonReentrant onlyWhitelistedLiquidator {
-        // Settle funding for all active markets so vault balances and
-        // _totalReservedMargin are current before any shortfall recovery.
-        bytes32[] memory userMarkets = _userActiveMarkets[account];
-        for (uint256 i = 0; i < userMarkets.length; i++) {
-            _settleFundingInternal(userMarkets[i], account);
-        }
-        if (userMarkets.length == 0 || !_isMarketActive[account][marketId]) {
-            _settleFundingInternal(marketId, account);
-        }
+        _settleFundingSameQuote(account, marketId);
         if (!_isLiquidatable(account, marketId)) revert NotLiquidatable();
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
         PositionView storage position = positions[account][marketId];
