@@ -161,7 +161,8 @@ contract ClearingHouseLogic {
         }
 
         if (realized != 0) {
-            _settlePnLInVault(account, marketId, realized);
+            // Only a liquidation may realize a loss beyond the account's vault balance.
+            _settlePnLInVault(account, marketId, realized, isLiquidation);
         }
 
         if (realized > 0) {
@@ -216,13 +217,17 @@ contract ClearingHouseLogic {
         if (!isLiquidation && absBaseDelta > 0) {
             if (m.feeBps > 0) {
                 uint256 notional2 = Calculations.mulDivRoundingUp(absBaseDelta, execPxX18, 1e18);
-                if (notional2 > 0) {
-                    tradeFee = Calculations.mulDivRoundingUp(notional2, m.feeBps, BPS_DENOMINATOR);
-                    if (tradeFee > 0) {
-                        _ensureAvailableCollateral(account, tradeFee, m.quoteToken);
-                        _routeTradeFee(account, tradeFee, m);
-                    }
-                }
+                tradeFee = Calculations.mulDivRoundingUp(notional2, m.feeBps, BPS_DENOMINATOR);
+            }
+            // Every voluntary trade that opens, increases or flips must leave the quote collateral
+            // value at or above reserved margin plus fee, even on a zero-fee market. A pure
+            // reduction checks only its fee, so de-risking is not blocked.
+            bool pureReduction = (s0 > 0 && s1 >= 0 && s1 < s0) || (s0 < 0 && s1 <= 0 && s1 > s0);
+            if (tradeFee > 0 || !pureReduction) {
+                _ensureAvailableCollateral(account, tradeFee, m.quoteToken);
+            }
+            if (tradeFee > 0) {
+                _routeTradeFee(account, tradeFee, m);
             }
         }
 
@@ -313,7 +318,7 @@ contract ClearingHouseLogic {
                 fundingPayment = -int256(Calculations.mulDiv(payDelta - receiveDelta, absSize, 1e18));
             }
 
-            _settlePnLInVault(account, marketId, fundingPayment);
+            _settlePnLInVault(account, marketId, fundingPayment, true);
 
             if (fundingPayment > 0) {
                 uint256 credit = uint256(fundingPayment);
@@ -370,7 +375,9 @@ contract ClearingHouseLogic {
     /// @dev Books realized PnL or funding in the vault. Both legs of one zero-sum exchange are
     /// converted at the same fixed rate (see _pnlToQuoteUnits), so the winner's credit and the
     /// loser's debit net in tokens whatever quote-token price each settlement would read.
-    function _settlePnLInVault(address account, bytes32 marketId, int256 realized) internal {
+    /// @param allowBadDebt True for liquidations and funding, where a loss beyond the vault balance
+    /// is written off; a voluntary trade with such a loss reverts instead.
+    function _settlePnLInVault(address account, bytes32 marketId, int256 realized, bool allowBadDebt) internal {
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
 
         if (realized > 0) {
@@ -383,6 +390,7 @@ contract ClearingHouseLogic {
             if (lossInQuote > 0) {
                 uint256 available = ICollateralVault(vault).balanceOf(account, m.quoteToken);
                 if (lossInQuote > available) {
+                    if (!allowBadDebt) revert InsufficientQuoteCollateral();
                     uint256 badDebt = lossInQuote - available;
                     lossInQuote = available;
                     totalBadDebt += badDebt;
@@ -406,8 +414,9 @@ contract ClearingHouseLogic {
         IFeeRouter(m.feeRouter).onTradeFee(actualReceived);
     }
 
+    /// @dev Requires quote collateral value >= reserved margin + amount. With amount 0 it still
+    /// checks that the reserved margin is fully backed.
     function _ensureAvailableCollateral(address account, uint256 amount, address quoteToken) internal view {
-        if (amount == 0) return;
         uint256 quoteBalance = ICollateralVault(vault).balanceOf(account, quoteToken);
         uint256 quoteValueX18 = _quoteValueX18(quoteToken, quoteBalance);
         uint256 reservedForToken = _reservedMarginForToken(account, quoteToken);
