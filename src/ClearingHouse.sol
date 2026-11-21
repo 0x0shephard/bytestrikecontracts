@@ -1060,6 +1060,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             available = balance > reservedInTokenUnits ? balance - reservedInTokenUnits : 0;
         }
         uint256 seized = amount <= available ? amount : available;
+        if (seized < amount) {
+            seized += _drawSurplusMargin(account, quoteToken, amount - seized, balance - seized);
+        }
         actualReceived = seized;
 
         if (seized > 0) {
@@ -1069,6 +1072,68 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             }
         }
         shortfall = amount - seized;
+    }
+
+    /// @dev Takes up to `need` token units from margin the account's open positions in `quoteToken` hold
+    ///      above both their maintenance requirement (equity net of funding debt) and their liquidation
+    ///      penalty floor, lowering those margins so reserved margin stays backed by the balance. A
+    ///      market whose index cannot be read keeps its margin instead of reverting the liquidation.
+    function _drawSurplusMargin(address account, address quoteToken, uint256 need, uint256 balanceLeft)
+        internal
+        returns (uint256 drawn)
+    {
+        if (balanceLeft == 0) return 0;
+        if (need > balanceLeft) need = balanceLeft;
+        uint256 reserved = _reservedMarginForToken(account, quoteToken);
+        if (reserved == 0) return 0;
+        uint256 valueX18 = _quoteValueX18(quoteToken, balanceLeft);
+        // A balance worth less than the reserved margin backs each margin only in that ratio.
+        uint256 backedX18 = valueX18 < reserved ? valueX18 : reserved;
+        bytes32[] memory markets = _userActiveMarkets[account];
+        for (uint256 i = 0; i < markets.length && drawn < need; i++) {
+            IMarketRegistry.Market memory mkt = IMarketRegistry(marketRegistry).getMarket(markets[i]);
+            if (mkt.quoteToken != quoteToken || mkt.oracle == address(0)) continue;
+            PositionView storage p = positions[account][markets[i]];
+            if (p.size == 0 || p.margin == 0) continue;
+            uint256 riskPrice;
+            try IOracle(mkt.oracle).getPrice() returns (uint256 price) {
+                riskPrice = price;
+            } catch {
+                continue;
+            }
+            if (riskPrice == 0) continue;
+            MarketRiskParams storage rp = marketRiskParams[markets[i]];
+            uint256 notional = Calculations.mulDivRoundingUp(uint256(p.size > 0 ? p.size : -p.size), riskPrice, 1e18);
+            uint256 penaltyFloor = Calculations.mulDivRoundingUp(notional, rp.liquidationPenaltyBps, BPS_DENOMINATOR);
+            if (rp.penaltyCap > 0 && penaltyFloor > rp.penaltyCap) penaltyFloor = rp.penaltyCap;
+            if (p.margin <= penaltyFloor) continue;
+            uint256 mm = Calculations.mulDivRoundingUp(notional, rp.mmrBps, BPS_DENOMINATOR);
+            uint256 backedMargin = Calculations.mulDiv(p.margin, backedX18, reserved);
+            int256 equity = int256(backedMargin) + _computeUnrealizedPnL(p, riskPrice) - int256(p.fundingDebt);
+            if (equity <= int256(mm)) continue;
+            // Value that can leave: above maintenance, within the backed margin, and leaving the
+            // position at least its penalty floor (taken in nominal margin below).
+            uint256 x = uint256(equity - int256(mm));
+            if (x > backedMargin) x = backedMargin;
+            uint256 wantX18 = Calculations.mulDivRoundingUp(need - drawn, valueX18, balanceLeft);
+            uint256 units;
+            if (x >= wantX18) {
+                x = wantX18;
+                units = need - drawn;
+            } else {
+                units = Calculations.mulDiv(x, balanceLeft, valueX18);
+            }
+            uint256 take = Calculations.mulDivRoundingUp(x, reserved, backedX18);
+            uint256 maxTake = p.margin - penaltyFloor;
+            if (take > maxTake) {
+                // Scale the draw down to what the penalty floor allows.
+                units = Calculations.mulDiv(units, maxTake, take);
+                take = maxTake;
+            }
+            p.margin -= take;
+            _totalReservedMargin[account] = _totalReservedMargin[account] >= take ? _totalReservedMargin[account] - take : 0;
+            drawn += units;
+        }
     }
 
     /// @dev Amount the insurance fund can pay out: its tracked balance, not its raw token balance

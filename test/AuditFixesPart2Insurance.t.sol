@@ -93,6 +93,9 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         clearingHouse.openPosition(ETH_PERP, false, 22e18, 0);
         setOraclePrice(getMarkPrice());
         assertTrue(isLiquidatable(alice), "alice should be liquidatable");
+        // The second market's index falls too, so its position holds no margin above maintenance
+        // that the liquidation could draw (finding 12) and the incentive still falls to the fund.
+        MockOracle(marketRegistry.getMarket(ETH2_PERP).oracle).setPrice(1_900e18);
 
         uint256 tracked = 10 * USDC_UNIT;
         _drainInsuranceTo(tracked);
