@@ -1028,15 +1028,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         if (penaltyInQuoteDecimals == 0) return;
 
         (uint256 actualReceived, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, penaltyInQuoteDecimals, true);
-        if (shortfall > 0 && m.insuranceFund != address(0)) {
-            uint256 fundBalance = _insuranceTrackedBalance(m.insuranceFund);
-            uint256 actualPayout = shortfall > fundBalance ? fundBalance : shortfall;
-            uint256 uncovered = shortfall - actualPayout;
-            if (uncovered > 0) {
-                totalBadDebt += uncovered;
-                emit BadDebtRecorded(account, marketId, uncovered);
-            }
-        } else if (shortfall > 0) {
+        // The insurance fund pays nothing toward the protocol's penalty share, so the whole
+        // uncollected share is recorded.
+        if (shortfall > 0) {
             totalBadDebt += shortfall;
             emit BadDebtRecorded(account, marketId, shortfall);
         }

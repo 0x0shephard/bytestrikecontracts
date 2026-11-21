@@ -393,13 +393,33 @@ contract ClearingHouseLogic {
                     if (!allowBadDebt) revert InsufficientQuoteCollateral();
                     uint256 badDebt = lossInQuote - available;
                     lossInQuote = available;
-                    totalBadDebt += badDebt;
-                    emit BadDebtRecorded(account, marketId, badDebt);
+                    // The winners' credits sit in the vault: back the uncovered loss with insurance
+                    // tokens paid into the vault, and record only what the fund cannot pay.
+                    badDebt -= _drawInsurance(m, badDebt);
+                    if (badDebt > 0) {
+                        totalBadDebt += badDebt;
+                        emit BadDebtRecorded(account, marketId, badDebt);
+                    }
                 }
                 if (lossInQuote > 0) {
                     ICollateralVault(vault).settlePnL(account, m.quoteToken, -int256(lossInQuote));
                 }
             }
+        }
+    }
+
+    /// @dev Pays up to `amount` quote tokens from the market's insurance fund into the vault, capped
+    /// at the fund's tracked balance (what payout enforces). Returns the amount paid; 0 if the fund
+    /// is unset, holds a different token, is empty, or the payout reverts.
+    function _drawInsurance(IMarketRegistry.Market memory m, uint256 amount) internal returns (uint256 paid) {
+        if (m.insuranceFund == address(0)) return 0;
+        IInsuranceFund fund = IInsuranceFund(m.insuranceFund);
+        if (fund.quoteToken() != m.quoteToken) return 0;
+        uint256 tracked = fund.totalReceived() - fund.totalPaid();
+        paid = amount < tracked ? amount : tracked;
+        if (paid == 0) return 0;
+        try fund.payout(vault, paid) {} catch {
+            paid = 0;
         }
     }
 

@@ -282,20 +282,12 @@ mapping(address => bool) public isAuthorized;
 ```
 
 **Responsibilities**:
-- Receive fees from FeeRouter
-- Cover bad debt when liquidation results in negative equity
-- Track total fund balance
+- Receive fees from FeeRouter (`onFeeReceived`) and donations (`donate`); fund it with `donate`, not a plain transfer (owner `sync()` books plain transfers)
+- Cover bad debt: when a liquidation or funding debit realizes a loss beyond the trader's vault balance, ClearingHouse pays the uncovered part from the fund into the CollateralVault, which holds the winners' credits
+- Pay the liquidator incentive when it cannot be collected from the liquidated account
+- Track `totalReceived` / `totalPaid`; payouts are limited to the tracked balance `totalReceived - totalPaid`
 
-**Graceful Degradation**: If insurance fund has insufficient balance for bad debt coverage, it pays what it can rather than reverting:
-```solidity
-function withdraw(uint256 amount) external onlyAuthorized returns (uint256 actual) {
-    uint256 balance = IERC20(quoteToken).balanceOf(address(this));
-    actual = amount > balance ? balance : amount;
-    if (actual > 0) {
-        IERC20(quoteToken).safeTransfer(msg.sender, actual);
-    }
-}
-```
+**Graceful Degradation**: ClearingHouse sizes every payout by the fund's tracked balance, so an underfunded fund pays what it can rather than reverting. Only the part it cannot pay is added to `totalBadDebt` (`BadDebtRecorded`). A voluntary trade whose realized loss exceeds the trader's vault balance reverts instead of creating bad debt.
 
 ---
 

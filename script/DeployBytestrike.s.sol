@@ -179,7 +179,8 @@ contract DeployBytestrike is Script, DeployConfig {
         console.log("\n IMPORTANT POST-DEPLOYMENT STEPS:");
         console.log("1. Deploy or obtain test token addresses (USDC, WETH, WBTC)");
         console.log("2. Deploy ClearingHouse contract (currently not implemented)");
-        console.log("3. Set clearinghouse in CollateralVault, InsuranceFund, FeeRouter, and vAMM");
+        console.log("3. Set clearinghouse in CollateralVault, FeeRouter, and vAMM; call");
+        console.log("   InsuranceFund.setAuthorized(clearingHouse, true) so it can cover bad debt");
         console.log("4. Register collateral tokens in CollateralVault");
         console.log("5. Add markets to MarketRegistry");
         console.log("6. Transfer admin roles if needed");

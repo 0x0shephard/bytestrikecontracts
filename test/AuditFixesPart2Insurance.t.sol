@@ -1,10 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {Vm} from "forge-std/Vm.sol";
 import {BaseTest} from "./BaseTest.sol";
+import {MockOracle} from "./mocks/MockOracle.sol";
+import {vAMM} from "../src/vAMM.sol";
+import {IMarketRegistry} from "../src/Interfaces/IMarketRegistry.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @notice Regression tests for InsuranceFund usage audit fixes (Cyfrin bytestrike part 2).
 contract AuditFixesPart2InsuranceTest is BaseTest {
+    bytes32 internal constant ETH2_PERP = keccak256("ETH2-PERP");
+    bytes32 internal constant FUNDING_SETTLED = keccak256("FundingSettled(bytes32,address,int256)");
+
+    address internal carol;
+
+    function setUp() public override {
+        super.setUp();
+        carol = makeAddr("carol");
+    }
+
     function _trackedInsurance() internal view returns (uint256) {
         return insuranceFund.totalReceived() - insuranceFund.totalPaid();
     }
@@ -16,40 +31,83 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         insuranceFund.payout(treasury, tracked - remaining);
     }
 
-    /// @dev Alice's long loses more than her whole deposit, so the liquidator incentive
-    /// cannot be collected from her and falls to the insurance fund.
-    function _openUnderwaterLong() internal {
-        fundAndDeposit(alice, 1_000 * USDC_UNIT);
-        vm.prank(alice);
-        clearingHouse.openPosition(ETH_PERP, true, 9e18, 0);
-        // Bob's large short pushes the vAMM mark down so alice's close realizes a loss
-        // larger than her deposit.
-        fundAndDeposit(bob, 100_000 * USDC_UNIT);
-        setOraclePrice(1_800e18);
-        vm.prank(bob);
-        clearingHouse.openPosition(ETH_PERP, false, 60e18, 0);
-        setOraclePrice(getMarkPrice());
-        assertTrue(isLiquidatable(alice), "alice should be liquidatable");
+    /// @dev Second USDC market with its own index oracle (stays at 2,000).
+    function _deploySecondMarket() internal {
+        vm.startPrank(admin);
+        MockOracle index2 = new MockOracle(INITIAL_ETH_PRICE, 18);
+        bytes memory init = abi.encodeCall(
+            vAMM.initialize,
+            (
+                address(clearingHouse),
+                address(index2),
+                INITIAL_ETH_PRICE,
+                INITIAL_BASE_RESERVE,
+                LIQUIDITY_INDEX,
+                TRADE_FEE_BPS,
+                FUNDING_MAX_BPS_PER_HOUR,
+                FUNDING_K
+            )
+        );
+        vAMM v = vAMM(address(new ERC1967Proxy(address(new vAMM()), init)));
+        v.setRegistry(address(marketRegistry));
+        marketRegistry.addMarket(
+            IMarketRegistry.AddMarketConfig({
+                marketId: ETH2_PERP,
+                vamm: address(v),
+                oracle: address(index2),
+                baseAsset: address(weth),
+                quoteToken: address(usdc),
+                baseUnit: 1e18,
+                feeBps: TRADE_FEE_BPS,
+                feeRouter: address(feeRouter),
+                insuranceFund: address(insuranceFund)
+            })
+        );
+        clearingHouse.setRiskParams(
+            ETH2_PERP, IMR_BPS, MMR_BPS, LIQUIDATION_PENALTY_BPS, PENALTY_CAP, MAX_POSITION_SIZE, MIN_POSITION_SIZE
+        );
+        vm.stopPrank();
     }
+
+    // ------------------------------------------------------------------
+    // Finding 19
+    // ------------------------------------------------------------------
 
     /// @notice Finding 19: a direct transfer to the fund must not void the insurance payout
     /// for a liquidator-incentive shortfall larger than the tracked reserve.
+    /// @dev Alice's realized loss is covered by her vault balance, but the margin of her second
+    /// position keeps that balance reserved, so the liquidator incentive falls to the fund.
     function test_Finding19_directTransferDoesNotVoidLiquidationPayout() public {
-        _openUnderwaterLong();
+        _deploySecondMarket();
+        fundAndDeposit(alice, 2_000 * USDC_UNIT);
+        vm.startPrank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, 9e18, 0);
+        clearingHouse.openPosition(ETH2_PERP, true, 10e18, 0);
+        // Reserve all remaining free collateral on the second position.
+        clearingHouse.addMargin(ETH2_PERP, getCollateralBalance(alice) - clearingHouse._totalReservedMargin(alice));
+        vm.stopPrank();
+
+        fundAndDeposit(bob, 100_000 * USDC_UNIT);
+        setOraclePrice(1_800e18);
+        vm.prank(bob);
+        clearingHouse.openPosition(ETH_PERP, false, 22e18, 0);
+        setOraclePrice(getMarkPrice());
+        assertTrue(isLiquidatable(alice), "alice should be liquidatable");
 
         uint256 tracked = 10 * USDC_UNIT;
         _drainInsuranceTo(tracked);
         usdc.mint(address(insuranceFund), 1); // untracked dust via plain transfer
-        uint256 keeperBefore = getCollateralBalance(liquidator) + usdc.balanceOf(liquidator);
-        uint256 badDebtBefore = clearingHouse.totalBadDebt();
+        uint256 keeperWalletBefore = usdc.balanceOf(liquidator);
+        uint256 vaultTokensBefore = usdc.balanceOf(address(vault));
 
         vm.prank(liquidator);
         clearingHouse.liquidate(alice, ETH_PERP, 9e18, 0);
 
-        uint256 keeperAfter = getCollateralBalance(liquidator) + usdc.balanceOf(liquidator);
+        assertGt(getCollateralBalance(alice), 0, "realized loss covered by alice's balance");
         assertEq(_trackedInsurance(), 0, "fund paid its whole tracked balance");
-        assertEq(keeperAfter - keeperBefore, tracked, "keeper received the tracked reserve");
-        assertGt(clearingHouse.totalBadDebt(), badDebtBefore, "remaining shortfall recorded as bad debt");
+        // Collected incentive is credited in the vault; the insurance part goes to the keeper's wallet.
+        assertEq(usdc.balanceOf(liquidator) - keeperWalletBefore, tracked, "keeper received the tracked reserve");
+        assertLe(usdc.balanceOf(address(vault)), vaultTokensBefore, "no insurance draw into the vault");
     }
 
     /// @notice Finding 19: owner can book quote tokens sent by plain transfer into the tracked balance.
@@ -75,5 +133,121 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         vm.expectRevert();
         vm.prank(alice);
         insuranceFund.sync();
+    }
+
+    // ------------------------------------------------------------------
+    // Finding 1
+    // ------------------------------------------------------------------
+
+    uint128 internal constant ALICE_SIZE = 30e18;
+    uint128 internal constant BOB_SIZE = 84e18;
+    uint256 internal constant CAROL_DEPOSIT = 10_000e18;
+
+    /// @dev Alice's 30 ETH long, liquidated after a 10% index gap, realizes a loss above her balance.
+    function _setUpUnderwaterLong() internal {
+        fundAndDeposit(carol, CAROL_DEPOSIT); // never trades
+
+        fundAndDeposit(alice, 4_300e18);
+        vm.startPrank(alice);
+        clearingHouse.addMargin(ETH_PERP, 1_000e18);
+        clearingHouse.openPosition(ETH_PERP, true, ALICE_SIZE, 0);
+        vm.stopPrank();
+
+        setOraclePrice(1_800e18);
+        fundAndDeposit(bob, 100_000e18);
+        vm.prank(bob);
+        clearingHouse.openPosition(ETH_PERP, false, BOB_SIZE, 0);
+        assertTrue(isLiquidatable(alice), "alice should be liquidatable");
+    }
+
+    function _sumBalances() internal view returns (uint256) {
+        return getCollateralBalance(alice) + getCollateralBalance(bob) + getCollateralBalance(carol)
+            + getCollateralBalance(liquidator);
+    }
+
+    /// @notice Finding 1: a liquidation loss beyond the trader's balance is paid by the insurance
+    /// fund into the vault, so the winners' credits stay backed and the last depositor can withdraw.
+    function test_Finding1_liquidationShortfallPaidIntoVault() public {
+        _setUpUnderwaterLong();
+        assertEq(usdc.balanceOf(address(vault)), _sumBalances(), "vault starts fully backed");
+        uint256 trackedBefore = _trackedInsurance();
+        uint256 vaultTokensBefore = usdc.balanceOf(address(vault));
+
+        vm.prank(liquidator);
+        clearingHouse.liquidate(alice, ETH_PERP, ALICE_SIZE, 0);
+        assertEq(getCollateralBalance(alice), 0, "alice's balance is used up");
+
+        uint256 drawn = usdc.balanceOf(address(vault)) - vaultTokensBefore;
+        assertGt(drawn, 0, "fund paid the shortfall into the vault");
+        assertLe(drawn, trackedBefore - _trackedInsurance(), "draw is booked as a fund payout");
+        // The fund paid the loss and the keeper incentive; only the uncollected protocol share of
+        // the penalty (half of 2% of 30 * 1,800) is recorded, with no fake insurance netting.
+        assertEq(clearingHouse.totalBadDebt(), 540e18, "only the protocol penalty share is recorded");
+
+        vm.prank(bob);
+        clearingHouse.closePosition(ETH_PERP, BOB_SIZE, 0);
+        assertGe(usdc.balanceOf(address(vault)), _sumBalances(), "balances backed by vault tokens");
+
+        uint256 bobBalance = getCollateralBalance(bob);
+        vm.prank(bob);
+        clearingHouse.withdraw(address(usdc), bobBalance);
+        vm.prank(carol);
+        clearingHouse.withdraw(address(usdc), CAROL_DEPOSIT);
+        assertEq(usdc.balanceOf(carol), CAROL_DEPOSIT, "last depositor withdraws in full");
+    }
+
+    /// @notice Finding 1: the draw is capped at the fund's tracked balance and only the rest is
+    /// recorded as bad debt.
+    function test_Finding1_drawCappedAtTrackedBalance() public {
+        _setUpUnderwaterLong();
+        uint256 tracked = 5 * USDC_UNIT;
+        _drainInsuranceTo(tracked);
+        usdc.mint(address(insuranceFund), 1); // untracked dust must not void the draw
+        uint256 vaultTokensBefore = usdc.balanceOf(address(vault));
+
+        vm.prank(liquidator);
+        clearingHouse.liquidate(alice, ETH_PERP, ALICE_SIZE, 0);
+
+        assertEq(usdc.balanceOf(address(vault)) - vaultTokensBefore, tracked, "whole tracked balance drawn");
+        assertEq(_trackedInsurance(), 0, "fund emptied");
+        assertGt(clearingHouse.totalBadDebt(), 0, "rest recorded as bad debt");
+    }
+
+    /// @notice Finding 1: a funding debit beyond the payer's vault balance is covered by the fund.
+    function test_Finding1_fundingDebitBeyondBalancePaidIntoVault() public {
+        fundAndDeposit(alice, 1_100e18);
+        fundAndDeposit(carol, 100_000e18);
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, 10e18, 0);
+        vm.prank(carol);
+        clearingHouse.openPosition(ETH_PERP, false, 1e18, 0);
+
+        uint256 t = block.timestamp;
+        for (uint256 i; i < 40; i++) {
+            t += 3600;
+            vm.warp(t);
+            setOraclePrice(1_900e18); // index below mark: longs pay
+            settleFunding(carol);
+        }
+
+        uint256 aliceBalance = getCollateralBalance(alice);
+        uint256 vaultTokensBefore = usdc.balanceOf(address(vault));
+        uint256 badDebtBefore = clearingHouse.totalBadDebt();
+        vm.recordLogs();
+        settleFunding(alice);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        int256 payment;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter == address(clearingHouse) && logs[i].topics[0] == FUNDING_SETTLED) {
+                payment = abi.decode(logs[i].data, (int256));
+            }
+        }
+        uint256 debit = uint256(-payment);
+        assertGt(debit, aliceBalance, "debit exceeds alice's balance");
+
+        assertEq(getCollateralBalance(alice), 0, "balance used up");
+        assertEq(usdc.balanceOf(address(vault)) - vaultTokensBefore, debit - aliceBalance, "fund covers the rest");
+        assertEq(clearingHouse.totalBadDebt(), badDebtBefore, "no bad debt while the fund can pay");
     }
 }
