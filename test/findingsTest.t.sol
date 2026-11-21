@@ -209,8 +209,8 @@ contract AuditFindingsTest is BaseTest {
 
         vm.startPrank(alice);
         uint256 minMargin = 100 * USDC_UNIT;
-        clearingHouse.addMargin(ETH_PERP, minMargin);
         clearingHouse.openPosition(ETH_PERP, true, positionSize, 0);
+        clearingHouse.addMargin(ETH_PERP, minMargin);
         vm.stopPrank();
 
         IClearingHouse.PositionView memory posBefore = clearingHouse.getPosition(alice, ETH_PERP);
@@ -230,8 +230,8 @@ contract AuditFindingsTest is BaseTest {
         // Bob trades to move mark price down
         fundAndDeposit(bob, 100000 * USDC_UNIT);
         vm.startPrank(bob);
-        clearingHouse.addMargin(ETH_PERP, 50000 * USDC_UNIT);
         clearingHouse.openPosition(ETH_PERP, false, 100 ether, 0);
+        clearingHouse.addMargin(ETH_PERP, 50000 * USDC_UNIT);
         vm.stopPrank();
 
         // Alice closes her position at a massive loss
@@ -284,10 +284,7 @@ contract AuditFindingsTest is BaseTest {
 
         // Bob manipulates mark price down
         fundAndDeposit(bob, 1000000 * USDC_UNIT);
-        vm.startPrank(bob);
-        clearingHouse.addMargin(ETH_PERP, 500000 * USDC_UNIT);
-        clearingHouse.openPosition(ETH_PERP, false, 200 ether, 0);
-        vm.stopPrank();
+        openWithMargin(bob, ETH_PERP, false, 200 ether, 0, 500000 * USDC_UNIT);
 
         uint256 markPriceAfterManipulation = vamm.getMarkPrice();
         uint256 oraclePrice = oracle.getPrice();
@@ -300,8 +297,8 @@ contract AuditFindingsTest is BaseTest {
         // Attacker tries to open position at manipulated price
         uint128 positionSize = 5 ether;
 
+        // addMargin needs an open position, so the open draws its margin from free collateral.
         vm.startPrank(attacker);
-        clearingHouse.addMargin(ETH_PERP, attackerDeposit);
 
         bool success;
         try clearingHouse.openPosition(ETH_PERP, true, positionSize, 0) {
@@ -345,8 +342,8 @@ contract AuditFindingsTest is BaseTest {
         fundAndDeposit(alice, 2000 * USDC_UNIT);
 
         vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 500 * USDC_UNIT);
         clearingHouse.openPosition(ETH_PERP, true, 5 ether, 0);
+        clearingHouse.addMargin(ETH_PERP, 500 * USDC_UNIT);
         vm.stopPrank();
 
         // Price drops, making Alice liquidatable
@@ -364,8 +361,8 @@ contract AuditFindingsTest is BaseTest {
         fundAndDeposit(liquidator, 1000000 * USDC_UNIT);
 
         vm.startPrank(liquidator);
-        clearingHouse.addMargin(ETH_PERP, 500000 * USDC_UNIT);
         clearingHouse.openPosition(ETH_PERP, false, 200 ether, 0);
+        clearingHouse.addMargin(ETH_PERP, 500000 * USDC_UNIT);
         vm.stopPrank();
 
         uint256 markPriceManipulated = vamm.getMarkPrice();
@@ -408,10 +405,7 @@ contract AuditFindingsTest is BaseTest {
     function test_MEDIUM_FundingBadDebtNotCollected() public {
         fundAndDeposit(alice, 10000 * USDC_UNIT);
 
-        vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 100 * USDC_UNIT);
-        clearingHouse.openPosition(ETH_PERP, true, 1 ether, 0);
-        vm.stopPrank();
+        openWithMargin(alice, ETH_PERP, true, 1 ether, 0, 100 * USDC_UNIT);
 
         uint256 freeCollateralBefore = vault.getAccountCollateralValueX18(alice) - clearingHouse._totalReservedMargin(alice);
         uint256 marginBefore = clearingHouse.getPosition(alice, ETH_PERP).margin;
@@ -422,16 +416,10 @@ contract AuditFindingsTest is BaseTest {
 
         // Create funding imbalance
         fundAndDeposit(bob, 100000 * USDC_UNIT);
-        vm.startPrank(bob);
-        clearingHouse.addMargin(ETH_PERP, 50000 * USDC_UNIT);
-        clearingHouse.openPosition(ETH_PERP, false, 50 ether, 0);
-        vm.stopPrank();
+        openWithMargin(bob, ETH_PERP, false, 50 ether, 0, 50000 * USDC_UNIT);
 
         fundAndDeposit(attacker, 100000 * USDC_UNIT);
-        vm.startPrank(attacker);
-        clearingHouse.addMargin(ETH_PERP, 50000 * USDC_UNIT);
-        clearingHouse.openPosition(ETH_PERP, true, 30 ether, 0);
-        vm.stopPrank();
+        openWithMargin(attacker, ETH_PERP, true, 30 ether, 0, 50000 * USDC_UNIT);
 
         skipTime(24 * 3600);
 
@@ -668,37 +656,42 @@ contract AuditFindingsTest is BaseTest {
         uint256 preTradeNotional = (uint256(size) * markBefore) / 1e18;
         uint256 preTradeIMR = (preTradeNotional * IMR_BPS) / 10000;
 
+        // addMargin needs an open position (finding 17 / draft 42), and 50 ETH on IMR margin alone
+        // would be immediately liquidatable, so open a small slice first, commit the margin, then
+        // open the rest.
+        uint128 seed = ethQty(1);
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, seed, 0);
+        uint256 seedMargin = clearingHouse.getPosition(alice, ETH_PERP).margin;
+        assertEq(seedMargin, _riskPricedImr(seed), "seed margin is its risk-priced allocation only");
+
         vm.startPrank(alice);
         // Commit exactly the pre-trade IMR — not enough for post-trade
         clearingHouse.addMargin(ETH_PERP, preTradeIMR);
 
-        // Record reserved margin before the trade
-        uint256 reservedBefore = clearingHouse._totalReservedMargin(alice);
-
-        // Open the position — initial allocation now uses post-trade risk price,
-        // so the allocated amount covers the IMR check. The user's explicit addMargin
-        // plus the allocation should determine total margin; no silent extra is pulled.
-        clearingHouse.openPosition(ETH_PERP, true, size, 0);
+        // Open the rest — initial allocation uses post-trade risk price, so the allocated amount
+        // covers the IMR check. The user's explicit addMargin plus the allocations should
+        // determine total margin; no silent extra is pulled.
+        clearingHouse.openPosition(ETH_PERP, true, size - seed, 0);
         vm.stopPrank();
 
-        // Verify: the total reserved margin should be exactly what was allocated
-        // (user's addMargin + initial allocation), with NO silent auto-commit on top.
-        uint256 reservedAfter = clearingHouse._totalReservedMargin(alice);
         IClearingHouse.PositionView memory pos = clearingHouse.getPosition(alice, ETH_PERP);
-
-        // The position margin should equal addMargin + allocation (at risk price).
-        // Verify it's NOT inflated by an auto-committed shortfall.
-        uint256 markAfter = vamm.getMarkPrice();
-        uint256 oraclePrice = oracle.getPrice();
-        uint256 riskPrice = markAfter > oraclePrice ? markAfter : oraclePrice;
-        uint256 expectedAllocation = (uint256(size) * riskPrice / 1e18) * IMR_BPS / 10000;
-        uint256 expectedMargin = preTradeIMR + expectedAllocation;
+        uint256 expectedAllocation = _riskPricedImr(size - seed);
+        uint256 expectedMargin = seedMargin + preTradeIMR + expectedAllocation;
 
         assertEq(pos.margin, expectedMargin, "Margin should be explicit addMargin + risk-priced allocation only");
         console.log("Pre-trade IMR (addMargin):", preTradeIMR);
         console.log("Risk-priced allocation:", expectedAllocation);
         console.log("Total position margin:", pos.margin);
         console.log("GOOD: No silent auto-commit - margin matches explicit commitment");
+    }
+
+    /// @dev IMR the ClearingHouse allocates for `size` at the current risk price (max of mark and index).
+    function _riskPricedImr(uint256 size) internal view returns (uint256) {
+        uint256 markNow = vamm.getMarkPrice();
+        uint256 oracleNow = oracle.getPrice();
+        uint256 riskPrice = markNow > oracleNow ? markNow : oracleNow;
+        return (size * riskPrice / 1e18) * IMR_BPS / 10000;
     }
 
     // ============================================================
@@ -756,11 +749,8 @@ contract AuditFindingsTest is BaseTest {
         fundAndDeposit(alice, 500_000 * USDC_UNIT);
         uint128 requestedSize = ethQty(20); // 20 ETH > 5 ETH available
 
-        vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 100_000 * USDC_UNIT);
         // Should NOT revert — the vAMM clamps to the available 5 ETH.
-        clearingHouse.openPosition(ETH_PERP, true, requestedSize, 0);
-        vm.stopPrank();
+        openWithMargin(alice, ETH_PERP, true, requestedSize, 0, 100_000 * USDC_UNIT);
 
         IClearingHouse.PositionView memory pos = getPosition(alice);
         // Position should be clamped to ~allowance, not the full 20 ETH
@@ -786,11 +776,8 @@ contract AuditFindingsTest is BaseTest {
         fundAndDeposit(alice, 500_000 * USDC_UNIT);
         uint128 requestedSize = ethQty(50); // would drain far more than $5000 quote
 
-        vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 200_000 * USDC_UNIT);
         // Should NOT revert — the vAMM clamps quoteOut to available capacity.
-        clearingHouse.openPosition(ETH_PERP, false, requestedSize, 0);
-        vm.stopPrank();
+        openWithMargin(alice, ETH_PERP, false, requestedSize, 0, 200_000 * USDC_UNIT);
 
         IClearingHouse.PositionView memory pos = getPosition(alice);
         uint256 absSize = uint256(pos.size > 0 ? pos.size : -pos.size);
@@ -818,13 +805,13 @@ contract AuditFindingsTest is BaseTest {
         uint128 bobSize = ethQty(5);
 
         vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 50_000 * USDC_UNIT);
         clearingHouse.openPosition(ETH_PERP, true, aliceSize, 0);
+        clearingHouse.addMargin(ETH_PERP, 50_000 * USDC_UNIT);
         vm.stopPrank();
 
         vm.startPrank(bob);
-        clearingHouse.addMargin(ETH_PERP, 50_000 * USDC_UNIT);
         clearingHouse.openPosition(ETH_PERP, false, bobSize, 0);
+        clearingHouse.addMargin(ETH_PERP, 50_000 * USDC_UNIT);
         vm.stopPrank();
 
         // Record margins before funding

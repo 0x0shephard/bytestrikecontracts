@@ -16,28 +16,19 @@ contract LiquidationProtectionTest is BaseTest {
     /// @dev Thin long that passes IMR and the post-trade MMR check.
     function _openThinLong() internal {
         fundAndDeposit(alice, VICTIM_DEPOSIT);
-        vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 2_600 * USDC_UNIT);
-        clearingHouse.openPosition(ETH_PERP, true, VICTIM_SIZE, 0);
-        vm.stopPrank();
+        openWithMargin(alice, ETH_PERP, true, VICTIM_SIZE, 0, 2_600 * USDC_UNIT);
     }
 
     /// @dev Thin short mirroring _openThinLong.
     function _openThinShort() internal {
         fundAndDeposit(alice, VICTIM_DEPOSIT);
-        vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 2_600 * USDC_UNIT);
-        clearingHouse.openPosition(ETH_PERP, false, VICTIM_SIZE, 0);
-        vm.stopPrank();
+        openWithMargin(alice, ETH_PERP, false, VICTIM_SIZE, 0, 2_600 * USDC_UNIT);
     }
 
     function _attackerPushes(bool isLong) internal {
         fundAndDeposit(bob, ATTACKER_DEPOSIT);
-        vm.startPrank(bob);
-        clearingHouse.addMargin(ETH_PERP, 200_000 * USDC_UNIT);
         // Buying base gets expensive fast, so the upward push is smaller.
-        clearingHouse.openPosition(ETH_PERP, isLong, isLong ? 150 ether : PUSH_SIZE, 0);
-        vm.stopPrank();
+        openWithMargin(bob, ETH_PERP, isLong, isLong ? 150 ether : PUSH_SIZE, 0, 200_000 * USDC_UNIT);
     }
 
     function _setBand(uint256 bandBps) internal {
@@ -170,10 +161,7 @@ contract LiquidationProtectionTest is BaseTest {
         _openThinLong();
         setOraclePrice(1_800 * PRICE_PRECISION);
         fundAndDeposit(bob, 100_000 * USDC_UNIT);
-        vm.startPrank(bob);
-        clearingHouse.addMargin(ETH_PERP, 60_000 * USDC_UNIT);
-        clearingHouse.openPosition(ETH_PERP, false, 104 ether, 0);
-        vm.stopPrank();
+        openWithMargin(bob, ETH_PERP, false, 104 ether, 0, 60_000 * USDC_UNIT);
         assertTrue(isLiquidatable(alice));
 
         // Untracked 1 wei: balance() says 1, payout() only allows the tracked 0.

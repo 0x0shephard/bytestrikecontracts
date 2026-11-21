@@ -167,10 +167,7 @@ contract AuditFixesPart2FundingDebtTest is BaseTest {
     }
 
     function _open(address user, bytes32 marketId, bool isLong, uint128 size, uint256 margin) internal {
-        vm.startPrank(user);
-        clearingHouse.addMargin(marketId, margin);
-        clearingHouse.openPosition(marketId, isLong, size, 0);
-        vm.stopPrank();
+        openWithMargin(user, marketId, isLong, size, 0, margin);
     }
 
     function _owedInA() internal view returns (uint256) {

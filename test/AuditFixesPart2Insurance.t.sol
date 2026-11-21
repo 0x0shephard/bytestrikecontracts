@@ -151,10 +151,7 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         fundAndDeposit(carol, CAROL_DEPOSIT); // never trades
 
         fundAndDeposit(alice, 4_300e18);
-        vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 1_000e18);
-        clearingHouse.openPosition(ETH_PERP, true, ALICE_SIZE, 0);
-        vm.stopPrank();
+        openWithMargin(alice, ETH_PERP, true, ALICE_SIZE, 0, 1_000e18);
 
         setOraclePrice(1_800e18);
         fundAndDeposit(bob, 100_000e18);

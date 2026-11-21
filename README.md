@@ -371,6 +371,7 @@ marginRatio = (margin + unrealizedPnL) * 10000 / notionalValue
 // Add margin from collateral to position
 clearingHouse.addMargin(marketId, amount)
 // Transfers from vault balance to position.margin
+// Requires an open position; allowed while the market is paused
 
 // Remove margin from position to collateral
 clearingHouse.removeMargin(marketId, amount)
@@ -460,11 +461,11 @@ IERC20(usdc).approve(address(vault), amount);
 // 2. Deposit collateral (goes to vault balance)
 clearingHouse.deposit(usdc, amount);
 
-// 3. Add margin to specific market
-clearingHouse.addMargin(marketId, marginAmount);
-
-// 4. Open position (long 10 units, max price $5)
+// 3. Open position (long 10 units, max price $5); IMR is reserved from free collateral
 clearingHouse.openPosition(marketId, true, 10e18, 5e18);
+
+// 4. Optionally add margin to the open position
+clearingHouse.addMargin(marketId, marginAmount);
 
 // ... time passes, funding accrues ...
 

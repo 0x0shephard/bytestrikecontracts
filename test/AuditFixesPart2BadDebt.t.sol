@@ -83,18 +83,21 @@ contract AuditFixesPart2BadDebtTest is BaseTest {
         assertEq(clearingHouse.totalBadDebt(), 0, "no bad debt written off");
     }
 
-    /// @notice Finding 37: free collateral stacked several times through addMargin on a market
-    /// without a position cannot be activated by a tiny open on a zero-fee market.
+    /// @notice Finding 37: a tiny open on a zero-fee market reserves no margin and pays no fee, yet
+    /// it is still checked against collateral, so it cannot add exposure while the quote collateral
+    /// is worth less than the margin already reserved. (The original setup stacked margin through
+    /// addMargin on a market without a position, which finding 17 / draft 42 now rejects.)
     function test_Finding37_zeroFeeTinyOpenCannotActivateStackedMargin() public {
         fundAndDeposit(alice, 1_000e18);
-        vm.startPrank(alice);
-        clearingHouse.addMargin(ZERO_FEE_PERP, 1_000e18);
-        clearingHouse.addMargin(ZERO_FEE_PERP, 1_000e18);
-        clearingHouse.addMargin(ZERO_FEE_PERP, 1_000e18);
+        vm.prank(alice);
+        clearingHouse.openPosition(ZERO_FEE_PERP, true, 100e18, 0); // reserves ~42 of 1,000
 
+        vm.prank(admin);
+        oracle.setSymbolPrice("USDC", 0.03e18); // vault value 30 < reserved margin
+
+        vm.prank(alice);
         vm.expectRevert(ClearingHouse.InsufficientQuoteCollateral.selector);
         clearingHouse.openPosition(ZERO_FEE_PERP, true, 2, 0);
-        vm.stopPrank();
     }
 
     /// @notice Finding 37: pure reductions on a zero-fee market are not blocked by the collateral

@@ -107,16 +107,16 @@ contract SeedMoreMarkets is Script {
         MarketRegistry(REGISTRY).pauseMarket(marketId, false);
         vm.stopBroadcast();
 
-        // 2. Seed long allocates margin and opens long.
+        // 2. Seed long opens long, then tops up its margin.
         vm.startBroadcast(seedLongPk);
-        ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, maxQuoteIn);
+        ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         vm.stopBroadcast();
 
-        // 3. Seed short allocates margin and opens short.
+        // 3. Seed short opens short, then tops up its margin.
         vm.startBroadcast(seedShortPk);
-        ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, minQuoteOut);
+        ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         vm.stopBroadcast();
 
         console.log(spec.name);

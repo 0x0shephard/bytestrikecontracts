@@ -49,8 +49,8 @@ contract VAMMEdgeCaseTest is BaseTest {
         fundAndDeposit(alice, 10000 * USDC_UNIT);
 
         vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 100 * USDC_UNIT);
         clearingHouse.openPosition(ETH_PERP, true, tinySize, 0);
+        clearingHouse.addMargin(ETH_PERP, 100 * USDC_UNIT);
         vm.stopPrank();
 
         // Should not revert
@@ -63,7 +63,6 @@ contract VAMMEdgeCaseTest is BaseTest {
         fundAndDeposit(alice, 500000 * USDC_UNIT);
 
         vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 500000 * USDC_UNIT);
 
         // This might revert due to IMR or run out of liquidity
         try clearingHouse.openPosition(ETH_PERP, true, largeSize, 0) {
@@ -83,7 +82,6 @@ contract VAMMEdgeCaseTest is BaseTest {
         fundAndDeposit(alice, 10000 * USDC_UNIT);
 
         vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 5000 * USDC_UNIT);
 
         // Set amount limit: max quote willing to pay = price * 1.01 * size / 1e18
         uint256 maxQuoteIn = (currentPrice + currentPrice / 100) * uint256(size) / 1e18;
@@ -98,14 +96,14 @@ contract VAMMEdgeCaseTest is BaseTest {
         fundAndDeposit(alice, 20000 * USDC_UNIT);
 
         vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 250 * USDC_UNIT);
         clearingHouse.openPosition(ETH_PERP, true, size, 0);
+        clearingHouse.addMargin(ETH_PERP, 250 * USDC_UNIT);
 
-        clearingHouse.addMargin(ETH_PERP, 250 * USDC_UNIT);
         clearingHouse.openPosition(ETH_PERP, true, size, 0);
+        clearingHouse.addMargin(ETH_PERP, 250 * USDC_UNIT);
 
-        clearingHouse.addMargin(ETH_PERP, 250 * USDC_UNIT);
         clearingHouse.openPosition(ETH_PERP, true, size, 0);
+        clearingHouse.addMargin(ETH_PERP, 250 * USDC_UNIT);
         vm.stopPrank();
 
         // Verify reserves changed
@@ -175,7 +173,6 @@ contract VAMMEdgeCaseTest is BaseTest {
         fundAndDeposit(alice, 200000 * USDC_UNIT);
 
         vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 15000 * USDC_UNIT);
 
         try clearingHouse.openPosition(ETH_PERP, true, ethQty(150), 0) {
             skipTime(1 hours);
@@ -245,7 +242,6 @@ contract VAMMEdgeCaseTest is BaseTest {
         fundAndDeposit(alice, 500000 * USDC_UNIT);
 
         vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 500000 * USDC_UNIT);
 
         // Try to buy almost all base
         try clearingHouse.openPosition(ETH_PERP, true, ethQty(900), 0) {

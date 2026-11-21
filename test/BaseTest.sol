@@ -206,30 +206,65 @@ abstract contract BaseTest is Test {
         vm.stopPrank();
     }
 
+    /// @notice Adds up to `amount` of the user's free collateral to its open position in `marketId`.
+    function _topUpMargin(address user, bytes32 marketId, uint256 amount) internal {
+        if (clearingHouse.getPosition(user, marketId).size == 0) return;
+        uint256 reserved = clearingHouse._totalReservedMargin(user);
+        uint256 balance = getCollateralBalance(user);
+        uint256 free = balance > reserved ? balance - reserved : 0;
+        if (amount > free) amount = free;
+        if (amount == 0) return;
+        vm.prank(user);
+        clearingHouse.addMargin(marketId, amount);
+    }
+
+    /// @notice Opens a position and adds up to `margin` of free collateral on top of the IMR it reserves.
+    /// @dev addMargin needs an open position. When the open alone would be immediately liquidatable
+    ///      (price impact beyond the IMR buffer), a 0.1% slice is opened first, the margin is added
+    ///      to it, and the rest of the size is opened on top.
+    function openWithMargin(
+        address user,
+        bytes32 marketId,
+        bool isLong,
+        uint128 size,
+        uint256 amountLimit,
+        uint256 margin
+    ) public {
+        vm.prank(user);
+        try clearingHouse.openPosition(marketId, isLong, size, amountLimit) {
+            _topUpMargin(user, marketId, margin);
+        } catch (bytes memory err) {
+            if (margin == 0 || bytes4(err) != ClearingHouse.ImmediatelyLiquidatable.selector) {
+                assembly { revert(add(err, 32), mload(err)) }
+            }
+            uint128 seed = size / 1000;
+            if (seed == 0) seed = 1;
+            vm.prank(user);
+            clearingHouse.openPosition(marketId, isLong, seed, 0);
+            _topUpMargin(user, marketId, margin);
+            vm.prank(user);
+            clearingHouse.openPosition(marketId, isLong, size - seed, amountLimit);
+        }
+    }
+
+    /// @dev Margin the helpers add on top of the IMR: IMR + fees with a 10% buffer for price impact,
+    ///      capped at the user's collateral when a test wants a risky position.
+    function _helperMargin(address user, uint128 size) internal view returns (uint256) {
+        uint256 estimatedNotional = (uint256(size) * getMarkPrice()) / 1e18;
+        uint256 requiredIMR = (estimatedNotional * IMR_BPS) / 10000;
+        uint256 estimatedFees = (estimatedNotional * TRADE_FEE_BPS) / 10000;
+        uint256 requiredMargin = ((requiredIMR + estimatedFees) * 110) / 100;
+        uint256 availableCollateral = getCollateralBalance(user);
+        return requiredMargin > availableCollateral ? availableCollateral : requiredMargin;
+    }
+
     /// @notice Open a long position for a user
     function openLongPosition(
         address user,
         uint128 size,
         uint256 amountLimit
     ) public {
-        // Calculate required margin for the position
-        // Estimate notional value (actual execution price may vary slightly)
-        uint256 estimatedPrice = getMarkPrice();
-        uint256 estimatedNotional = (uint256(size) * estimatedPrice) / 1e18;
-
-        // Required margin = IMR + fees (with 10% buffer for price impact)
-        uint256 requiredIMR = (estimatedNotional * IMR_BPS) / 10000;
-        uint256 estimatedFees = (estimatedNotional * TRADE_FEE_BPS) / 10000;
-        uint256 requiredMargin = ((requiredIMR + estimatedFees) * 110) / 100;
-
-        // Use all available collateral if test explicitly wants a risky/undercollateralized position
-        uint256 availableCollateral = getCollateralBalance(user);
-        uint256 marginToAdd = requiredMargin > availableCollateral ? availableCollateral : requiredMargin;
-
-        vm.startPrank(user);
-        clearingHouse.addMargin(ETH_PERP, marginToAdd);
-        clearingHouse.openPosition(ETH_PERP, true, size, amountLimit);
-        vm.stopPrank();
+        openWithMargin(user, ETH_PERP, true, size, amountLimit, _helperMargin(user, size));
     }
 
     /// @notice Open a short position for a user
@@ -238,24 +273,7 @@ abstract contract BaseTest is Test {
         uint128 size,
         uint256 amountLimit
     ) public {
-        // Calculate required margin for the position
-        // Estimate notional value (actual execution price may vary slightly)
-        uint256 estimatedPrice = getMarkPrice();
-        uint256 estimatedNotional = (uint256(size) * estimatedPrice) / 1e18;
-
-        // Required margin = IMR + fees (with 10% buffer for price impact)
-        uint256 requiredIMR = (estimatedNotional * IMR_BPS) / 10000;
-        uint256 estimatedFees = (estimatedNotional * TRADE_FEE_BPS) / 10000;
-        uint256 requiredMargin = ((requiredIMR + estimatedFees) * 110) / 100;
-
-        // Use all available collateral if test explicitly wants a risky/undercollateralized position
-        uint256 availableCollateral = getCollateralBalance(user);
-        uint256 marginToAdd = requiredMargin > availableCollateral ? availableCollateral : requiredMargin;
-
-        vm.startPrank(user);
-        clearingHouse.addMargin(ETH_PERP, marginToAdd);
-        clearingHouse.openPosition(ETH_PERP, false, size, amountLimit);
-        vm.stopPrank();
+        openWithMargin(user, ETH_PERP, false, size, amountLimit, _helperMargin(user, size));
     }
 
     /// @notice Close a position for a user

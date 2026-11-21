@@ -78,8 +78,8 @@ contract SeedAndUnpauseH100 is Script {
         vm.startBroadcast(seedLongPk);
         IERC20(usdc).approve(vault, SEED_DEPOSIT_USDC);
         ClearingHouse(payable(chAddr)).deposit(usdc, SEED_DEPOSIT_USDC);
-        ClearingHouse(payable(chAddr)).addMargin(H100_PERP, SEED_MARGIN_X18);
         ClearingHouse(payable(chAddr)).openPosition(H100_PERP, true, SEED_SIZE, LONG_MAX_QUOTE_IN_X18);
+        ClearingHouse(payable(chAddr)).addMargin(H100_PERP, SEED_MARGIN_X18);
         vm.stopBroadcast();
 
         IClearingHouse.PositionView memory longPos =
@@ -93,8 +93,8 @@ contract SeedAndUnpauseH100 is Script {
         vm.startBroadcast(seedShortPk);
         IERC20(usdc).approve(vault, SEED_DEPOSIT_USDC);
         ClearingHouse(payable(chAddr)).deposit(usdc, SEED_DEPOSIT_USDC);
-        ClearingHouse(payable(chAddr)).addMargin(H100_PERP, SEED_MARGIN_X18);
         ClearingHouse(payable(chAddr)).openPosition(H100_PERP, false, SEED_SIZE, SHORT_MIN_QUOTE_OUT_X18);
+        ClearingHouse(payable(chAddr)).addMargin(H100_PERP, SEED_MARGIN_X18);
         vm.stopBroadcast();
 
         IClearingHouse.PositionView memory shortPos =

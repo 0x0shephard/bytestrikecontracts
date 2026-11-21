@@ -77,7 +77,6 @@ contract PositionTest is BaseTest {
 
         // Manually open with amount limit to test the revert
         vm.startPrank(alice);
-        clearingHouse.addMargin(ETH_PERP, 500 * USDC_UNIT); // Sufficient margin
 
         vm.expectRevert("slippage"); // vAMM error message
         clearingHouse.openPosition(ETH_PERP, true, size, maxQuoteIn);
@@ -115,7 +114,6 @@ contract PositionTest is BaseTest {
 
     // Manually add insufficient margin and try to open position
         vm.startPrank(alice);
-    clearingHouse.addMargin(ETH_PERP, depositAmount); // Add entire (insufficient) deposit
 
         vm.expectRevert(ClearingHouse.InsufficientQuoteCollateral.selector);
         clearingHouse.openPosition(ETH_PERP, true, size, 0);

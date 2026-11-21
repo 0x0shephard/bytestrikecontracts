@@ -78,14 +78,11 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
     /// @dev Moves the vAMM mark to about `target` with a trade from bob (who holds ample margin).
     function _bobMovesMarkTo(uint256 target) internal {
         fundAndDeposit(bob, 500_000 * USDC_UNIT);
-        vm.prank(bob);
-        clearingHouse.addMargin(ETH_PERP, 300_000 * USDC_UNIT);
         (uint256 x, uint256 y) = getReserves();
         // constant product: x' = sqrt(k / target)
         uint256 xTarget = _sqrt((x * y / target) * 1e18);
-        vm.prank(bob);
-        if (xTarget > x) clearingHouse.openPosition(ETH_PERP, false, uint128(xTarget - x), 0);
-        else clearingHouse.openPosition(ETH_PERP, true, uint128(x - xTarget), 0);
+        if (xTarget > x) openWithMargin(bob, ETH_PERP, false, uint128(xTarget - x), 0, 300_000 * USDC_UNIT);
+        else openWithMargin(bob, ETH_PERP, true, uint128(x - xTarget), 0, 300_000 * USDC_UNIT);
     }
 
     function _sqrt(uint256 a) internal pure returns (uint256 r) {

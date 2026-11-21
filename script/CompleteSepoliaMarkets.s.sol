@@ -249,13 +249,13 @@ contract CompleteSepoliaMarketsSeed is Script {
         vm.stopBroadcast();
 
         vm.startBroadcast(seedLongPk);
-        ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, maxQuoteIn);
+        ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         vm.stopBroadcast();
 
         vm.startBroadcast(seedShortPk);
-        ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, minQuoteOut);
+        ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         vm.stopBroadcast();
 
         console.log("Seeded:", spec.name);
@@ -465,16 +465,16 @@ abstract contract SepoliaSeedBase is Script {
         IClearingHouse.PositionView memory longPos = ClearingHouse(payable(CH)).getPosition(seedLong, marketId);
         if (longPos.size == 0) {
             vm.startBroadcast(seedLongPk);
-            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, maxQuoteIn);
+            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }
 
         IClearingHouse.PositionView memory shortPos = ClearingHouse(payable(CH)).getPosition(seedShort, marketId);
         if (shortPos.size == 0) {
             vm.startBroadcast(seedShortPk);
-            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, minQuoteOut);
+            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }
 
@@ -554,16 +554,16 @@ contract SeedSepoliaMarketFreshByIndex is SepoliaSeedBase {
         if (vAMM(market.vamm).totalLongOI() < SEED_SIZE) {
             vm.startBroadcast(freshLongPk);
             _ensureSeedDeposit();
-            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, maxQuoteIn);
+            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }
 
         if (vAMM(market.vamm).totalShortOI() < SEED_SIZE) {
             vm.startBroadcast(freshShortPk);
             _ensureSeedDeposit();
-            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, minQuoteOut);
+            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }
 

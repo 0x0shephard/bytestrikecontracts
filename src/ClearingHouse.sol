@@ -242,12 +242,14 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
     /// @notice Adds margin to a specific position from the user's available collateral.
+    /// @dev Requires an open position in the market. Allowed while the market is paused, since it
+    ///      touches no vAMM state and lets traders defend positions whose index keeps moving.
     /// @param marketId The ID of the market for the position.
     /// @param amount The amount of margin to add (in quote currency value, 1e18).
     function addMargin(bytes32 marketId, uint256 amount) external override {
         _settleFundingInternal(marketId, msg.sender);
         if (!(amount > 0)) revert AmountZero();
-        if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
+        if (positions[msg.sender][marketId].size == 0) revert NoPosition();
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         uint256 quoteBalance = ICollateralVault(vault).balanceOf(msg.sender, m.quoteToken);
         uint256 quoteValueX18 = _quoteValueX18(m.quoteToken, quoteBalance);

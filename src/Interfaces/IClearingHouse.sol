@@ -113,7 +113,7 @@ interface IClearingHouse {
     /// @notice Withdraw collateral from the vault.
     function withdraw(address token, uint256 amount) external;
 
-    /// @notice Add margin to a specific position.
+    /// @notice Add margin to an open position (allowed while the market is paused).
     function addMargin(bytes32 marketId, uint256 amount) external;
 
     /// @notice Remove margin from a specific position.

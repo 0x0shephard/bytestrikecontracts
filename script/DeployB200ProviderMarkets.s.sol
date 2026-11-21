@@ -262,8 +262,8 @@ contract SeedB200ProviderMarkets is B200ProviderBase {
         if (longPos.size == 0) {
             vm.startBroadcast(seedLongPk);
             _ensureSeedDeposit(seedLong);
-            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, maxQuoteIn);
+            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }
 
@@ -271,8 +271,8 @@ contract SeedB200ProviderMarkets is B200ProviderBase {
         if (shortPos.size == 0) {
             vm.startBroadcast(seedShortPk);
             _ensureSeedDeposit(seedShort);
-            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, minQuoteOut);
+            ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }
 
