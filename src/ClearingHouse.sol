@@ -683,7 +683,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         // Snapshot risk price before the vAMM trade
         uint256 riskPrice = _getRiskPrice(m);
 
-        // Close position via vAMM
+        // Close position via vAMM. The vAMM reserve floor may fill less than `size`.
+        uint256 filled;
         {
             IVAMM vamm = IVAMM(m.vamm);
             bool closingLong = position.size > 0;
@@ -692,13 +693,14 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
                 : vamm.buyBase(size, amountLimit);
             _checkLiquidationFill(marketId, closingLong, baseDelta, quoteDelta, riskPrice);
             _applyTrade(account, marketId, baseDelta, quoteDelta, true);
+            filled = uint256(baseDelta >= 0 ? baseDelta : -baseDelta);
         }
 
-        // Calculate penalty using the pre-trade risk price snapshot
+        // Calculate penalty on the filled size using the pre-trade risk price snapshot
         uint256 notional;
         uint256 penalty;
         {
-            notional = Calculations.mulDivRoundingUp(uint256(size), riskPrice, 1e18);
+            notional = Calculations.mulDivRoundingUp(filled, riskPrice, 1e18);
             penalty = Calculations.mulDivRoundingUp(notional, rp.liquidationPenaltyBps, BPS_DENOMINATOR);
             if (rp.penaltyCap > 0 && penalty > rp.penaltyCap) {
                 penalty = rp.penaltyCap;
