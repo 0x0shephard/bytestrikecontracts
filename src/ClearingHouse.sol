@@ -240,7 +240,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
     /// @notice Removes margin from a specific position, making it available for withdrawal or use in other positions.
-    /// @dev Checks that removing margin does not leave the position below the maintenance margin requirement.
+    /// @dev The margin left must meet the initial margin requirement of the whole position at the higher of
+    ///      mark and index (net of any unrealized loss), stay above maintenance, and cover the liquidation penalty.
     /// @param marketId The ID of the market for the position.
     /// @param amount The amount of margin to remove (in quote currency value, 1e18).
     function removeMargin(bytes32 marketId, uint256 amount) external override {
@@ -263,7 +264,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         uint256 nominalAfter = position.margin - amount;
         uint256 marginValueAfter = nominalAfter;
         {
+            // Value the post-removal state: `amount` leaves the reserved sum together with the margin.
             uint256 reserved = _reservedMarginForToken(msg.sender, m.quoteToken);
+            if (_isMarketActive[msg.sender][marketId]) reserved -= amount;
             if (reserved > 0) {
                 uint256 vaultBal = ICollateralVault(vault).balanceOf(msg.sender, m.quoteToken);
                 uint256 vaultValX18 = _quoteValueX18(m.quoteToken, vaultBal);
@@ -275,10 +278,19 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         int256 effectiveMarginAfter = int256(marginValueAfter) + unrealizedPnL;
         if (!(effectiveMarginAfter >= int256(maintenanceMargin))) revert WouldBeLiquidatable();
 
-        // Enforce minimum margin floor: position margin must always cover the liquidation penalty
         if (position.size != 0) {
+            // Enforce minimum margin floor: position margin must always cover the liquidation penalty
             uint256 minMargin = _getLiquidationPenalty(msg.sender, marketId);
-            if (!(position.margin - amount >= minMargin)) revert MarginBelowPenalty();
+            if (!(nominalAfter >= minMargin)) revert MarginBelowPenalty();
+
+            // The margin left, net of any unrealized loss, must meet the initial margin of the whole
+            // position at the same price and rate as an open or increase.
+            uint256 imrPrice = markPrice > riskPrice ? markPrice : riskPrice;
+            uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
+            uint256 requiredMargin =
+                absSize.mulDiv(imrPrice, 1e18).mulDiv(marketRiskParams[marketId].imrBps, BPS_DENOMINATOR);
+            int256 imrEquity = int256(marginValueAfter) + (unrealizedPnL < 0 ? unrealizedPnL : int256(0));
+            if (!(imrEquity >= int256(requiredMargin))) revert IMRBreach();
         }
 
         position.margin -= amount;

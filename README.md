@@ -374,7 +374,8 @@ clearingHouse.addMargin(marketId, amount)
 
 // Remove margin from position to collateral
 clearingHouse.removeMargin(marketId, amount)
-// Checked: remaining margin >= IMR * notional
+// Checked: remaining margin + min(unrealizedPnL, 0) >= IMR * size * max(mark, index)
+//          remaining margin + unrealizedPnL >= MMR, and remaining margin >= liquidation penalty
 // Transfers from position.margin back to vault balance
 ```
 
