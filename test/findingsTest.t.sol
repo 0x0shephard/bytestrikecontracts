@@ -542,6 +542,7 @@ contract AuditFindingsTest is BaseTest {
         uint256 fundingBefore = zeroOracleVamm.cumulativeLongPayPerUnitX18();
 
         // This should handle zero gracefully but doesn't
+        vm.prank(address(clearingHouse));
         zeroOracleVamm.pokeFunding();
 
         uint256 fundingAfter = zeroOracleVamm.cumulativeLongPayPerUnitX18();
@@ -584,6 +585,7 @@ contract AuditFindingsTest is BaseTest {
         console.log("=== Reverting Oracle Bug ===");
 
         bool reverted;
+        vm.prank(address(clearingHouse));
         try badOracleVamm.pokeFunding() {
             reverted = false;
         } catch {

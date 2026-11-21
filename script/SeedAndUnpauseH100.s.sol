@@ -116,7 +116,7 @@ contract SeedAndUnpauseH100 is Script {
         console.log(" Deployment complete. Public trading open.");
         console.log("============================================");
         console.log("Both sides of OI are non-zero (audit M-12).");
-        console.log("Funding will accrue from the next pokeFunding().");
+        console.log("Funding will accrue from the next ClearingHouse funding settlement.");
         console.log("============================================");
     }
 }

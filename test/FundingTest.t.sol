@@ -62,6 +62,7 @@ contract FundingTest is BaseTest {
         skipTime(1 hours);
 
         // Poke funding to update
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding();
 
         uint256 fundingAfter = getCumulativeFunding();
@@ -193,6 +194,7 @@ contract FundingTest is BaseTest {
 
         // Skip time and update funding
         skipTime(1 hours);
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding();
 
         uint256 fundingAfter = getCumulativeFunding();
@@ -218,6 +220,7 @@ contract FundingTest is BaseTest {
             skipTime(1 hours);
 
             uint256 fundingBefore = getCumulativeFunding();
+            vm.prank(address(clearingHouse));
             vamm.pokeFunding();
             uint256 fundingAfter = getCumulativeFunding();
 
@@ -304,6 +307,7 @@ contract FundingTest is BaseTest {
         skipTime(1 hours);
 
         uint256 fundingBefore = getCumulativeFunding();
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding();
         uint256 fundingAfter = getCumulativeFunding();
 
@@ -331,6 +335,7 @@ contract FundingTest is BaseTest {
         // Let funding accrue over multiple periods
         for (uint i = 0; i < 10; i++) {
             skipTime(1 hours);
+            vm.prank(address(clearingHouse));
             vamm.pokeFunding();
         }
 
@@ -456,6 +461,7 @@ contract FundingTest is BaseTest {
         skipTime(30 minutes);
 
         // Poke to lock in the high premium period
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding();
         uint256 fundingAfterHighPremium = getCumulativeFunding();
 
@@ -466,6 +472,7 @@ contract FundingTest is BaseTest {
 
         // Skip 30 minutes — mark < index during this period
         skipTime(30 minutes);
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding();
         uint256 fundingAfterBothPeriods = getCumulativeFunding();
 
@@ -548,6 +555,7 @@ contract FundingTest is BaseTest {
         assertEq(vamm.cachedIndexPrice(), cachedBefore, "Cache should not update on swap");
 
         // pokeFunding should refresh the cache
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding();
         assertEq(vamm.cachedIndexPrice(), 2500 * PRICE_PRECISION, "Cache should update on pokeFunding");
     }
@@ -583,6 +591,7 @@ contract FundingTest is BaseTest {
         openLongPosition(alice, ethQty(10), 0);
 
         skipTime(30 minutes);
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding();
         uint256 fundingBeforePause = getCumulativeFunding();
 

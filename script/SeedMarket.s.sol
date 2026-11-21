@@ -133,7 +133,7 @@ contract SeedMarket is Script {
         console.log("  longPos.size  > 0:", longPos.size > 0);
         console.log("  shortPos.size < 0:", shortPos.size < 0);
         console.log("");
-        console.log("Funding will accrue from the next pokeFunding() call.");
+        console.log("Funding will accrue from the next ClearingHouse funding settlement.");
         console.log("Market is ready for trading.");
         console.log("=========================================");
     }

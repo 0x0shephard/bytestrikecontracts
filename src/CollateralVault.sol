@@ -237,7 +237,8 @@ contract CollateralVault is ICollateralVault, AccessControl {
     }
 
     /// @notice Value a token amount in USD 1e18 using oracleSymbol and baseUnit, applying haircut.
-    /// @dev Returns 0 if oracle call fails to prevent blocking critical operations.
+    /// @dev Returns 0 for a disabled token, a zero amount or a zero oracle price. Reverts if the
+    ///      oracle call reverts (e.g. stale round or sequencer down); callers must handle that.
     function getTokenValueX18(address token, uint256 amount) external view override returns (uint256 usdX18) {
         CollateralConfig memory cfg = collateralConfigs[token];
         if (!cfg.enabled || amount == 0) return 0;

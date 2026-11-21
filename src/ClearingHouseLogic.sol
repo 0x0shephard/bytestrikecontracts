@@ -273,6 +273,15 @@ contract ClearingHouseLogic {
         if (!(m.vamm != address(0))) revert MarketNotFound();
 
         IVAMM vamm = IVAMM(m.vamm);
+
+        // Funding only accrues while it can be settled in the quote token. If the quote oracle is
+        // unavailable (stale round, sequencer down or in grace period), advance the funding clock
+        // without accruing so payers are not charged for time in which they cannot act.
+        if (!_quoteOracleLive(m.quoteToken)) {
+            vamm.skipFunding();
+            return;
+        }
+
         (uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive) = vamm.pokeFunding();
 
         IClearingHouse.PositionView storage position = positions[account][marketId];
@@ -443,6 +452,16 @@ contract ClearingHouseLogic {
             if (mkt.quoteToken == quoteToken) {
                 reserved += positions[account][markets[i]].margin;
             }
+        }
+    }
+
+    /// @dev True when the vault's oracle returns a non-zero price for the quote token.
+    function _quoteOracleLive(address quoteToken) internal view returns (bool) {
+        ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
+        try IOracle(ICollateralVault(vault).oracle()).getPrice(cfg.oracleSymbol) returns (uint256 priceX18) {
+            return priceX18 > 0;
+        } catch {
+            return false;
         }
     }
 

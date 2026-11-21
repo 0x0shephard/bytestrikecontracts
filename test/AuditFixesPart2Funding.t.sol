@@ -85,6 +85,7 @@ contract AuditFixesPart2FundingTest is BaseTest {
         vm.mockCallRevert(address(oracle), abi.encodeWithSignature("getPrice()"), "stale");
         for (uint256 i; i < 6; i++) {
             _warpHours(1);
+            vm.prank(address(clearingHouse));
             vamm.pokeFunding();
             assertEq(vamm.cumulativeLongPayPerUnitX18(), payBefore, "funding accrued during outage");
             assertEq(vamm.lastFundingTimestamp(), _now, "clock not advanced");
@@ -94,9 +95,11 @@ contract AuditFixesPart2FundingTest is BaseTest {
 
         // Recovery: the next poke accrues only the time since the last outage poke.
         vm.clearMockedCalls();
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding(); // same timestamp: refreshes the cache, accrues nothing
         assertEq(vamm.cumulativeLongPayPerUnitX18(), payBefore, "accrued at recovery");
         _warpHours(1);
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding();
         assertGt(vamm.cumulativeLongPayPerUnitX18(), payBefore, "funding resumes after recovery");
     }
@@ -109,6 +112,7 @@ contract AuditFixesPart2FundingTest is BaseTest {
 
         vm.mockCall(address(oracle), abi.encodeWithSignature("getPrice()"), abi.encode(uint256(0)));
         _warpHours(1);
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding();
         assertEq(vamm.cumulativeLongPayPerUnitX18(), payBefore, "funding accrued on zero index");
         assertEq(vamm.lastFundingTimestamp(), _now, "clock not advanced");
@@ -130,5 +134,61 @@ contract AuditFixesPart2FundingTest is BaseTest {
         assertEq(vamm.cumulativeLongPayPerUnitX18(), payBefore, "outage time charged on setOracle");
         assertEq(vamm.lastFundingTimestamp(), _now, "clock not advanced");
         assertEq(vamm.cachedIndexPrice(), 1960e18, "cache not refreshed from new oracle");
+    }
+
+    /// @notice Finding 45: only the ClearingHouse can poke or skip funding on the vAMM.
+    function test_Finding45_pokeFundingIsClearingHouseOnly() public {
+        vm.expectRevert(bytes("Not CH"));
+        vamm.pokeFunding();
+
+        vm.expectRevert(bytes("Not CH"));
+        vamm.skipFunding();
+    }
+
+    /// @notice Finding 45: while the quote-token oracle reverts, settleFunding advances the
+    /// funding clock without accruing, so payers are not charged for hours they cannot act.
+    function test_Finding45_quoteOracleOutageDoesNotAccrueFunding() public {
+        _openPayingLong();
+        _accrueHours(1);
+        settleFunding(alice);
+        uint256 payBefore = vamm.cumulativeLongPayPerUnitX18();
+        uint256 aliceMargin = getPosition(alice).margin;
+        uint256 aliceBal = getCollateralBalance(alice);
+
+        // Quote (USDC) feed goes down; the index oracle stays live.
+        vm.mockCallRevert(address(oracle), abi.encodeWithSignature("getPrice(string)", "USDC"), "stale");
+        address poker = makeAddr("poker");
+        for (uint256 i; i < 6; i++) {
+            _warpHours(1);
+            // Permissionless settle for an account with no position must not accrue funding.
+            vm.prank(poker);
+            clearingHouse.settleFunding(ETH_PERP, poker);
+            assertEq(vamm.cumulativeLongPayPerUnitX18(), payBefore, "funding accrued during quote outage");
+            assertEq(vamm.lastFundingTimestamp(), _now, "clock not advanced");
+        }
+
+        // Quote feed recovers: the payer is not charged for the outage hours.
+        vm.clearMockedCalls();
+        settleFunding(alice);
+        assertEq(getPosition(alice).margin, aliceMargin, "payer charged for outage");
+        assertEq(getCollateralBalance(alice), aliceBal, "vault debited for outage");
+        assertEq(vamm.cumulativeLongPayPerUnitX18(), payBefore, "accrued at recovery");
+
+        // Funding resumes normally afterwards.
+        _accrueHours(1);
+        assertGt(vamm.cumulativeLongPayPerUnitX18(), payBefore, "funding resumes after recovery");
+    }
+
+    /// @notice Finding 45: a quote oracle returning zero is treated as unavailable.
+    function test_Finding45_zeroQuotePriceDoesNotAccrueFunding() public {
+        _openPayingLong();
+        _accrueHours(1);
+        uint256 payBefore = vamm.cumulativeLongPayPerUnitX18();
+
+        vm.mockCall(address(oracle), abi.encodeWithSignature("getPrice(string)", "USDC"), abi.encode(uint256(0)));
+        _warpHours(1);
+        settleFunding(carol);
+        assertEq(vamm.cumulativeLongPayPerUnitX18(), payBefore, "funding accrued on zero quote price");
+        assertEq(vamm.lastFundingTimestamp(), _now, "clock not advanced");
     }
 }

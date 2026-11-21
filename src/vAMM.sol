@@ -79,6 +79,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	event OracleChanged(address indexed newOracle);
 	event MinReservesSet(uint256 minBase, uint256 minQuote);
 	event ReservesReset(uint256 newPrice, uint256 newBaseReserve, uint256 newQuoteReserve);
+	event FundingSkipped(uint64 timestamp);
 
 	// ========= Constructor =========
 	constructor() {
@@ -423,9 +424,12 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	/// @dev Reads the index oracle before accruing. If the oracle reverts or returns zero, the funding
 	///      timestamp is advanced without accruing, so time during an index outage is never charged.
 	/// @dev Caps timeElapsed to 1 hour so a single update never covers more than one funding interval.
+	/// @dev ClearingHouse-only: funding may only accrue when ClearingHouse can also settle it, so the
+	///      ClearingHouse checks the quote-token oracle first and calls skipFunding instead when it is down.
+	///      Keepers advance funding through ClearingHouse.settleFunding.
 	uint256 public constant MAX_FUNDING_ELAPSED = 1 hours; // 1 hour cap per update
 
-	function pokeFunding() external returns (uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive) {
+	function pokeFunding() external onlyCH returns (uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive) {
 		_pokeFundingInternal();
 		return (
 			_cumulativeLongPayPerUnitX18,
@@ -433,6 +437,16 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 			_cumulativeShortPayPerUnitX18,
 			_cumulativeShortReceivePerUnitX18
 		);
+	}
+
+	/// @notice Advances the funding clock without accruing any funding.
+	/// @dev ClearingHouse-only. Called instead of pokeFunding while funding cannot be settled
+	///      (the quote-token oracle is unavailable), so payers are never charged for time in which
+	///      they cannot close, add margin or withdraw.
+	function skipFunding() external onlyCH {
+		if (swapsPaused) return;
+		lastFundingTimestamp = uint64(block.timestamp);
+		emit FundingSkipped(uint64(block.timestamp));
 	}
 
 	/// @dev Accrue funding for the elapsed period using current mark price and cached oracle price.

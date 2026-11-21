@@ -139,6 +139,7 @@ contract VAMMEdgeCaseTest is BaseTest {
     // ============ Funding Rate Tests ============
 
     function test_PokeFunding_NoChange() public {
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding();
         // Should not revert
     }
@@ -150,6 +151,7 @@ contract VAMMEdgeCaseTest is BaseTest {
         skipTime(1 hours);
 
         uint256 fundingBefore = vamm.cumulativeLongPayPerUnitX18();
+        vm.prank(address(clearingHouse));
         vamm.pokeFunding();
         uint256 fundingAfter = vamm.cumulativeLongPayPerUnitX18();
 
@@ -160,6 +162,7 @@ contract VAMMEdgeCaseTest is BaseTest {
     function test_PokeFunding_MultipleTimes() public {
         for (uint i = 0; i < 5; i++) {
             skipTime(1 hours);
+            vm.prank(address(clearingHouse));
             vamm.pokeFunding();
         }
 
@@ -178,6 +181,7 @@ contract VAMMEdgeCaseTest is BaseTest {
             skipTime(1 hours);
 
             uint256 fundingBefore = vamm.cumulativeLongPayPerUnitX18();
+            vm.prank(address(clearingHouse));
             vamm.pokeFunding();
             uint256 fundingAfter = vamm.cumulativeLongPayPerUnitX18();
 
