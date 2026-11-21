@@ -11,13 +11,13 @@ import {IFeeRouter} from "./Interfaces/IFeeRouter.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
 
 /// @notice Logic contract for ClearingHouse heavy functions, called via delegatecall.
-/// @dev Storage layout MUST mirror ClearingHouse slots 0-10 exactly.
+/// @dev Storage layout MUST mirror ClearingHouse exactly (slots 11-14 are placeholders).
 ///      Any addition/removal of storage variables in ClearingHouse must be reflected here.
 contract ClearingHouseLogic {
     using Calculations for uint256;
 
     // =========================================================================
-    // Storage layout — must mirror ClearingHouse exactly (slots 0-10)
+    // Storage layout — must mirror ClearingHouse exactly
     // =========================================================================
 
     address public vault;           // slot 0
@@ -31,6 +31,13 @@ contract ClearingHouseLogic {
     uint256 internal totalBadDebt; // slot 8
     mapping(bytes32 => uint256) internal totalLongOI; // slot 9
     mapping(bytes32 => uint256) internal totalShortOI; // slot 10
+    // Slots 11-14 are used by ClearingHouse only; they are held here so the slots after them line up.
+    address private _slot11AllowlistManager; // slot 11
+    bool private _slot11AllowlistEnforced; // slot 11 (packed)
+    mapping(address => bool) private _slot12AllowedTraders; // slot 12
+    mapping(bytes32 => IClearingHouse.OpenInterestCaps) private _slot13OpenInterestCaps; // slot 13
+    mapping(bytes32 => uint256) private _slot14LiquidationPriceBandBps; // slot 14
+    mapping(bytes32 => uint256) internal fundingSurplus; // slot 15
 
     // =========================================================================
     // Constants
@@ -174,9 +181,11 @@ contract ClearingHouseLogic {
             if (s1 > 0 && s0 <= 0) {
                 position.lastFundingPayIndex = vammFI.cumulativeLongPayPerUnitX18();
                 position.lastFundingReceiveIndex = vammFI.cumulativeLongReceivePerUnitX18();
+                position.lastFundingSurplusIndex = vammFI.cumulativeLongSurplusPerUnitX18();
             } else if (s1 < 0 && s0 >= 0) {
                 position.lastFundingPayIndex = vammFI.cumulativeShortPayPerUnitX18();
                 position.lastFundingReceiveIndex = vammFI.cumulativeShortReceivePerUnitX18();
+                position.lastFundingSurplusIndex = vammFI.cumulativeShortSurplusPerUnitX18();
             }
         }
 
@@ -346,15 +355,19 @@ contract ClearingHouseLogic {
 
         uint256 currentPay;
         uint256 currentReceive;
+        uint256 currentSurplus;
         if (position.size > 0) {
             currentPay = longPay;
             currentReceive = longReceive;
+            currentSurplus = vamm.cumulativeLongSurplusPerUnitX18();
         } else if (position.size < 0) {
             currentPay = shortPay;
             currentReceive = shortReceive;
+            currentSurplus = vamm.cumulativeShortSurplusPerUnitX18();
         } else {
             position.lastFundingPayIndex = 0;
             position.lastFundingReceiveIndex = 0;
+            position.lastFundingSurplusIndex = 0;
             return;
         }
 
@@ -376,6 +389,9 @@ contract ClearingHouseLogic {
             // vault balance cannot pay stays on the position as debt instead of being written off.
             int256 net = fundingPayment - int256(debt);
             position.fundingDebt = 0;
+            // This position's share of the payment no receiver is credited (owed to the insurance fund).
+            uint256 surplusX18 =
+                Calculations.mulDiv(currentSurplus - position.lastFundingSurplusIndex, absSize, 1e18);
             if (net > 0) {
                 _settlePnLInVault(account, marketId, net, true);
                 position.margin += uint256(net);
@@ -385,6 +401,13 @@ contract ClearingHouseLogic {
                 position.fundingDebt = unpaidX18;
                 // Only what the vault actually paid leaves the margin; the unpaid part is the debt.
                 _reduceMargin(account, position, paidX18);
+                // A shortfall is charged to the surplus first, so only surplus the payer actually paid
+                // into the vault is booked for the insurance fund.
+                surplusX18 = surplusX18 > unpaidX18 ? surplusX18 - unpaidX18 : 0;
+            }
+            if (surplusX18 > 0) {
+                // Booked in token units at the fixed PnL rate, rounded down.
+                fundingSurplus[marketId] += _pnlToQuoteUnits(surplusX18, m.quoteToken, false);
             }
 
             if (payDelta != 0 || receiveDelta != 0) emit FundingSettled(marketId, account, fundingPayment);
@@ -392,6 +415,7 @@ contract ClearingHouseLogic {
 
         position.lastFundingPayIndex = currentPay;
         position.lastFundingReceiveIndex = currentReceive;
+        position.lastFundingSurplusIndex = currentSurplus;
     }
 
     // =========================================================================

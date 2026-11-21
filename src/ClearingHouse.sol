@@ -13,6 +13,8 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {IInsuranceFund} from "./Interfaces/IInsuranceFund.sol";
 import {IFeeRouter} from "./Interfaces/IFeeRouter.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice The central contract for managing user positions, margin, and trade settlement for perpetual vAMM markets.
 /// @dev It interacts with various components like the CollateralVault, MarketRegistry, and vAMMs.
@@ -20,9 +22,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     using Calculations for uint256;
 
     // =========================================================================
-    // Storage layout (slots 0-10) — must match ClearingHouseLogic exactly.
+    // Storage layout — must match ClearingHouseLogic exactly.
     // Do NOT reorder or insert variables without updating ClearingHouseLogic.
-    // Slots 11-12 are appended here only; ClearingHouseLogic does not use them.
+    // Slots 11-14 are used here only; ClearingHouseLogic holds placeholders for them.
     // =========================================================================
 
     /// @notice Address of the collateral vault contract.
@@ -70,6 +72,11 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     ///         mark may be for a liquidation to proceed, in bps.
     /// @dev 0 means DEFAULT_LIQUIDATION_PRICE_BAND_BPS. Read through liquidationPriceBandBps().
     mapping(bytes32 marketId => uint256 bandBps) internal _liquidationPriceBandBps; // slot 14
+
+    /// @notice Funding surplus per market, in quote-token units: what payers paid into the vault beyond
+    ///         the receiving side's credit, owed to the market's insurance fund. Moved by sweepFundingSurplus.
+    /// @dev Mirrored in ClearingHouseLogic, which books it at funding settlement.
+    mapping(bytes32 marketId => uint256 amount) public fundingSurplus; // slot 15
 
     /// @notice Band used when a market has none set: 5%.
     uint256 public constant DEFAULT_LIQUIDATION_PRICE_BAND_BPS = 500;
@@ -128,6 +135,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     error TraderNotAllowed();
     error WouldBeLiquidatable();
     error ZeroAddress();
+
+    /// @notice Emitted when a market's funding surplus is moved to its insurance fund.
+    event FundingSurplusSwept(bytes32 indexed marketId, address indexed insuranceFund, uint256 amount);
 
     /// @notice Modifier to restrict access to admin roles.
     modifier onlyAdmin() {
@@ -928,6 +938,25 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     ///      in one market is paid by a credit due in another whatever order they are settled in.
     function settleFunding(bytes32 marketId, address account) public override nonReentrant {
         _settleAccountFunding(account, marketId, true);
+    }
+
+    /// @notice Moves a market's booked funding surplus out of the vault to the market's insurance fund.
+    /// @dev Callable by anyone: the amount can only go to the insurance fund, and only surplus that
+    ///      payers have already paid into the vault is booked. Reverts while withdrawals are paused.
+    function sweepFundingSurplus(bytes32 marketId) external nonReentrant {
+        IMarketRegistry.Market memory m = _getMarketInfo(marketId);
+        uint256 amount = fundingSurplus[marketId];
+        if (amount == 0) revert AmountZero();
+        if (m.insuranceFund == address(0)) revert ZeroAddress();
+        fundingSurplus[marketId] = 0;
+
+        // The payers' excess debits sit in the vault with no owner: book them to this contract,
+        // withdraw them, and donate them to the fund (pull pattern).
+        ICollateralVault(vault).settlePnL(address(this), m.quoteToken, int256(amount));
+        uint256 received = ICollateralVault(vault).withdrawFor(address(this), m.quoteToken, amount, address(this));
+        SafeERC20.forceApprove(IERC20(m.quoteToken), m.insuranceFund, received);
+        IInsuranceFund(m.insuranceFund).donate(received);
+        emit FundingSurplusSwept(marketId, m.insuranceFund, received);
     }
 
     // =========================================================================

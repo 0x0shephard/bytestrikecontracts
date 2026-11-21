@@ -61,6 +61,14 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	/// @notice Timestamp of the last resetReserves call
 	uint64 public lastResetTimestamp;
 
+	// ========= Funding surplus (appended storage) =========
+	/// @dev Per paying unit, the part of the long (short) pay index that no receiver is credited: the
+	///      receiving side earns at most the paying rate per unit, so when the paying side is larger
+	///      its excess payment is owed to the insurance fund. ClearingHouse books each payer's share
+	///      once the payer has actually paid it.
+	uint256 private _cumulativeLongSurplusPerUnitX18;
+	uint256 private _cumulativeShortSurplusPerUnitX18;
+
 	// ========= Events =========
 	event Initialized(
 		address indexed owner,
@@ -321,6 +329,16 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		return _cumulativeShortReceivePerUnitX18;
 	}
 
+	/// @notice Per long unit, the part of the long pay index owed to the insurance fund (1e18).
+	function cumulativeLongSurplusPerUnitX18() external view returns (uint256) {
+		return _cumulativeLongSurplusPerUnitX18;
+	}
+
+	/// @notice Per short unit, the part of the short pay index owed to the insurance fund (1e18).
+	function cumulativeShortSurplusPerUnitX18() external view returns (uint256) {
+		return _cumulativeShortSurplusPerUnitX18;
+	}
+
 	/// @dev Computes the raw funding rate for the elapsed period (view helper).
 	function _computeFundingRate() internal view returns (int256 fundingRateX18) {
 		if (swapsPaused || _cachedIndexPriceX18 == 0) return 0;
@@ -361,6 +379,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		int256 fundingRateX18 = _computeFundingRate();
 		if (fundingRateX18 < 0 && totalLongOI > 0 && totalShortOI > 0) {
 			uint256 rate = uint256(-fundingRateX18);
+			if (totalShortOI > totalLongOI) return _cumulativeLongReceivePerUnitX18 + rate;
 			return _cumulativeLongReceivePerUnitX18 + (rate * totalShortOI) / totalLongOI;
 		}
 		return _cumulativeLongReceivePerUnitX18;
@@ -378,6 +397,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		int256 fundingRateX18 = _computeFundingRate();
 		if (fundingRateX18 > 0 && totalLongOI > 0 && totalShortOI > 0) {
 			uint256 rate = uint256(fundingRateX18);
+			if (totalLongOI > totalShortOI) return _cumulativeShortReceivePerUnitX18 + rate;
 			return _cumulativeShortReceivePerUnitX18 + (rate * totalLongOI) / totalShortOI;
 		}
 		return _cumulativeShortReceivePerUnitX18;
@@ -451,7 +471,8 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 	/// @dev Accrue funding for the elapsed period using current mark price and cached oracle price.
 	/// Called before every reserve change to make the cumulative index a true time-integral.
-	/// Uses two separate indices scaled by OI ratio so total paid == total received.
+	/// Uses two separate indices scaled by OI ratio. A receiver earns at most the paying rate per
+	/// unit, so total paid == total received + surplus, the surplus being tracked per paying unit.
 	function _accrueFunding() internal {
 		if (swapsPaused) return;
 
@@ -489,12 +510,24 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 			// Longs pay shorts
 			uint256 rate = uint256(fundingRateX18);
 			_cumulativeLongPayPerUnitX18 += rate;
-			_cumulativeShortReceivePerUnitX18 += (rate * totalLongOI) / totalShortOI;
+			if (totalLongOI > totalShortOI) {
+				// Receivers earn the paying rate; the excess is surplus, spread over the paying units
+				// (rounded down, so the booked surplus never exceeds what payers pay).
+				_cumulativeShortReceivePerUnitX18 += rate;
+				_cumulativeLongSurplusPerUnitX18 += (rate * (totalLongOI - totalShortOI)) / totalLongOI;
+			} else {
+				_cumulativeShortReceivePerUnitX18 += (rate * totalLongOI) / totalShortOI;
+			}
 		} else if (fundingRateX18 < 0) {
 			// Shorts pay longs
 			uint256 rate = uint256(-fundingRateX18);
 			_cumulativeShortPayPerUnitX18 += rate;
-			_cumulativeLongReceivePerUnitX18 += (rate * totalShortOI) / totalLongOI;
+			if (totalShortOI > totalLongOI) {
+				_cumulativeLongReceivePerUnitX18 += rate;
+				_cumulativeShortSurplusPerUnitX18 += (rate * (totalShortOI - totalLongOI)) / totalShortOI;
+			} else {
+				_cumulativeLongReceivePerUnitX18 += (rate * totalShortOI) / totalLongOI;
+			}
 		}
 
 		lastFundingTimestamp = nowTs;

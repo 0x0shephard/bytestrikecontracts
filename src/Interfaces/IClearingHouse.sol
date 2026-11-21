@@ -14,6 +14,9 @@ interface IClearingHouse {
         // Funding the vault balance could not pay when it was settled, in quote value (1e18). Kept as a
         // claim on the position, subtracted from its equity, and settled when the position closes.
         uint256 fundingDebt;
+        // Funding surplus index (IVAMM.cumulative{Long,Short}SurplusPerUnitX18) of the position's side
+        // at its last settlement.
+        uint256 lastFundingSurplusIndex;
     }
 
     struct MarketRiskParams {

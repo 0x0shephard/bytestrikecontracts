@@ -46,6 +46,9 @@ interface IVAMM {
     function cumulativeLongReceivePerUnitX18() external view returns (uint256);
     function cumulativeShortPayPerUnitX18() external view returns (uint256);
     function cumulativeShortReceivePerUnitX18() external view returns (uint256);
+    /// @notice Per paying unit, the part of the pay index owed to the insurance fund rather than receivers.
+    function cumulativeLongSurplusPerUnitX18() external view returns (uint256);
+    function cumulativeShortSurplusPerUnitX18() external view returns (uint256);
 
     // Real-time indices (include pending accrual)
     function currentCumulativeLongPayPerUnitX18() external view returns (uint256);

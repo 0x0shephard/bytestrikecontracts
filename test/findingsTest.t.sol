@@ -855,15 +855,18 @@ contract AuditFindingsTest is BaseTest {
         console.log("Bob margin after:", bobMarginAfter);
         console.logInt(bobFundingChange);
 
-        // 4. Assert: total paid by alice == total received by bob (within rounding)
-        // aliceFundingChange + bobFundingChange should be ~0
-        int256 netFunding = aliceFundingChange + bobFundingChange;
+        // 4. Assert: total paid by alice == total received by bob + funding surplus (within rounding)
+        // Since finding 3 (part 2) the smaller receiving side earns at most the paying rate per
+        // unit, and the larger paying side's excess is booked as surplus for the insurance fund.
+        int256 netFunding = aliceFundingChange + bobFundingChange + int256(clearingHouse.fundingSurplus(ETH_PERP));
         console.log("Net funding (should be ~0):");
         console.logInt(netFunding);
 
-        // Allow 1 wei of rounding error per unit
+        // Allow 1 wei of rounding error per unit. The surplus is booked rounded down (1 wei per
+        // paying unit at most), so any remainder must stay with the vault (net <= 0).
         uint256 absNet = netFunding >= 0 ? uint256(netFunding) : uint256(-netFunding);
-        assertLe(absNet, 2, "Funding should be balanced: total paid == total received");
+        assertLe(netFunding, 2, "Funding should be balanced: more received than paid");
+        assertLe(absNet, 10, "Funding should be balanced: total paid == total received");
 
         console.log("GOOD: Funding is balanced with asymmetric OI");
     }
