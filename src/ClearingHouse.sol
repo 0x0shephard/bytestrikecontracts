@@ -381,6 +381,11 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         if (!(imrBps >= mmrBps)) revert IMRBelowMMR();
         if (!(mmrBps > 0)) revert MMRZero();
         if (!(minPositionSize <= maxPositionSize || maxPositionSize == 0)) revert MinExceedsMax();
+        // A liquidation inside the band must leave a position at the maintenance threshold enough
+        // margin to fund the penalty: band + penalty <= mmr. An unset band is capped by the getter.
+        if (!(_liquidationPriceBandBps[marketId] + liquidationPenaltyBps <= mmrBps)) {
+            revert InvalidLiquidationPriceBand();
+        }
 
         marketRiskParams[marketId] = MarketRiskParams({
             imrBps: imrBps,
@@ -814,16 +819,25 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
     /// @notice Effective liquidation price band for a market, in bps.
+    /// @dev The set band (or the default when unset), never wider than mmrBps - liquidationPenaltyBps,
+    ///      so a liquidation inside the band leaves a position at the maintenance threshold enough
+    ///      margin to fund the penalty.
     function liquidationPriceBandBps(bytes32 marketId) public view returns (uint256) {
         uint256 band = _liquidationPriceBandBps[marketId];
-        return band == 0 ? DEFAULT_LIQUIDATION_PRICE_BAND_BPS : band;
+        if (band == 0) band = DEFAULT_LIQUIDATION_PRICE_BAND_BPS;
+        MarketRiskParams storage rp = marketRiskParams[marketId];
+        uint256 maxBand = rp.mmrBps > rp.liquidationPenaltyBps ? rp.mmrBps - rp.liquidationPenaltyBps : 0;
+        return band < maxBand ? band : maxBand;
     }
 
-    /// @notice Sets how far the pre-trade mark may be worse than the index for a liquidation. 0 restores the default (5%).
-    /// @param bandBps Band in bps; at most 10,000.
+    /// @notice Sets how far the pre-trade mark may be worse than the index for a liquidation.
+    ///         0 restores the default (5%, capped at mmrBps - liquidationPenaltyBps).
+    /// @param bandBps Band in bps; bandBps + liquidationPenaltyBps must not exceed mmrBps, so the
+    ///        market's risk parameters must be set first.
     function setLiquidationPriceBand(bytes32 marketId, uint256 bandBps) external onlyAdmin {
         if (!(IMarketRegistry(marketRegistry).getMarket(marketId).vamm != address(0))) revert MarketNotFound();
-        if (bandBps > BPS_DENOMINATOR) revert InvalidLiquidationPriceBand();
+        MarketRiskParams storage rp = marketRiskParams[marketId];
+        if (bandBps != 0 && bandBps + rp.liquidationPenaltyBps > rp.mmrBps) revert InvalidLiquidationPriceBand();
         _liquidationPriceBandBps[marketId] = bandBps;
         emit LiquidationPriceBandSet(marketId, bandBps);
     }

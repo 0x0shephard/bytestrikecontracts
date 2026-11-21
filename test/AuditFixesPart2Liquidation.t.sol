@@ -166,7 +166,8 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
         assertGe(effAfter * int256(sizeBefore), effBefore * int256(sizeAfter));
         assertTrue(isLiquidatable(alice));
 
-        // the rest is liquidated in a second call
+        // the rest is liquidated in a second call once the mark is back at the index
+        _bobMovesMarkTo(1_900 ether);
         vm.prank(liquidator);
         clearingHouse.liquidate(alice, ETH_PERP, 5 ether, 0);
         assertEq(getPosition(alice).size, 0);
@@ -197,5 +198,67 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
         int256 remaining = getPosition(alice).size;
         assertGt(remaining, 0);
         assertLt(remaining, 10 ether);
+    }
+
+    // ---------------------------------------------------------------------
+    // Finding 9: band + penalty <= mmr
+    // ---------------------------------------------------------------------
+
+    /// @dev Planned deployment parameters: IMR 10%, MMR 5%, penalty 2%.
+    function _plannedRiskParams() internal {
+        vm.prank(admin);
+        clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 200, PENALTY_CAP, 0, 0);
+    }
+
+    /// @dev The unset band defaulted to 5%, wider than MMR - penalty (3%), so a mark pushed 4% under
+    /// the index let a liquidation through that leaves the penalty unfunded. It is now capped at 3%.
+    function test_DefaultBandCappedAtMmrMinusPenalty() public {
+        _plannedRiskParams();
+        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), 300);
+
+        fundAndDeposit(alice, 10_000 * USDC_UNIT);
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, 10 ether, 0);
+        uint256 index = 1_850 ether;
+        setOraclePrice(index);
+        assertTrue(isLiquidatable(alice));
+
+        _bobMovesMarkTo((index * 96) / 100);
+
+        vm.prank(liquidator);
+        vm.expectPartialRevert(ClearingHouse.LiquidationPriceOutOfBand.selector);
+        clearingHouse.liquidate(alice, ETH_PERP, 10 ether, 0);
+    }
+
+    function test_SetLiquidationPriceBandEnforcesMmrMinusPenalty() public {
+        _plannedRiskParams();
+        vm.startPrank(admin);
+        vm.expectRevert(ClearingHouse.InvalidLiquidationPriceBand.selector);
+        clearingHouse.setLiquidationPriceBand(ETH_PERP, 301);
+
+        clearingHouse.setLiquidationPriceBand(ETH_PERP, 300);
+        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), 300);
+        vm.stopPrank();
+    }
+
+    function test_SetRiskParamsEnforcesBandPlusPenaltyWithinMmr() public {
+        _plannedRiskParams();
+        vm.startPrank(admin);
+        clearingHouse.setLiquidationPriceBand(ETH_PERP, 300);
+
+        // lowering the MMR below band + penalty is rejected
+        vm.expectRevert(ClearingHouse.InvalidLiquidationPriceBand.selector);
+        clearingHouse.setRiskParams(ETH_PERP, 1_000, 499, 200, PENALTY_CAP, 0, 0);
+        // raising the penalty likewise
+        vm.expectRevert(ClearingHouse.InvalidLiquidationPriceBand.selector);
+        clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 201, PENALTY_CAP, 0, 0);
+
+        // with the band reset to default, only penalty <= mmr is required; the default is capped
+        clearingHouse.setLiquidationPriceBand(ETH_PERP, 0);
+        clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 450, PENALTY_CAP, 0, 0);
+        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), 50);
+        vm.expectRevert(ClearingHouse.InvalidLiquidationPriceBand.selector);
+        clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 501, PENALTY_CAP, 0, 0);
+        vm.stopPrank();
     }
 }

@@ -60,6 +60,7 @@ contract DeploySepoliaH100 is Script {
     uint256 constant IMR_BPS              = 1_000;                          // 10% (user spec)
     uint256 constant MMR_BPS              = 500;                            // 5% (user spec)
     uint256 constant LIQ_PENALTY_BPS      = 200;                            // 2%
+    uint256 constant LIQ_PRICE_BAND_BPS   = 300;                            // 3% = MMR - penalty (max allowed)
     uint256 constant LIQ_PENALTY_CAP      = 10_000e18;                      // $10k
 
     // ========= FeeRouter splits =========
@@ -292,6 +293,8 @@ contract DeploySepoliaH100 is Script {
             0,               // maxPositionSize: unlimited (testnet)
             0                // minPositionSize: 0 (allow tiny test positions)
         );
+        // liquidation price band (pre-trade mark vs index); band + penalty must not exceed MMR
+        d.ch.setLiquidationPriceBand(H100_PERP, LIQ_PRICE_BAND_BPS);
 
         // 4.5 commit H100 index price = $4.22 with caller-supplied random nonce
         bytes32 commitment = keccak256(abi.encodePacked(INITIAL_PRICE_X18, nonce));

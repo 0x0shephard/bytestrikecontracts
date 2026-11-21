@@ -59,6 +59,7 @@ contract SetupH100Live is Script {
     uint256 constant IMR_BPS              = 1_000;
     uint256 constant MMR_BPS              = 500;
     uint256 constant LIQ_PENALTY_BPS      = 200;
+    uint256 constant LIQ_PRICE_BAND_BPS   = 300; // MMR - penalty (max allowed)
     // aderyn-ignore-next-line(large-numeric-literal)
     uint256 constant LIQ_PENALTY_CAP      = 10_000e18;
 
@@ -160,6 +161,8 @@ contract SetupH100Live is Script {
             0
         );
         console.log("Risk params set: IMR=10% MMR=5%");
+        ClearingHouse(payable(CH)).setLiquidationPriceBand(H100_PERP_LIVE, LIQ_PRICE_BAND_BPS);
+        console.log("Liquidation price band: 3%");
 
         // ── 10. Wire vAMM to registry ────────────────────────────────────────
         h100Vamm.setRegistry(REGISTRY);

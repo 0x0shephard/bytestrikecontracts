@@ -57,6 +57,7 @@ contract DeployH100Market is Script {
     uint256 constant IMR_BPS              = 1_000;       // 10% initial margin
     uint256 constant MMR_BPS              = 500;         // 5% maintenance margin
     uint256 constant LIQ_PENALTY_BPS      = 200;         // 2% liquidation penalty
+    uint256 constant LIQ_PRICE_BAND_BPS   = 300;         // 3% = MMR - penalty (max allowed)
     // aderyn-ignore-next-line(large-numeric-literal)
     uint256 constant LIQ_PENALTY_CAP      = 10_000e18;  // $10,000 cap
 
@@ -130,6 +131,10 @@ contract DeployH100Market is Script {
             0   // minPositionSize: none
         );
         console.log("Risk params: IMR=10% MMR=5% penalty=2%");
+
+        // Liquidation price band (pre-trade mark vs index); must satisfy band + penalty <= MMR.
+        CH.setLiquidationPriceBand(H100_PERP, LIQ_PRICE_BAND_BPS);
+        console.log("Liquidation price band: 3%");
 
         // 7. Wire vAMM to MarketRegistry (enables pauseSwaps)
         h100Vamm.setRegistry(address(REGISTRY));

@@ -98,7 +98,10 @@ contract LiquidationProtectionTest is BaseTest {
         setOraclePrice(1_990 * PRICE_PRECISION);
         _attackerPushes(false);
 
-        _setBand(10_000);
+        // The band is capped at mmrBps - liquidationPenaltyBps, so widening it means raising the MMR.
+        vm.prank(admin);
+        clearingHouse.setRiskParams(ETH_PERP, 10_000, 10_000, LIQUIDATION_PENALTY_BPS, PENALTY_CAP, 0, 0);
+        _setBand(10_000 - LIQUIDATION_PENALTY_BPS);
         vm.prank(liquidator);
         clearingHouse.liquidate(alice, ETH_PERP, VICTIM_SIZE, 0);
         assertEq(getPosition(alice).size, 0);
@@ -118,19 +121,20 @@ contract LiquidationProtectionTest is BaseTest {
 
     // --- Band configuration ---
 
-    function test_DefaultBandIsFivePercent() public view {
+    function test_DefaultBandIsFivePercentCappedAtMmrMinusPenalty() public view {
         assertEq(clearingHouse.DEFAULT_LIQUIDATION_PRICE_BAND_BPS(), 500);
-        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), 500);
+        // Harness: MMR 250 bps, penalty 200 bps, so the default is capped at 50 bps.
+        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), MMR_BPS - LIQUIDATION_PENALTY_BPS);
     }
 
     function test_OwnerSetsBandAndZeroRestoresDefault() public {
         vm.expectEmit(true, false, false, true, address(clearingHouse));
-        emit IClearingHouse.LiquidationPriceBandSet(ETH_PERP, 300);
-        _setBand(300);
-        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), 300);
+        emit IClearingHouse.LiquidationPriceBandSet(ETH_PERP, 30);
+        _setBand(30);
+        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), 30);
 
         _setBand(0);
-        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), 500);
+        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), MMR_BPS - LIQUIDATION_PENALTY_BPS);
     }
 
     function test_BandSetterValidation() public {
@@ -148,9 +152,9 @@ contract LiquidationProtectionTest is BaseTest {
     }
 
     function test_BandStorageIsAppendedAtSlot14() public {
-        _setBand(300);
+        _setBand(30);
         bytes32 entry = keccak256(abi.encode(ETH_PERP, uint256(14)));
-        assertEq(uint256(vm.load(address(clearingHouse), entry)), 300);
+        assertEq(uint256(vm.load(address(clearingHouse), entry)), 30);
     }
 
     // --- M-6: a reverting insurance payout does not block liquidation ---
