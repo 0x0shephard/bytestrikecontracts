@@ -28,10 +28,7 @@ contract CloseStuckPosition is Script {
     bytes32 constant MARKET_ID = 0x923fe13dd90eff0f2f8b82db89ef27daef5f899aca7fba59ebb0b01a6343bfb5; // H100-PERP
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0));
-        if (deployerPrivateKey == 0) {
-            deployerPrivateKey = 0x7857dfba6a2faf4f52f5e7b28a28d5a66be4bdf588437d03d5fd5d8522cf8348;
-        }
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
         address trader = vm.addr(deployerPrivateKey);
 

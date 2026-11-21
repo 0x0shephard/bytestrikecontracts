@@ -17,11 +17,7 @@ contract UpdateOracleTo375 is Script {
     
     function run() external {
         // Get private key from environment or use the one passed via --private-key
-        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0));
-        if (deployerPrivateKey == 0) {
-            // If not in env, the --private-key flag will be used by forge
-            deployerPrivateKey = 0x7857dfba6a2faf4f52f5e7b28a28d5a66be4bdf588437d03d5fd5d8522cf8348;
-        }
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         
         // New price: $3.75 in 1e18 format
         uint256 newPrice = 3_75e16; // 3.75 * 1e18 = 3750000000000000000
