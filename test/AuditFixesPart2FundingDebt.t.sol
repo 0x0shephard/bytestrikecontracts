@@ -90,12 +90,14 @@ contract AuditFixesPart2FundingDebtTest is BaseTest {
         assertEq(_trackedInsurance(), insuranceBefore, "insurance paid funding at settlement");
         assertTrue(isLiquidatable(alice), "position with funding debt not liquidatable");
 
-        // The owner cannot strip what is left, and a keeper can liquidate.
-        vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, LONG_SIZE, 0);
+        // The owner cannot strip what is left, and a keeper can liquidate. The fill is capped by the
+        // liquidation fill bound (findings 1 + 4); the profit it realizes pays the debt, after which
+        // the remainder is healthy and stays open.
+        uint256 calls = liquidateFully(alice, ETH_PERP, bob);
+        assertGt(calls, 0);
         p = getPosition(alice);
-        assertEq(p.size, 0, "position not closed");
         assertEq(p.fundingDebt, 0, "debt not settled on close");
+        assertTrue(p.size == 0 || !isLiquidatable(alice), "remainder left liquidatable");
     }
 
     function test_Finding10_depositPaysCarriedDebt() public {

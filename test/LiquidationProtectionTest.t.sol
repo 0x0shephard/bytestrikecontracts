@@ -169,8 +169,7 @@ contract LiquidationProtectionTest is BaseTest {
         usdc.transfer(address(insuranceFund), 1);
 
         uint256 badDebtBefore = clearingHouse.totalBadDebt();
-        vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, VICTIM_SIZE, 0);
+        liquidateFully(alice, ETH_PERP, bob);
 
         assertEq(getPosition(alice).size, 0);
         assertGt(clearingHouse.totalBadDebt(), badDebtBefore);

@@ -85,8 +85,7 @@ contract AuditFixesPart2SurplusMarginTest is BaseTest {
         uint256 marginB = clearingHouse.getPosition(alice, MARKET_B).margin;
         uint256 badDebtBefore = clearingHouse.totalBadDebt();
 
-        vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, 10e18, 0);
+        liquidateFully(alice, ETH_PERP, bob);
 
         // The account pays the whole penalty: the liquidator is paid in the vault, not by the fund.
         assertEq(vault.balanceOf(liquidator, address(usdc)), PENALTY / 2, "incentive not collected");
@@ -107,8 +106,7 @@ contract AuditFixesPart2SurplusMarginTest is BaseTest {
         uint256 floorB = 78e18;
         assertLt(marginB - floorB, PENALTY, "test setup: B surplus covers the whole penalty");
 
-        vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, 10e18, 0);
+        liquidateFully(alice, ETH_PERP, bob);
 
         assertEq(clearingHouse.getPosition(alice, MARKET_B).margin, floorB, "B drawn below its penalty floor");
         assertFalse(clearingHouse.isLiquidatable(alice, MARKET_B), "B left liquidatable");

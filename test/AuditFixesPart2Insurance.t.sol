@@ -81,7 +81,7 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         _deploySecondMarket();
         fundAndDeposit(alice, 2_000 * USDC_UNIT);
         vm.startPrank(alice);
-        clearingHouse.openPosition(ETH_PERP, true, 9e18, 0);
+        clearingHouse.openPosition(ETH_PERP, true, 4e18, 0);
         clearingHouse.openPosition(ETH2_PERP, true, 10e18, 0);
         // Reserve all remaining free collateral on the second position.
         clearingHouse.addMargin(ETH2_PERP, getCollateralBalance(alice) - clearingHouse._totalReservedMargin(alice));
@@ -90,7 +90,7 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         fundAndDeposit(bob, 100_000 * USDC_UNIT);
         setOraclePrice(1_800e18);
         vm.prank(bob);
-        clearingHouse.openPosition(ETH_PERP, false, 22e18, 0);
+        clearingHouse.openPosition(ETH_PERP, false, 35e18, 0);
         setOraclePrice(getMarkPrice());
         assertTrue(isLiquidatable(alice), "alice should be liquidatable");
         // The second market's index falls too, so its position holds no margin above maintenance
@@ -104,13 +104,14 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         uint256 vaultTokensBefore = usdc.balanceOf(address(vault));
 
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, 9e18, 0);
+        clearingHouse.liquidate(alice, ETH_PERP, 4e18, 0);
 
         assertGt(getCollateralBalance(alice), 0, "realized loss covered by alice's balance");
         assertEq(_trackedInsurance(), 0, "fund paid its whole tracked balance");
         // Collected incentive is credited in the vault; the insurance part goes to the keeper's wallet.
         assertEq(usdc.balanceOf(liquidator) - keeperWalletBefore, tracked, "keeper received the tracked reserve");
         assertLe(usdc.balanceOf(address(vault)), vaultTokensBefore, "no insurance draw into the vault");
+        assertEq(getPosition(alice).size, 0, "closed in one call");
     }
 
     /// @notice Finding 19: owner can book quote tokens sent by plain transfer into the tracked balance.
@@ -143,11 +144,17 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
     // ------------------------------------------------------------------
 
     uint128 internal constant ALICE_SIZE = 30e18;
-    uint128 internal constant BOB_SIZE = 84e18;
     uint256 internal constant CAROL_DEPOSIT = 10_000e18;
+    uint128 internal bobSize;
 
     /// @dev Alice's 30 ETH long, liquidated after a 10% index gap, realizes a loss above her balance.
+    /// @dev The vAMM is 10x deeper than the default, so the 30 ETH close from a mark at the index
+    ///      fits in one call within the liquidation fill bound (mmr - penalty = 0.5%, findings 1 + 4).
     function _setUpUnderwaterLong() internal {
+        vm.warp(block.timestamp + 1 days); // past the reset cooldown
+        vm.prank(admin);
+        vamm.resetReserves(INITIAL_ETH_PRICE, 10 * INITIAL_BASE_RESERVE);
+
         fundAndDeposit(carol, CAROL_DEPOSIT); // never trades
 
         fundAndDeposit(alice, 4_300e18);
@@ -155,8 +162,11 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
 
         setOraclePrice(1_800e18);
         fundAndDeposit(bob, 100_000e18);
+        // bob's short brings the mark down to the index
+        (uint256 x, uint256 y) = getReserves();
+        bobSize = uint128(_sqrtBase((x * y / 1_800e18) * 1e18) - x);
         vm.prank(bob);
-        clearingHouse.openPosition(ETH_PERP, false, BOB_SIZE, 0);
+        clearingHouse.openPosition(ETH_PERP, false, bobSize, 0);
         assertTrue(isLiquidatable(alice), "alice should be liquidatable");
     }
 
@@ -185,7 +195,7 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         assertEq(clearingHouse.totalBadDebt(), 540e18, "only the protocol penalty share is recorded");
 
         vm.prank(bob);
-        clearingHouse.closePosition(ETH_PERP, BOB_SIZE, 0);
+        clearingHouse.closePosition(ETH_PERP, bobSize, 0);
         // Execution and entry prices round per trade, which can leave a few wei of PnL unbacked. The
         // vAMM fee used to leave a surplus in the vault that hid this; it is now 0 (finding 16).
         assertGe(usdc.balanceOf(address(vault)) + 1e6, _sumBalances(), "balances backed by vault tokens");

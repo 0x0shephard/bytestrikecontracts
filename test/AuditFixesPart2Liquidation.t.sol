@@ -96,7 +96,9 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
     }
 
     /// @dev Finding 4: a long of 8% of the base reserve, liquidatable with the mark at the index,
-    /// used to revert because its own price impact pushed the average fill below the band.
+    /// used to revert because its own price impact pushed the average fill below the band. It now
+    /// goes through: each call fills up to the liquidation fill bound (findings 1 + 4) and the rest
+    /// is liquidated once the mark is back at the index.
     function test_LargeLiquidationFromUnpushedMarkSucceeds() public {
         uint128 size = 80 ether;
         fundAndDeposit(alice, 40_000 * USDC_UNIT);
@@ -113,8 +115,16 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
         // the close's own average fill is more than 5% under the index
         assertLt(_quoteOutForSell(size) * 1e18 / size, INITIAL_ETH_PRICE * 95 / 100);
 
+        (uint256 x0, uint256 y0) = getReserves();
         vm.prank(liquidator);
         clearingHouse.liquidate(alice, ETH_PERP, size, 0);
+        (uint256 x1, uint256 y1) = getReserves();
+        assertGt(getPosition(alice).size, 0, "first call capped");
+        uint256 d = MMR_BPS - LIQUIDATION_PENALTY_BPS;
+        assertGe((y0 - y1) * 1e18 / (x1 - x0), INITIAL_ETH_PRICE * (10_000 - d) / 10_000, "fill beyond bound");
+
+        _bobMovesMarkTo(INITIAL_ETH_PRICE);
+        assertGt(liquidateFully(alice, ETH_PERP, bob), 0);
         assertEq(getPosition(alice).size, 0);
     }
 
@@ -171,7 +181,8 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
     }
 
     /// @dev A partial liquidation whose slice loss exceeds the slice's margin would worsen the
-    /// remainder's ratio, so a liquidator-chosen partial size still reverts.
+    /// remainder's ratio, so a liquidator-chosen partial size below the fill bound still reverts.
+    /// A request at or above the bound is capped to it and exempt (findings 1 + 4).
     function test_PartialLiquidationThatWorsensRatioReverts() public {
         _liquidatableLong(0, 1_900 ether);
 
@@ -179,8 +190,7 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
         vm.expectRevert(ClearingHouse.MustLiquidateMore.selector);
         clearingHouse.liquidate(alice, ETH_PERP, 5 ether, 0);
 
-        vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, 10 ether, 0);
+        liquidateFully(alice, ETH_PERP, bob);
         assertEq(getPosition(alice).size, 0);
     }
 

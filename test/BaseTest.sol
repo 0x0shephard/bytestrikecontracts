@@ -14,6 +14,7 @@ import {InsuranceFund} from "../src/InsuranceFund.sol";
 import {IMarketRegistry} from "../src/Interfaces/IMarketRegistry.sol";
 import {ICollateralVault} from "../src/Interfaces/ICollateralVault.sol";
 import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
+import {IOracle} from "../src/Interfaces/IOracle.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @title BaseTest
@@ -275,6 +276,51 @@ abstract contract BaseTest is Test {
         uint256 amountLimit
     ) public {
         openWithMargin(user, ETH_PERP, false, size, amountLimit, _helperMargin(user, size));
+    }
+
+    /// @notice Liquidates `user`'s position in `marketId` until it is closed or no longer
+    ///         liquidatable, returning the number of liquidation calls.
+    /// @dev A liquidation fills at most the size that keeps its average price within
+    ///      mmrBps - liquidationPenaltyBps of the index (findings 1 + 4), so between calls `restorer`
+    ///      trades the vAMM mark back to the index, as an arbitrageur would. The restoring trades run
+    ///      with the market fee at 0, so they move no tokens and leave fee and insurance balances as
+    ///      they were.
+    function liquidateFully(address user, bytes32 marketId, address restorer) public returns (uint256 calls) {
+        IMarketRegistry.Market memory m = marketRegistry.getMarket(marketId);
+        for (; calls < 100; ) {
+            int256 s = clearingHouse.getPosition(user, marketId).size;
+            if (s == 0 || (calls > 0 && !clearingHouse.isLiquidatable(user, marketId))) return calls;
+            vm.prank(liquidator);
+            clearingHouse.liquidate(user, marketId, uint128(uint256(s > 0 ? s : -s)), 0);
+            calls++;
+            if (clearingHouse.getPosition(user, marketId).size == 0) return calls;
+            (uint256 x, uint256 y) = vAMM(m.vamm).getReserves();
+            uint256 xTarget = _sqrtBase((x * y / IOracle(m.oracle).getPrice()) * 1e18);
+            if (xTarget == x) continue;
+            _setMarketFee(marketId, m, 0);
+            vm.prank(restorer);
+            clearingHouse.openPosition(marketId, xTarget < x, uint128(xTarget < x ? x - xTarget : xTarget - x), 0);
+            _setMarketFee(marketId, m, m.feeBps);
+        }
+        revert("liquidateFully: not closed");
+    }
+
+    function _setMarketFee(bytes32 marketId, IMarketRegistry.Market memory m, uint16 feeBps) internal {
+        if (m.feeBps == 0) return;
+        vm.startPrank(admin);
+        marketRegistry.grantRole(marketRegistry.PARAM_ADMIN_ROLE(), admin);
+        marketRegistry.setMarketParams(marketId, feeBps, m.feeRouter, m.insuranceFund);
+        vm.stopPrank();
+    }
+
+    function _sqrtBase(uint256 a) internal pure returns (uint256 r) {
+        if (a == 0) return 0;
+        r = a;
+        uint256 k = a / 2 + 1;
+        while (k < r) {
+            r = k;
+            k = (a / k + k) / 2;
+        }
     }
 
     /// @notice Close a position for a user

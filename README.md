@@ -389,7 +389,11 @@ Flow:
 1. Settle user's pending funding (updates unrealizedPnL)
 2. Check isLiquidatable(user, marketId):
    - marginRatio < mmrBps
-3. Close user's entire position at market price via vAMM
+3. Close up to `size` of the position at market price via vAMM. The pre-trade mark must be
+   within the liquidation price band of the index, and the fill is capped at the size whose
+   average price stays within d = (mmrBps - liquidationPenaltyBps) / 10000 of the index (at or above
+   index * (1 - d) closing a long, at or below index * (1 + d) closing a short). The rest
+   stays open for later calls once arbitrage restores the mark.
 4. Calculate liquidation penalty:
    penalty = min(notional * liquidationPenaltyBps / 10000, penaltyCap)
 5. Calculate equity:

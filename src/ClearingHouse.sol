@@ -699,8 +699,11 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Liquidates a position that is below the maintenance margin requirement.
     /// @dev Can only be called by a whitelisted liquidator. Reverts if the vAMM mark before the close
     ///      is outside the market's band around the index (on the side that hurts the position). The
+    ///      fill is capped at the size whose average price stays within mmrBps - liquidationPenaltyBps
+    ///      of the index (see _maxLiquidationBase), with amountLimit scaled to the capped size. The
     ///      penalty is charged on the filled size. A partial liquidation must leave the remainder with
-    ///      a margin ratio no worse than before, unless the vAMM reserve floor clamped the fill.
+    ///      a margin ratio no worse than before, unless the fill was capped or the vAMM reserve floor
+    ///      clamped it.
     /// @param account The address of the user whose position is being liquidated.
     /// @param marketId The ID of the market.
     /// @param size The amount of the position to liquidate.
@@ -729,15 +732,27 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         // Snapshot risk price before the vAMM trade
         uint256 riskPrice = _getRiskPrice(m);
 
-        // Close position via vAMM. The vAMM reserve floor may fill less than `size`.
+        // Close position via vAMM. The fill is capped at the size whose average price stays within
+        // the fill bound, and the vAMM reserve floor may fill less still. Either way the rest of
+        // `size` is left for later calls and the remainder check below does not apply.
         uint256 filled;
+        bool capped;
         {
             IVAMM vamm = IVAMM(m.vamm);
             bool closingLong = position.size > 0;
             _checkLiquidationMark(marketId, closingLong, vamm.getMarkPrice(), riskPrice);
+            uint256 maxBase = _maxLiquidationBase(vamm, rp, closingLong, riskPrice);
+            if (maxBase == 0) revert LiquidationPriceOutOfBand(vamm.getMarkPrice(), riskPrice);
+            uint128 tradeSize = size;
+            if (uint256(size) >= maxBase) {
+                capped = true;
+                tradeSize = uint128(maxBase);
+                // Scale the quote limit with the size so it keeps the same average price.
+                amountLimit = Calculations.mulDiv(amountLimit, maxBase, size);
+            }
             (int256 baseDelta, int256 quoteDelta, ) = closingLong
-                ? vamm.sellBase(size, amountLimit)
-                : vamm.buyBase(size, amountLimit);
+                ? vamm.sellBase(tradeSize, amountLimit)
+                : vamm.buyBase(tradeSize, amountLimit);
             _applyTrade(account, marketId, baseDelta, quoteDelta, true);
             filled = uint256(baseDelta >= 0 ? baseDelta : -baseDelta);
         }
@@ -821,9 +836,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         // A partial liquidation must not leave the remainder with a worse margin ratio than the
         // position had before (effective margin per unit of size; the index is unchanged). A fill
-        // the vAMM reserve floor clamped below the requested size is exempt, so the rest can be
-        // liquidated once reserves allow.
-        if (position.size != 0 && filled == uint256(size)) {
+        // capped by the fill bound or clamped by the vAMM reserve floor is exempt, so the rest can
+        // be liquidated once the mark or reserves allow.
+        if (position.size != 0 && !capped && filled == uint256(size)) {
             uint256 absSizeAfter = uint256(position.size > 0 ? position.size : -position.size);
             (int256 effectiveMarginAfter,) = _marginState(account, marketId);
             if (effectiveMarginAfter * int256(absSizeBefore) < effectiveMarginBefore * int256(absSizeAfter)) {
@@ -873,7 +888,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @dev Stops an attacker from pushing the vAMM price just before a liquidation to turn the
     ///      victim's loss into bad debt. Only the side that hurts the protocol is checked: a mark below
     ///      the index when closing a long, or above it when closing a short. The close's own price
-    ///      impact is not limited, so a position of any size can be liquidated from an unpushed mark.
+    ///      impact is bounded separately by capping the filled size (_maxLiquidationBase).
     function _checkLiquidationMark(
         bytes32 marketId,
         bool closingLong,
@@ -889,6 +904,31 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             uint256 ceilPx = Calculations.mulDiv(indexPriceX18, BPS_DENOMINATOR + band, BPS_DENOMINATOR);
             if (markPriceX18 > ceilPx) revert LiquidationPriceOutOfBand(markPriceX18, indexPriceX18);
         }
+    }
+
+    /// @notice Largest base size a liquidation can close from the current vAMM reserves with its
+    ///         average fill no worse than index * (1 - d) closing a long, or index * (1 + d) closing
+    ///         a short, where d = mmrBps - liquidationPenaltyBps.
+    /// @dev Bounds the close's own price impact, so a position at the maintenance edge always keeps
+    ///      enough margin for its loss and the penalty. Constant product with no swap fee (the vAMM
+    ///      fee is fixed at 0): selling dx fills at y / (x + dx), buying dx at y / (x - dx).
+    function _maxLiquidationBase(IVAMM vamm, MarketRiskParams memory rp, bool closingLong, uint256 indexPriceX18)
+        internal
+        view
+        returns (uint256)
+    {
+        uint256 d = rp.mmrBps > rp.liquidationPenaltyBps ? rp.mmrBps - rp.liquidationPenaltyBps : 0;
+        (uint256 x, uint256 y) = vamm.getReserves();
+        if (closingLong) {
+            uint256 xMax = Calculations.mulDiv(
+                y, 1e18, Calculations.mulDivRoundingUp(indexPriceX18, BPS_DENOMINATOR - d, BPS_DENOMINATOR)
+            );
+            return xMax > x ? xMax - x : 0;
+        }
+        uint256 xMin = Calculations.mulDivRoundingUp(
+            y, 1e18, Calculations.mulDiv(indexPriceX18, BPS_DENOMINATOR + d, BPS_DENOMINATOR)
+        );
+        return x > xMin ? x - xMin : 0;
     }
 
     /// @notice Internal function to get market information from the registry.
