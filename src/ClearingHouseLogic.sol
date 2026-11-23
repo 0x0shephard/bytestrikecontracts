@@ -9,6 +9,8 @@ import {IOracle} from "./Interfaces/IOracle.sol";
 import {IInsuranceFund} from "./Interfaces/IInsuranceFund.sol";
 import {IFeeRouter} from "./Interfaces/IFeeRouter.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice Logic contract for ClearingHouse heavy functions, called via delegatecall.
 /// @dev Storage layout MUST mirror ClearingHouse exactly (slots 11-14 are placeholders).
@@ -65,6 +67,7 @@ contract ClearingHouseLogic {
     );
     event FundingSettled(bytes32 indexed marketId, address indexed account, int256 fundingPayment);
     event BadDebtRecorded(address indexed account, bytes32 indexed marketId, uint256 shortfall);
+    event FundingSurplusSwept(bytes32 indexed marketId, address indexed insuranceFund, uint256 amount);
 
     // =========================================================================
     // Errors — must match ClearingHouse custom errors exactly
@@ -79,6 +82,8 @@ contract ClearingHouseLogic {
     error InsufficientQuoteForFee();
     error IMRBreach();
     error ImmediatelyLiquidatable();
+    error AmountZero();
+    error ZeroAddress();
 
     // =========================================================================
     // External entry points (delegatecall targets from ClearingHouse)
@@ -122,6 +127,25 @@ contract ClearingHouseLogic {
                 _settleFundingInternal(markets[i], account);
             }
         }
+    }
+
+    /// @notice Moves a market's booked funding surplus out of the vault to the market's insurance fund.
+    /// @dev Delegatecall target of ClearingHouse.sweepFundingSurplus (which holds the reentrancy guard).
+    function sweepFundingSurplus(bytes32 marketId) external {
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        if (!(m.vamm != address(0))) revert MarketNotFound();
+        uint256 amount = fundingSurplus[marketId];
+        if (amount == 0) revert AmountZero();
+        if (m.insuranceFund == address(0)) revert ZeroAddress();
+        fundingSurplus[marketId] = 0;
+
+        // The payers' excess debits sit in the vault with no owner: book them to the clearing house,
+        // withdraw them, and donate them to the fund (pull pattern).
+        ICollateralVault(vault).settlePnL(address(this), m.quoteToken, int256(amount));
+        uint256 received = ICollateralVault(vault).withdrawFor(address(this), m.quoteToken, amount, address(this));
+        SafeERC20.forceApprove(IERC20(m.quoteToken), m.insuranceFund, received);
+        IInsuranceFund(m.insuranceFund).donate(received);
+        emit FundingSurplusSwept(marketId, m.insuranceFund, received);
     }
 
     // =========================================================================
@@ -620,11 +644,18 @@ contract ClearingHouseLogic {
         }
     }
 
+    /// @dev Value of a quote-token amount as margin: the vault's haircut oracle value, with the token
+    ///      price capped at par (1e18 per whole token, before the haircut). Realized PnL and funding
+    ///      are debited at par, so a token must not back more margin than it pays at that rate.
     function _quoteValueX18(address quoteToken, uint256 amount) internal view returns (uint256) {
         if (amount == 0) return 0;
         uint256 v = ICollateralVault(vault).getTokenValueX18(quoteToken, amount);
         if (!(v > 0)) revert QuoteTokenValuationUnavailable();
-        return v;
+        ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
+        uint256 par = Calculations.mulDiv(
+            Calculations.mulDiv(1e18, amount, cfg.baseUnit), BPS_DENOMINATOR - cfg.haircutBps, BPS_DENOMINATOR
+        );
+        return v < par ? v : par;
     }
 
     function _notionalToQuoteUnits(uint256 notionalX18, address quoteToken) internal view returns (uint256) {
@@ -638,7 +669,7 @@ contract ClearingHouseLogic {
     /// @dev Converts realized PnL or funding (1e18 quote value) to quote-token units at a fixed
     /// rate of one whole token (`baseUnit`, i.e. 10**decimals) per 1e18 of quote value, independent
     /// of the live quote-token oracle. Profits round down, losses round up.
-    /// Fees, penalties and margin valuation keep using the live oracle price.
+    /// Fees and penalties keep using the live oracle price; margin valuation uses it capped at par.
     function _pnlToQuoteUnits(uint256 amountX18, address quoteToken, bool roundUp) internal view returns (uint256) {
         if (amountX18 == 0) return 0;
         uint256 baseUnit = ICollateralVault(vault).getConfig(quoteToken).baseUnit;

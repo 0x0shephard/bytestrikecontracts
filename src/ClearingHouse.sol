@@ -13,8 +13,6 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {IInsuranceFund} from "./Interfaces/IInsuranceFund.sol";
 import {IFeeRouter} from "./Interfaces/IFeeRouter.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice The central contract for managing user positions, margin, and trade settlement for perpetual vAMM markets.
 /// @dev It interacts with various components like the CollateralVault, MarketRegistry, and vAMMs.
@@ -995,20 +993,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Moves a market's booked funding surplus out of the vault to the market's insurance fund.
     /// @dev Callable by anyone: the amount can only go to the insurance fund, and only surplus that
     ///      payers have already paid into the vault is booked. Reverts while withdrawals are paused.
+    ///      Runs in ClearingHouseLogic.
     function sweepFundingSurplus(bytes32 marketId) external nonReentrant {
-        IMarketRegistry.Market memory m = _getMarketInfo(marketId);
-        uint256 amount = fundingSurplus[marketId];
-        if (amount == 0) revert AmountZero();
-        if (m.insuranceFund == address(0)) revert ZeroAddress();
-        fundingSurplus[marketId] = 0;
-
-        // The payers' excess debits sit in the vault with no owner: book them to this contract,
-        // withdraw them, and donate them to the fund (pull pattern).
-        ICollateralVault(vault).settlePnL(address(this), m.quoteToken, int256(amount));
-        uint256 received = ICollateralVault(vault).withdrawFor(address(this), m.quoteToken, amount, address(this));
-        SafeERC20.forceApprove(IERC20(m.quoteToken), m.insuranceFund, received);
-        IInsuranceFund(m.insuranceFund).donate(received);
-        emit FundingSurplusSwept(marketId, m.insuranceFund, received);
+        _delegate(abi.encodeWithSignature("sweepFundingSurplus(bytes32)", marketId));
     }
 
     // =========================================================================
@@ -1018,36 +1005,30 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @dev Forwards to ClearingHouseLogic.applyTrade via delegatecall.
     ///      The logic contract shares this contract's storage, msg.sender, and address(this).
     function _applyTrade(address account, bytes32 marketId, int256 baseDelta, int256 quoteDelta, bool isLiquidation) internal {
-        (bool ok,) = _logic.delegatecall(
-            abi.encodeWithSelector(
-                bytes4(keccak256("applyTrade(address,bytes32,int256,int256,bool)")),
-                account, marketId, baseDelta, quoteDelta, isLiquidation
+        _delegate(
+            abi.encodeWithSignature(
+                "applyTrade(address,bytes32,int256,int256,bool)", account, marketId, baseDelta, quoteDelta, isLiquidation
             )
         );
-        if (!ok) assembly { returndatacopy(0, 0, returndatasize()) revert(0, returndatasize()) }
     }
 
     /// @dev Forwards to ClearingHouseLogic.settleFundingInternal via delegatecall.
     function _settleFundingInternal(bytes32 marketId, address account) internal {
-        (bool ok,) = _logic.delegatecall(
-            abi.encodeWithSelector(
-                bytes4(keccak256("settleFundingInternal(bytes32,address)")),
-                marketId, account
-            )
-        );
-        if (!ok) assembly { returndatacopy(0, 0, returndatasize()) revert(0, returndatasize()) }
+        _delegate(abi.encodeWithSignature("settleFundingInternal(bytes32,address)", marketId, account));
     }
 
     /// @dev Forwards to ClearingHouseLogic.settleAccountFunding via delegatecall.
     ///      Settles the account's active markets (only those sharing marketId's quote token when
     ///      sameQuoteOnly) and marketId itself (when non-zero), then retries markets left in funding debt.
     function _settleAccountFunding(address account, bytes32 marketId, bool sameQuoteOnly) internal {
-        (bool ok,) = _logic.delegatecall(
-            abi.encodeWithSelector(
-                bytes4(keccak256("settleAccountFunding(address,bytes32,bool)")),
-                account, marketId, sameQuoteOnly
-            )
+        _delegate(
+            abi.encodeWithSignature("settleAccountFunding(address,bytes32,bool)", account, marketId, sameQuoteOnly)
         );
+    }
+
+    /// @dev Delegatecalls ClearingHouseLogic with `data`, bubbling up any revert.
+    function _delegate(bytes memory data) internal {
+        (bool ok,) = _logic.delegatecall(data);
         if (!ok) assembly { returndatacopy(0, 0, returndatasize()) revert(0, returndatasize()) }
     }
 
@@ -1102,11 +1083,18 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         }
     }
 
+    /// @dev Value of a quote-token amount as margin: the vault's haircut oracle value, with the token
+    ///      price capped at par (1e18 per whole token, before the haircut). Realized PnL and funding
+    ///      are debited at par, so a token must not back more margin than it pays at that rate.
     function _quoteValueX18(address quoteToken, uint256 amount) internal view returns (uint256) {
         if (amount == 0) return 0;
         uint256 v = ICollateralVault(vault).getTokenValueX18(quoteToken, amount);
         if (!(v > 0)) revert QuoteTokenValuationUnavailable();
-        return v;
+        ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
+        uint256 par = Calculations.mulDiv(
+            Calculations.mulDiv(1e18, amount, cfg.baseUnit), BPS_DENOMINATOR - cfg.haircutBps, BPS_DENOMINATOR
+        );
+        return v < par ? v : par;
     }
 
     function _notionalToQuoteUnits(uint256 notionalX18, address quoteToken) internal view returns (uint256) {
