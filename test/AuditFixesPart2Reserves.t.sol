@@ -54,4 +54,26 @@ contract AuditFixesPart2ReservesTest is BaseTest {
         (uint256 base,) = getReserves();
         assertEq(base, 2 * INITIAL_BASE_RESERVE, "depth reset");
     }
+
+    /// @notice Finding 56: with a base floor set, a buy of at least the whole base reserve is clamped
+    /// to the room above the floor like any other oversized order, instead of reverting.
+    function test_Finding56_buyOfWholeReserveIsClampedAtFloor() public {
+        (uint256 base,) = getReserves();
+        vm.prank(admin);
+        vamm.setMinReserves(base - 10 ether, 0);
+
+        vm.prank(address(clearingHouse));
+        (int256 baseDelta,,) = vamm.buyBase(uint128(base), 0);
+        assertEq(baseDelta, 10 ether, "filled the room above the floor");
+        (uint256 baseAfter,) = getReserves();
+        assertEq(baseAfter, base - 10 ether);
+    }
+
+    /// @notice Finding 56: without a floor, an order of the whole base reserve still reverts.
+    function test_Finding56_buyOfWholeReserveRevertsWithoutFloor() public {
+        (uint256 base,) = getReserves();
+        vm.prank(address(clearingHouse));
+        vm.expectRevert("insufficient X");
+        vamm.buyBase(uint128(base), 0);
+    }
 }

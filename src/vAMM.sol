@@ -168,7 +168,6 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		uint256 X = reserveBase;
 		uint256 Y = reserveQuote;
 		uint256 fee_ = feeBps;
-		require(uint256(baseAmount) < X, "insufficient X");
 
 		// Clamp to available capacity at the reserve boundary so that
 		// near-boundary trades are partially filled instead of reverting.
@@ -180,6 +179,8 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 				baseAmount = uint128(available);
 			}
 		}
+		// After the clamp, so that with a floor every oversized order is partly filled
+		require(uint256(baseAmount) < X, "insufficient X");
 
 		// Uniswap v2 inverse formula (solve for gross quote in given base out):
 		// inWithFeeScaled = dx * Y * 10000 / (X - dx)
