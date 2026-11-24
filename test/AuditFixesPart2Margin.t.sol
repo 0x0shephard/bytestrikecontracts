@@ -96,6 +96,44 @@ contract AuditFixesPart2MarginTest is BaseTest {
         clearingHouse.closePosition(ETH_PERP, 9 ether, 0);
     }
 
+    /// @dev Finding 13 (profit half, merged draft 62): a partial close in profit used to add the
+    /// realized profit to the margin before the proportional release, so part of a profit already
+    /// credited to the vault stayed reserved on the remaining size and blocked its withdrawal.
+    function test_PartialCloseInProfitReleasesRealizedProfit() public {
+        uint128 size = 10 ether;
+        uint128 closeAmt = 5 ether;
+
+        fundAndDeposit(alice, 10_000 * USDC_UNIT);
+        fundAndDeposit(bob, 50_000 * USDC_UNIT);
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH_PERP, false, size, 0);
+
+        // the index falls and bob's short brings the vAMM mark down to it
+        setOraclePrice(1800 ether);
+        vm.prank(bob);
+        clearingHouse.openPosition(ETH_PERP, false, 45 ether, 0);
+
+        IClearingHouse.PositionView memory before = getPosition(alice);
+        assertGt(before.entryPriceX18, getMarkPrice());
+        uint256 reservedBefore = clearingHouse._totalReservedMargin(alice);
+
+        vm.prank(alice);
+        clearingHouse.closePosition(ETH_PERP, closeAmt, 0);
+
+        IClearingHouse.PositionView memory afterPos = getPosition(alice);
+        assertGt(afterPos.realizedPnL, 0);
+        // the remaining size keeps only its proportional share of the pre-trade margin
+        uint256 propMargin = before.margin - (before.margin * closeAmt) / size;
+        assertEq(afterPos.margin, propMargin);
+        assertEq(clearingHouse._totalReservedMargin(alice), reservedBefore - (before.margin - propMargin));
+
+        // the whole profit is free collateral: everything above the remaining margin can be withdrawn
+        uint256 bal = getCollateralBalance(alice);
+        vm.prank(alice);
+        clearingHouse.withdraw(address(usdc), bal - afterPos.margin);
+        assertEq(getCollateralBalance(alice), afterPos.margin);
+    }
+
     // ---------------------------------------------------------------------
     // Finding 15 (+ draft 48): removeMargin enforces the initial margin
     // ---------------------------------------------------------------------

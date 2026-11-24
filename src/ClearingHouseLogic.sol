@@ -267,10 +267,15 @@ contract ClearingHouseLogic {
             _totalReservedMargin[account] += marginRequired;
         } else {
             // After a loss, release the slice's pre-loss margin share (its loss was netted against
-            // it above). After a gain or at break-even, release a proportional share.
+            // it above). After a gain outside a liquidation, release the slice's pre-trade share plus
+            // the whole profit, which is already in the vault balance, so the size that stays open
+            // keeps only its own share. A liquidation in profit or a break-even releases a
+            // proportional share.
             uint256 marginRelease;
             if (realized < 0) {
                 marginRelease = sliceMargin <= position.margin ? sliceMargin : position.margin;
+            } else if (realized > 0 && !isLiquidation) {
+                marginRelease = sliceMargin + uint256(realized);
             } else {
                 uint256 reduceAmt = absBaseDelta <= absS0 ? absBaseDelta : absS0;
                 marginRelease = (position.margin * reduceAmt) / absS0;
