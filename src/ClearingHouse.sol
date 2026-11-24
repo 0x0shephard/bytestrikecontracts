@@ -612,11 +612,10 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         bool oiCapped = oiCaps.maxGrossOI != 0 || oiCaps.maxNetOI != 0;
         uint256 longOIBefore;
         uint256 shortOIBefore;
-        int256 sizeBefore;
+        int256 sizeBefore = positions[msg.sender][marketId].size;
         if (oiCapped) {
             longOIBefore = totalLongOI[marketId];
             shortOIBefore = totalShortOI[marketId];
-            sizeBefore = positions[msg.sender][marketId].size;
         }
 
         IVAMM vamm = IVAMM(m.vamm);
@@ -626,8 +625,10 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         _applyTrade(msg.sender, marketId, baseDelta, quoteDelta, false);
 
-        // A trade that only shrinks the trader's position (no flip) is exempt, matching closePosition.
-        if (oiCapped && !_isPureReduction(sizeBefore, positions[msg.sender][marketId].size)) {
+        // A trade that only shrinks the trader's position (no flip) is exempt from the OI caps and
+        // maxPositionSize, matching closePosition. A flip is checked in full.
+        bool pureReduction = _isPureReduction(sizeBefore, positions[msg.sender][marketId].size);
+        if (oiCapped && !pureReduction) {
             _checkOpenInterestCaps(marketId, oiCaps, longOIBefore, shortOIBefore);
         }
 
@@ -639,7 +640,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         // Check max position size (0 = unlimited)
         uint256 maxSize = rp.maxPositionSize;
-        if (maxSize > 0) {
+        if (maxSize > 0 && !pureReduction) {
             if (!(absSize <= maxSize)) revert ExceedsMaxSize();
         }
 
