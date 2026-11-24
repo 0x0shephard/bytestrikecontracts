@@ -354,16 +354,18 @@ Flow:
 
 **Calculations**:
 ```solidity
-notionalValue = |position.size| * markPrice / 1e18
+// Maintenance and liquidation use the oracle (index) price
+notionalValue = |position.size| * indexPrice / 1e18  // rounded up
 
-requiredInitialMargin = notionalValue * imrBps / 10000
+requiredInitialMargin = notional * imrBps / 10000     // notional at max(markPrice, indexPrice)
 requiredMaintenanceMargin = notionalValue * mmrBps / 10000
 
-// Equity = margin + unrealizedPnL
-unrealizedPnL = (markPrice - entryPrice) * size / 1e18  // for longs
-unrealizedPnL = (entryPrice - markPrice) * |size| / 1e18  // for shorts
+// Equity = margin + pending funding + unrealizedPnL at the index
+unrealizedPnL = (indexPrice - entryPrice) * size / 1e18  // for longs
+unrealizedPnL = (entryPrice - indexPrice) * |size| / 1e18  // for shorts
 
-marginRatio = (margin + unrealizedPnL) * 10000 / notionalValue
+// getMarginRatio (1e18 = 100%): below mmrBps * 1e14 exactly when equity < requiredMaintenanceMargin
+marginRatio = equity * 1e18 / notionalValue
 ```
 
 **Add/Remove Margin**:
@@ -388,7 +390,8 @@ Liquidator calls: clearingHouse.liquidate(user, marketId)
 Flow:
 1. Settle user's pending funding (updates unrealizedPnL)
 2. Check isLiquidatable(user, marketId):
-   - marginRatio < mmrBps
+   - equity < requiredMaintenanceMargin (getMarginRatio < mmrBps * 1e14), or settling funding
+     would leave the position with funding debt
 3. Close up to `size` of the position at market price via vAMM. The pre-trade mark must be
    within the liquidation price band of the index, and the fill is capped at the size whose
    average price stays within d = (mmrBps - liquidationPenaltyBps) / 10000 of the index (at or above

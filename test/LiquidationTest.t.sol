@@ -406,4 +406,24 @@ contract LiquidationTest is BaseTest {
         // Gas should be reasonable (< 500k)
         assertTrue(gasUsed < 500000, "Liquidation gas should be reasonable");
     }
+
+    /// @dev getMarginRatio values the notional at the index, as isLiquidatable does, so the ratio is
+    /// below mmrBps exactly when the position is liquidatable, even with the mark far from the index.
+    function test_MarginRatioAgreesWithIsLiquidatableWhenMarkDiffersFromIndex() public {
+        fundAndDeposit(alice, 50_000 * USDC_UNIT);
+        openLongPosition(alice, ethQty(20), 0); // lifts the mark ~4% above the index
+        assertGt(vamm.getMarkPrice(), INITIAL_ETH_PRICE);
+
+        uint256 mmrRatio = MMR_BPS * 1e14;
+        bool sawLiquidatable;
+        bool sawHealthy;
+        for (uint256 p = 1_880 * PRICE_PRECISION; p >= 1_800 * PRICE_PRECISION; p -= PRICE_PRECISION / 10) {
+            setOraclePrice(p);
+            bool liq = isLiquidatable(alice);
+            assertEq(getMarginRatio(alice) < mmrRatio, liq, "margin ratio disagrees with isLiquidatable");
+            if (liq) sawLiquidatable = true;
+            else sawHealthy = true;
+        }
+        assertTrue(sawLiquidatable && sawHealthy, "scan must cross maintenance");
+    }
 }

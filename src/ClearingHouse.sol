@@ -970,11 +970,16 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         return absSize.mulDiv(markPrice, 1e18);
     }
 
-    /// @notice Gets the margin ratio for a user's position.
+    /// @notice Gets the margin ratio for a user's position (1e18 = 100%).
+    /// @dev Equity divided by notional, both at the risk (index) price as in isLiquidatable, with the
+    ///      notional rounded up as in the maintenance margin. So a ratio below mmrBps * 1e14 means the
+    ///      position is below maintenance. isLiquidatable is also true for a position that would carry
+    ///      funding debt after settlement, which the ratio does not show.
     function getMarginRatio(address account, bytes32 marketId) external view override returns (uint256) {
         PositionView storage p = positions[account][marketId];
         if (p.size == 0) return type(uint256).max;
-        uint256 notional = _getNotional(account, marketId);
+        uint256 absSize = uint256(p.size > 0 ? p.size : -p.size);
+        uint256 notional = Calculations.mulDivRoundingUp(absSize, _getRiskPrice(_getMarketInfo(marketId)), 1e18);
         if (notional == 0) return type(uint256).max;
         (int256 effectiveMargin,) = _marginState(account, marketId);
         if (effectiveMargin <= 0) return 0;
