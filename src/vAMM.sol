@@ -15,6 +15,8 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	using Calculations for uint256;
 
 	// ========= Roles =========
+	/// @dev Set once in initialize: the ClearingHouse proxy is upgraded in place, so the market's
+	///      positions never move to another clearinghouse.
 	address public clearinghouse;
 	address public registry;
 	address public oracle;
@@ -82,7 +84,6 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	event ParamsSet(uint16 feeBps, uint256 frMaxBpsPerHour, uint256 kFundingX18);
 	event SwapsPaused(bool paused);
 	event FundingPoked(uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive, uint64 timestamp, int256 fundingRateX18);
-	event ClearinghouseChanged(address indexed newCH);
 	event RegistryChanged(address indexed newRegistry);
 	event OracleChanged(address indexed newOracle);
 	event MinReservesSet(uint256 minBase, uint256 minQuote);
@@ -592,14 +593,6 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	function updateOpenInterest(uint256 longOI, uint256 shortOI) external onlyCH {
 		totalLongOI = longOI;
 		totalShortOI = shortOI;
-	}
-
-	/// @notice Updates the clearinghouse contract authorized to interact with the vAMM.
-	/// @param newCH Address of the replacement clearinghouse.
-	function setClearinghouse(address newCH) external onlyOwner {
-		require(newCH != address(0), "CH=0");
-		clearinghouse = newCH;
-		emit ClearinghouseChanged(newCH);
 	}
 
 	/// @notice Updates the market registry authorized to pause/unpause swaps.
