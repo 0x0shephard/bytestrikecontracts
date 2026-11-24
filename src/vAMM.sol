@@ -155,7 +155,9 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 	/// @notice Buy base asset by paying quote. Trader receives baseAmount of base.
 	/// @param baseAmount Amount of base asset to buy (receive).
-	/// @param maxQuoteIn Slippage protection: maximum quote tokens willing to pay. 0 = no limit.
+	/// @param maxQuoteIn Slippage protection: maximum quote tokens willing to pay for baseAmount. 0 = no
+	///        limit. If the reserve floor clamps the fill, the limit is scaled to the filled amount so the
+	///        limit price per unit is kept.
 	/// @return baseDelta Positive base received by trader.
 	/// @return quoteDelta Negative quote paid by trader.
 	/// @return avgPriceX18 Effective execution price.
@@ -168,6 +170,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		uint256 X = reserveBase;
 		uint256 Y = reserveQuote;
 		uint256 fee_ = feeBps;
+		uint256 requestedBase = uint256(baseAmount);
 
 		// Clamp to available capacity at the reserve boundary so that
 		// near-boundary trades are partially filled instead of reverting.
@@ -189,7 +192,11 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		uint256 grossQuoteIn = Calculations.mulDivRoundingUp(inWithFeeScaled, 1, BPS_DENOMINATOR - fee_);
 
 		avgPriceX18 = Calculations.mulDivRoundingUp(grossQuoteIn, 1e18, uint256(baseAmount));
-		require(maxQuoteIn == 0 || grossQuoteIn <= maxQuoteIn, "slippage");
+		// maxQuoteIn is a total for requestedBase: scale it to a clamped fill (rounded down)
+		require(
+			maxQuoteIn == 0 || grossQuoteIn <= Calculations.mulDiv(maxQuoteIn, uint256(baseAmount), requestedBase),
+			"slippage"
+		);
 
 		// Accrue funding at current (pre-trade) mark price before reserves change
 		_accrueFunding();
@@ -211,7 +218,9 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 	/// @notice Sell base asset to receive quote. Used for shorting or closing longs.
 	/// @param baseAmount Amount of base asset to sell.
-	/// @param minQuoteOut Slippage protection: minimum quote tokens expected to receive. 0 = no limit.
+	/// @param minQuoteOut Slippage protection: minimum quote tokens expected to receive for baseAmount. 0 =
+	///        no limit. If the reserve floor clamps the fill, the limit is scaled to the base consumed so
+	///        the limit price per unit is kept.
 	/// @return baseDelta Negative base sold by trader.
 	/// @return quoteDelta Positive quote received by trader.
 	/// @return avgPriceX18 Effective execution price.
@@ -253,7 +262,12 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(quoteOut > 0, "no out");
 
 		avgPriceX18 = Calculations.mulDiv(quoteOut, 1e18, grossBaseIn);
-		require(minQuoteOut == 0 || quoteOut >= minQuoteOut, "slippage");
+		// minQuoteOut is a total for baseAmount: scale it to a clamped fill (rounded up)
+		require(
+			minQuoteOut == 0
+				|| quoteOut >= Calculations.mulDivRoundingUp(minQuoteOut, grossBaseIn, uint256(baseAmount)),
+			"slippage"
+		);
 
 		// Accrue funding at current (pre-trade) mark price before reserves change
 		_accrueFunding();

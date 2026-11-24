@@ -76,4 +76,75 @@ contract AuditFixesPart2ReservesTest is BaseTest {
         vm.expectRevert("insufficient X");
         vamm.buyBase(uint128(base), 0);
     }
+
+    /// @dev Quote paid for buying `dx` base at the current reserves (state is restored).
+    function _quoteToBuy(uint128 dx) internal returns (uint256 cost) {
+        uint256 snap = vm.snapshotState();
+        vm.prank(address(clearingHouse));
+        (, int256 quoteDelta,) = vamm.buyBase(dx, 0);
+        cost = uint256(-quoteDelta);
+        vm.revertToState(snap);
+    }
+
+    /// @notice Finding 39: a buy the base floor clamps is held to the trader's limit price, not to
+    /// the full-order total.
+    function test_Finding39_clampedBuyKeepsLimitPrice() public {
+        (uint256 base,) = getReserves();
+        vm.prank(admin);
+        vamm.setMinReserves(base - 4 ether, 0); // 4 ETH of room
+        uint256 cost4 = _quoteToBuy(4 ether);
+
+        // A 10 ETH order whose limit price is 1% below the clamped fill's price, but whose total
+        // covers the 4 ETH fill 2.5 times over
+        uint256 tightLimit = cost4 * 10 / 4 * 99 / 100;
+        assertGt(tightLimit, cost4);
+        vm.prank(address(clearingHouse));
+        vm.expectRevert("slippage");
+        vamm.buyBase(10 ether, tightLimit);
+
+        // At a limit price that covers the clamped fill, it is filled
+        vm.prank(address(clearingHouse));
+        (int256 baseDelta, int256 quoteDelta,) = vamm.buyBase(10 ether, cost4 * 10 / 4 + 10);
+        assertEq(baseDelta, 4 ether);
+        assertEq(uint256(-quoteDelta), cost4);
+    }
+
+    /// @notice Finding 39: a sell the quote floor clamps needs only the limit price on the base it
+    /// consumed, not the full-order minimum.
+    function test_Finding39_clampedSellScalesMinQuoteOut() public {
+        (, uint256 quote) = getReserves();
+        uint256 snap = vm.snapshotState();
+        vm.prank(address(clearingHouse));
+        (, int256 fullOut,) = vamm.sellBase(10 ether, 0);
+        vm.revertToState(snap);
+
+        // Floor leaves room for about 4 ETH of the 10 ETH sell
+        vm.prank(admin);
+        vamm.setMinReserves(0, quote - uint256(fullOut) * 4 / 10);
+
+        // Limit price 1% under the unclamped average: its full total is more than the clamped fill pays
+        uint256 minOut = uint256(fullOut) * 99 / 100;
+        vm.prank(address(clearingHouse));
+        (int256 baseDelta, int256 quoteDelta,) = vamm.sellBase(10 ether, minOut);
+        assertLt(uint256(-baseDelta), 10 ether, "fill was clamped");
+        assertLt(uint256(quoteDelta), minOut);
+        assertGe(uint256(quoteDelta) * 10 ether, minOut * uint256(-baseDelta), "limit price kept");
+    }
+
+    /// @notice Finding 39: a clamped sell below the trader's limit price still reverts.
+    function test_Finding39_clampedSellBelowLimitPriceReverts() public {
+        (, uint256 quote) = getReserves();
+        uint256 snap = vm.snapshotState();
+        vm.prank(address(clearingHouse));
+        (, int256 fullOut,) = vamm.sellBase(10 ether, 0);
+        vm.revertToState(snap);
+
+        vm.prank(admin);
+        vamm.setMinReserves(0, quote - uint256(fullOut) * 4 / 10);
+
+        // The clamped fill sells ~4 ETH at a better average than the full order; ask for 10% more
+        vm.prank(address(clearingHouse));
+        vm.expectRevert("slippage");
+        vamm.sellBase(10 ether, uint256(fullOut) * 115 / 100);
+    }
 }
