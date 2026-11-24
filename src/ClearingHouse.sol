@@ -778,23 +778,13 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             }
 
             // The penalty is paid from free collateral first, which now holds the closed slice's
-            // released margin. Only the part free collateral cannot cover is taken from the
-            // margin of the size that stays open.
-            uint256 marginApplied;
-            {
-                uint256 balance = ICollateralVault(vault).balanceOf(account, m.quoteToken);
-                uint256 freeValue = balance == 0 ? 0 : _quoteValueX18(m.quoteToken, balance);
-                uint256 reservedForToken = _reservedMarginForToken(account, m.quoteToken);
-                freeValue = freeValue > reservedForToken ? freeValue - reservedForToken : 0;
-                marginApplied = penalty > freeValue ? penalty - freeValue : 0;
-                if (marginApplied > position.margin) marginApplied = position.margin;
-            }
-            if (marginApplied > 0) {
-                position.margin -= marginApplied;
-                _totalReservedMargin[account] = (_totalReservedMargin[account] >= marginApplied)
-                    ? (_totalReservedMargin[account] - marginApplied)
-                    : 0;
-            }
+            // released margin, then from surplus margin on the account's other positions. Only the
+            // part neither covers is taken from the margin of the size that stays open.
+            _delegate(
+                abi.encodeWithSignature(
+                    "freePenaltyCollateral(address,bytes32,address,uint256)", account, marketId, m.quoteToken, penalty
+                )
+            );
 
             // Pay liquidator from collateral, insurance covers shortfall (up to available balance)
             insurancePayout = 0;
@@ -833,13 +823,14 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         }
 
         // A partial liquidation must not leave the remainder with a worse margin ratio than the
-        // position had before (effective margin per unit of size; the index is unchanged). A fill
+        // position had before (effective margin per unit of size; the index is unchanged), with
+        // 1 wei of slack for the rounding of the released slice margin and of unrealized PnL. A fill
         // capped by the fill bound or clamped by the vAMM reserve floor is exempt, so the rest can
         // be liquidated once the mark or reserves allow.
         if (position.size != 0 && !capped && filled == uint256(size)) {
             uint256 absSizeAfter = uint256(position.size > 0 ? position.size : -position.size);
             (int256 effectiveMarginAfter,) = _marginState(account, marketId);
-            if (effectiveMarginAfter * int256(absSizeBefore) < effectiveMarginBefore * int256(absSizeAfter)) {
+            if ((effectiveMarginAfter + 1) * int256(absSizeBefore) < effectiveMarginBefore * int256(absSizeAfter)) {
                 revert MustLiquidateMore();
             }
         }
@@ -1026,9 +1017,10 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         );
     }
 
-    /// @dev Delegatecalls ClearingHouseLogic with `data`, bubbling up any revert.
-    function _delegate(bytes memory data) internal {
-        (bool ok,) = _logic.delegatecall(data);
+    /// @dev Delegatecalls ClearingHouseLogic with `data`, bubbling up any revert; returns its return data.
+    function _delegate(bytes memory data) internal returns (bytes memory ret) {
+        bool ok;
+        (ok, ret) = _logic.delegatecall(data);
         if (!ok) assembly { returndatacopy(0, 0, returndatasize()) revert(0, returndatasize()) }
     }
 
@@ -1129,7 +1121,19 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         }
         uint256 seized = amount <= available ? amount : available;
         if (seized < amount) {
-            seized += _drawSurplusMargin(account, quoteToken, amount - seized, balance - seized);
+            seized += abi.decode(
+                _delegate(
+                    abi.encodeWithSignature(
+                        "drawSurplusMargin(address,address,uint256,uint256,bytes32)",
+                        account,
+                        quoteToken,
+                        amount - seized,
+                        balance - seized,
+                        bytes32(0)
+                    )
+                ),
+                (uint256)
+            );
         }
         actualReceived = seized;
 
@@ -1137,68 +1141,6 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             ICollateralVault(vault).seize(account, recipient, quoteToken, seized);
         }
         shortfall = amount - seized;
-    }
-
-    /// @dev Takes up to `need` token units from margin the account's open positions in `quoteToken` hold
-    ///      above both their maintenance requirement (equity net of funding debt) and their liquidation
-    ///      penalty floor, lowering those margins so reserved margin stays backed by the balance. A
-    ///      market whose index cannot be read keeps its margin instead of reverting the liquidation.
-    function _drawSurplusMargin(address account, address quoteToken, uint256 need, uint256 balanceLeft)
-        internal
-        returns (uint256 drawn)
-    {
-        if (balanceLeft == 0) return 0;
-        if (need > balanceLeft) need = balanceLeft;
-        uint256 reserved = _reservedMarginForToken(account, quoteToken);
-        if (reserved == 0) return 0;
-        uint256 valueX18 = _quoteValueX18(quoteToken, balanceLeft);
-        // A balance worth less than the reserved margin backs each margin only in that ratio.
-        uint256 backedX18 = valueX18 < reserved ? valueX18 : reserved;
-        bytes32[] memory markets = _userActiveMarkets[account];
-        for (uint256 i = 0; i < markets.length && drawn < need; i++) {
-            IMarketRegistry.Market memory mkt = IMarketRegistry(marketRegistry).getMarket(markets[i]);
-            if (mkt.quoteToken != quoteToken || mkt.oracle == address(0)) continue;
-            PositionView storage p = positions[account][markets[i]];
-            if (p.size == 0 || p.margin == 0) continue;
-            uint256 riskPrice;
-            try IOracle(mkt.oracle).getPrice() returns (uint256 price) {
-                riskPrice = price;
-            } catch {
-                continue;
-            }
-            if (riskPrice == 0) continue;
-            MarketRiskParams storage rp = marketRiskParams[markets[i]];
-            uint256 notional = Calculations.mulDivRoundingUp(uint256(p.size > 0 ? p.size : -p.size), riskPrice, 1e18);
-            uint256 penaltyFloor = Calculations.mulDivRoundingUp(notional, rp.liquidationPenaltyBps, BPS_DENOMINATOR);
-            if (rp.penaltyCap > 0 && penaltyFloor > rp.penaltyCap) penaltyFloor = rp.penaltyCap;
-            if (p.margin <= penaltyFloor) continue;
-            uint256 mm = Calculations.mulDivRoundingUp(notional, rp.mmrBps, BPS_DENOMINATOR);
-            uint256 backedMargin = Calculations.mulDiv(p.margin, backedX18, reserved);
-            int256 equity = int256(backedMargin) + _computeUnrealizedPnL(p, riskPrice) - int256(p.fundingDebt);
-            if (equity <= int256(mm)) continue;
-            // Value that can leave: above maintenance, within the backed margin, and leaving the
-            // position at least its penalty floor (taken in nominal margin below).
-            uint256 x = uint256(equity - int256(mm));
-            if (x > backedMargin) x = backedMargin;
-            uint256 wantX18 = Calculations.mulDivRoundingUp(need - drawn, valueX18, balanceLeft);
-            uint256 units;
-            if (x >= wantX18) {
-                x = wantX18;
-                units = need - drawn;
-            } else {
-                units = Calculations.mulDiv(x, balanceLeft, valueX18);
-            }
-            uint256 take = Calculations.mulDivRoundingUp(x, reserved, backedX18);
-            uint256 maxTake = p.margin - penaltyFloor;
-            if (take > maxTake) {
-                // Scale the draw down to what the penalty floor allows.
-                units = Calculations.mulDiv(units, maxTake, take);
-                take = maxTake;
-            }
-            p.margin -= take;
-            _totalReservedMargin[account] = _totalReservedMargin[account] >= take ? _totalReservedMargin[account] - take : 0;
-            drawn += units;
-        }
     }
 
     /// @dev Amount the insurance fund can pay out: its tracked balance, not its raw token balance

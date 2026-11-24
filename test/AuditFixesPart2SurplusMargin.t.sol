@@ -129,4 +129,44 @@ contract AuditFixesPart2SurplusMarginTest is BaseTest {
         clearingHouse.liquidate(alice, ETH_PERP, 10e18, 0);
         assertEq(clearingHouse.getPosition(alice, MARKET_B).margin, marginB, "unreadable market drawn");
     }
+
+    /// @dev Finding 5 (follow-up): a partial liquidation whose slice loss leaves too little released
+    /// margin to pay the penalty used to cut the remaining position's margin before surplus margin on
+    /// the account's other positions was drawn, so the remainder's ratio worsened and the call
+    /// reverted with MustLiquidateMore although B held ample surplus.
+    function test_Finding5_partialLiquidationDrawsSurplusBeforeCuttingRemainder() public {
+        fundAndDeposit(alice, 10_000e18);
+        vm.startPrank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, 10e18, 0);
+        clearingHouse.openPosition(MARKET_B, false, 10e18, 0);
+        clearingHouse.addMargin(MARKET_B, _freeCollateral(alice));
+        vm.stopPrank();
+        assertEq(_freeCollateral(alice), 0, "free collateral left");
+
+        // bob's short brings ETH_PERP's mark to 1,940 and the index follows
+        uint256 target = 1_940e18;
+        fundAndDeposit(bob, 500_000e18);
+        (uint256 x, uint256 y) = getReserves();
+        uint256 xTarget = _sqrtBase((x * y / target) * 1e18);
+        openWithMargin(bob, ETH_PERP, false, uint128(xTarget - x), 0, 300_000e18);
+        setOraclePrice(target);
+        assertTrue(clearingHouse.isLiquidatable(alice, ETH_PERP), "A not liquidatable");
+        assertFalse(clearingHouse.isLiquidatable(alice, MARKET_B), "B liquidatable");
+
+        uint256 marginA = clearingHouse.getPosition(alice, ETH_PERP).margin;
+        uint256 marginB = clearingHouse.getPosition(alice, MARKET_B).margin;
+        uint256 badDebtBefore = clearingHouse.totalBadDebt();
+
+        vm.prank(liquidator);
+        clearingHouse.liquidate(alice, ETH_PERP, 5e18, 0);
+
+        // the requested half was filled, the remainder kept its proportional margin, and B's surplus
+        // paid the part of the penalty the released slice margin could not
+        assertEq(clearingHouse.getPosition(alice, ETH_PERP).size, 5e18, "fill capped or clamped");
+        assertEq(clearingHouse.getPosition(alice, ETH_PERP).margin, marginA - marginA / 2, "remainder margin cut");
+        assertLt(clearingHouse.getPosition(alice, MARKET_B).margin, marginB, "B margin untouched");
+        assertFalse(clearingHouse.isLiquidatable(alice, MARKET_B), "B left liquidatable");
+        assertEq(clearingHouse.totalBadDebt(), badDebtBefore, "penalty written off");
+        assertGe(getCollateralBalance(alice), clearingHouse._totalReservedMargin(alice), "reserved margin unbacked");
+    }
 }

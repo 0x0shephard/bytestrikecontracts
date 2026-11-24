@@ -180,6 +180,43 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
         assertEq(getPosition(alice).size, 0);
     }
 
+    /// @dev Finding 5 (follow-up): when free collateral pays the penalty and the slice's loss stays
+    /// within its margin share, the remainder keeps exactly the starting margin ratio, so the strict
+    /// check was settled by rounding. Here the released slice margin and the remainder's unrealized
+    /// PnL divide exactly while the whole position's unrealized PnL truncates by half a wei,
+    /// so the remainder's ratio compared lower by rounding alone and the call reverted with
+    /// MustLiquidateMore. One wei of slack lets it through.
+    function test_PartialLiquidationRatioCheckToleratesRounding() public {
+        uint128 size = 4.5 ether;
+        uint128 slice = 2.5 ether;
+        fundAndDeposit(alice, 10_000 * USDC_UNIT);
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, size, 0);
+        // margin a multiple of 9, so the slice's share (5/9 of it) divides exactly
+        uint256 m0 = getMargin(alice);
+        uint256 target = 800 ether - (800 ether % 9);
+        vm.prank(alice);
+        clearingHouse.addMargin(ETH_PERP, target - m0);
+        assertEq(getMargin(alice) % 9, 0);
+
+        // index 150e18 + 1 wei under the entry: the unrealized PnL of 2 ETH is exact, of 4.5 ETH it
+        // truncates half a wei
+        uint256 index = getPosition(alice).entryPriceX18 - 150 ether - 1;
+        setOraclePrice(index);
+        _bobMovesMarkTo(index);
+        assertTrue(isLiquidatable(alice));
+        (int256 effBefore, uint256 sizeBefore) = _effAndSize(alice);
+
+        vm.prank(liquidator);
+        clearingHouse.liquidate(alice, ETH_PERP, slice, 0);
+
+        (int256 effAfter, uint256 sizeAfter) = _effAndSize(alice);
+        assertEq(sizeAfter, size - slice);
+        // the ratio is unchanged up to rounding
+        assertLe(effAfter * int256(sizeBefore), effBefore * int256(sizeAfter));
+        assertGe((effAfter + 1) * int256(sizeBefore), effBefore * int256(sizeAfter));
+    }
+
     /// @dev A partial liquidation whose slice loss exceeds the slice's margin would worsen the
     /// remainder's ratio, so a liquidator-chosen partial size below the fill bound still reverts.
     /// A request at or above the bound is capped to it and exempt (findings 1 + 4).

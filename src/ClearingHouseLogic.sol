@@ -148,6 +148,47 @@ contract ClearingHouseLogic {
         emit FundingSurplusSwept(marketId, m.insuranceFund, received);
     }
 
+    /// @notice Takes up to `need` token units of surplus margin from the account's positions in
+    ///         `quoteToken` (except `skipMarket`) into free collateral; see _drawSurplusMargin.
+    /// @dev Delegatecall target of ClearingHouse._collectQuote.
+    function drawSurplusMargin(address account, address quoteToken, uint256 need, uint256 balanceLeft, bytes32 skipMarket)
+        external
+        returns (uint256)
+    {
+        return _drawSurplusMargin(account, quoteToken, need, balanceLeft, skipMarket);
+    }
+
+    /// @notice Makes a liquidation penalty of `penalty` (1e18 quote value) collectable from the account.
+    /// @dev Delegatecall target of ClearingHouse.liquidate, after the trade. Free collateral (which holds
+    ///      the closed slice's released margin) pays first. What it cannot cover is drawn from surplus
+    ///      margin on the account's other positions, and only the rest is cut from the margin of the
+    ///      liquidated position's remaining size, so a partial liquidation's remainder keeps its margin
+    ///      whenever the account holds surplus elsewhere.
+    function freePenaltyCollateral(address account, bytes32 marketId, address quoteToken, uint256 penalty) external {
+        uint256 freeValue = _freeQuoteValue(account, quoteToken);
+        if (penalty > freeValue) {
+            uint256 balance = ICollateralVault(vault).balanceOf(account, quoteToken);
+            uint256 reservedUnits = _notionalToQuoteUnits(_reservedMarginForToken(account, quoteToken), quoteToken);
+            _drawSurplusMargin(
+                account,
+                quoteToken,
+                _notionalToQuoteUnits(penalty - freeValue, quoteToken),
+                balance < reservedUnits ? balance : reservedUnits,
+                marketId
+            );
+            freeValue = _freeQuoteValue(account, quoteToken);
+        }
+        if (penalty > freeValue) _reduceMargin(account, positions[account][marketId], penalty - freeValue);
+    }
+
+    /// @dev Value of the account's quote-token balance above the margin reserved on that token.
+    function _freeQuoteValue(address account, address quoteToken) internal view returns (uint256) {
+        uint256 balance = ICollateralVault(vault).balanceOf(account, quoteToken);
+        uint256 value = balance == 0 ? 0 : _quoteValueX18(quoteToken, balance);
+        uint256 reserved = _reservedMarginForToken(account, quoteToken);
+        return value > reserved ? value - reserved : 0;
+    }
+
     // =========================================================================
     // Core logic (moved from ClearingHouse)
     // =========================================================================
@@ -627,6 +668,72 @@ contract ClearingHouseLogic {
             ICollateralVault(vault).seize(account, recipient, quoteToken, seized);
         }
         shortfall = amount - seized;
+    }
+
+    /// @dev Takes up to `need` token units from margin the account's open positions in `quoteToken` hold
+    ///      above both their maintenance requirement (equity net of funding debt) and their liquidation
+    ///      penalty floor, lowering those margins so reserved margin stays backed by the balance. A
+    ///      market whose index cannot be read keeps its margin instead of reverting the liquidation.
+    ///      `skipMarket` (the market being liquidated, or 0) is never drawn from.
+    function _drawSurplusMargin(
+        address account,
+        address quoteToken,
+        uint256 need,
+        uint256 balanceLeft,
+        bytes32 skipMarket
+    ) internal returns (uint256 drawn) {
+        if (balanceLeft == 0) return 0;
+        if (need > balanceLeft) need = balanceLeft;
+        uint256 reserved = _reservedMarginForToken(account, quoteToken);
+        if (reserved == 0) return 0;
+        uint256 valueX18 = _quoteValueX18(quoteToken, balanceLeft);
+        // A balance worth less than the reserved margin backs each margin only in that ratio.
+        uint256 backedX18 = valueX18 < reserved ? valueX18 : reserved;
+        bytes32[] memory markets = _userActiveMarkets[account];
+        for (uint256 i = 0; i < markets.length && drawn < need; i++) {
+            IMarketRegistry.Market memory mkt = IMarketRegistry(marketRegistry).getMarket(markets[i]);
+            if (markets[i] == skipMarket || mkt.quoteToken != quoteToken || mkt.oracle == address(0)) continue;
+            IClearingHouse.PositionView storage p = positions[account][markets[i]];
+            if (p.size == 0 || p.margin == 0) continue;
+            uint256 riskPrice;
+            try IOracle(mkt.oracle).getPrice() returns (uint256 price) {
+                riskPrice = price;
+            } catch {
+                continue;
+            }
+            if (riskPrice == 0) continue;
+            IClearingHouse.MarketRiskParams storage rp = marketRiskParams[markets[i]];
+            uint256 notional = Calculations.mulDivRoundingUp(uint256(p.size > 0 ? p.size : -p.size), riskPrice, 1e18);
+            uint256 penaltyFloor = Calculations.mulDivRoundingUp(notional, rp.liquidationPenaltyBps, BPS_DENOMINATOR);
+            if (rp.penaltyCap > 0 && penaltyFloor > rp.penaltyCap) penaltyFloor = rp.penaltyCap;
+            if (p.margin <= penaltyFloor) continue;
+            uint256 mm = Calculations.mulDivRoundingUp(notional, rp.mmrBps, BPS_DENOMINATOR);
+            uint256 backedMargin = Calculations.mulDiv(p.margin, backedX18, reserved);
+            int256 equity = int256(backedMargin) + _computeUnrealizedPnL(p, riskPrice) - int256(p.fundingDebt);
+            if (equity <= int256(mm)) continue;
+            // Value that can leave: above maintenance, within the backed margin, and leaving the
+            // position at least its penalty floor (taken in nominal margin below).
+            uint256 x = uint256(equity - int256(mm));
+            if (x > backedMargin) x = backedMargin;
+            uint256 wantX18 = Calculations.mulDivRoundingUp(need - drawn, valueX18, balanceLeft);
+            uint256 units;
+            if (x >= wantX18) {
+                x = wantX18;
+                units = need - drawn;
+            } else {
+                units = Calculations.mulDiv(x, balanceLeft, valueX18);
+            }
+            uint256 take = Calculations.mulDivRoundingUp(x, reserved, backedX18);
+            uint256 maxTake = p.margin - penaltyFloor;
+            if (take > maxTake) {
+                // Scale the draw down to what the penalty floor allows.
+                units = Calculations.mulDiv(units, maxTake, take);
+                take = maxTake;
+            }
+            p.margin -= take;
+            _totalReservedMargin[account] = _totalReservedMargin[account] >= take ? _totalReservedMargin[account] - take : 0;
+            drawn += units;
+        }
     }
 
     function _reservedMarginForToken(address account, address quoteToken) internal view returns (uint256 reserved) {
