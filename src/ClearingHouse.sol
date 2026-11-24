@@ -342,28 +342,26 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         return effectiveMargin < int256(maintenanceMargin) || _carriesFundingDebt(account, marketId);
     }
 
-    /// @dev True if settling funding now would leave the position with funding debt: its pending
-    ///      funding net of debt already carried is a debit, and the same net summed over the account's
-    ///      markets on this quote token is a debit larger than the vault balance (converted at the fixed
-    ///      PnL rate, rounded up, as settlement does). Settlement retries indebted markets after all
-    ///      credits land, so the account-wide sum decides whether debt survives.
+    /// @dev True if settling funding now would leave the position with funding debt: each funding
+    ///      debit is paid only up to the paying position's margin plus the account's free collateral
+    ///      value, so funding above that is carried as debt. Replays the account's settlement in
+    ///      ClearingHouseLogic.carriesFundingDebt (a delegatecall inside a static self-call).
     function _carriesFundingDebt(address account, bytes32 marketId) internal view returns (bool) {
-        if (_getPendingFunding(account, marketId) - int256(positions[account][marketId].fundingDebt) >= 0) {
-            return false;
-        }
-        address quoteToken = IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken;
-        int256 net;
-        bytes32[] memory markets = _userActiveMarkets[account];
-        for (uint256 i = 0; i < markets.length; i++) {
-            if (IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken == quoteToken) {
-                net += _getPendingFunding(account, markets[i]) - int256(positions[account][markets[i]].fundingDebt);
-            }
-        }
-        if (net >= 0) return false;
-        uint256 owed = Calculations.mulDivRoundingUp(
-            uint256(-net), ICollateralVault(vault).getConfig(quoteToken).baseUnit, 1e18
+        (bool ok, bytes memory ret) = address(this).staticcall(
+            abi.encodeCall(
+                this.delegateView,
+                (abi.encodeWithSignature("carriesFundingDebt(address,bytes32)", account, marketId))
+            )
         );
-        return owed > ICollateralVault(vault).balanceOf(account, quoteToken);
+        if (!ok) assembly { revert(add(ret, 32), mload(ret)) }
+        return abi.decode(abi.decode(ret, (bytes)), (bool));
+    }
+
+    /// @notice Runs a ClearingHouseLogic view against this contract's storage.
+    /// @dev Self-call only: views reach it through a staticcall, so the logic cannot change state.
+    function delegateView(bytes calldata data) external returns (bytes memory) {
+        if (msg.sender != address(this)) revert NotSelf();
+        return _delegate(data);
     }
 
     /// @dev Effective margin (margin valued at the backing collateral, plus pending funding and

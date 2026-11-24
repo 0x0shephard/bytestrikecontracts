@@ -182,7 +182,10 @@ contract AuditFixesPart2FundingDebtTest is BaseTest {
         return ((vammB.cumulativeLongReceivePerUnitX18() - pos.lastFundingReceiveIndex) * uint256(pos.size)) / 1e18;
     }
 
-    function test_Finding10_creditInOtherMarketPaysDebitWhateverTheOrder() public {
+    /// @dev Since finding 61 a credit in market B is reserved as B's margin, and A's debit is paid
+    /// only from A's margin and free collateral, so the credit no longer pays A's debit. What A cannot
+    /// pay is carried as debt (A becomes liquidatable), and nothing is written off in either order.
+    function test_Finding10_creditInOtherMarketLeavesNoWriteOff() public {
         _addMarketB();
         _poke(vamm);
         _poke(vammB);
@@ -208,7 +211,9 @@ contract AuditFixesPart2FundingDebtTest is BaseTest {
 
         assertEq(clearingHouse.totalBadDebt(), 0, "bad debt booked");
         assertEq(_trackedInsurance(), insuranceBefore, "insurance drawn");
-        assertEq(clearingHouse.getPosition(alice, ETH_PERP).fundingDebt, 0, "debt left after credit");
-        assertEq(getCollateralBalance(alice), bal + credit - owed, "final balance");
+        uint256 debt = clearingHouse.getPosition(alice, ETH_PERP).fundingDebt;
+        assertGt(debt, 0, "debit above the payer's margin and free collateral not carried");
+        assertEq(getCollateralBalance(alice), bal + credit - (owed - debt), "final balance");
+        assertTrue(isLiquidatable(alice), "payer with debt not liquidatable");
     }
 }

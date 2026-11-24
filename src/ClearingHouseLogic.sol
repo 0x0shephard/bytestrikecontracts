@@ -181,6 +181,94 @@ contract ClearingHouseLogic {
         if (penalty > freeValue) _reduceMargin(account, positions[account][marketId], penalty - freeValue);
     }
 
+    /// @notice True if settling the account's funding now would leave the position in `marketId`
+    ///         carrying funding debt.
+    /// @dev View behind ClearingHouse._isLiquidatable (reached through ClearingHouse.delegateView).
+    ///      Replays settleAccountFunding over the account's markets on the same quote token, in the
+    ///      same order and with the same rules: a credit adds its tokens to the balance and their value
+    ///      to that market's margin; a debit (pending funding net of carried debt) is paid up to the
+    ///      paying market's margin plus the free collateral value and the balance, the rest staying as
+    ///      debt; then markets left in debt are retried. Pending funding is read from the vAMMs'
+    ///      current indices.
+    function carriesFundingDebt(address account, bytes32 marketId) external view returns (bool) {
+        if (_pendingFunding(account, marketId) - int256(positions[account][marketId].fundingDebt) >= 0) {
+            return false;
+        }
+        address quote = IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken;
+        // Funding is not settled while the quote oracle is down: the carried debt stays as it is.
+        if (!_quoteOracleLive(quote)) return positions[account][marketId].fundingDebt != 0;
+
+        bytes32[] memory markets = _userActiveMarkets[account];
+        uint256 n = markets.length;
+        int256[] memory net = new int256[](n);
+        uint256[] memory margin = new uint256[](n);
+        bool[] memory sameQuote = new bool[](n);
+        uint256 target;
+        for (uint256 i = 0; i < n; i++) {
+            if (IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken != quote) continue;
+            sameQuote[i] = true;
+            IClearingHouse.PositionView storage p = positions[account][markets[i]];
+            net[i] = _pendingFunding(account, markets[i]) - int256(p.fundingDebt);
+            margin[i] = p.margin;
+            if (markets[i] == marketId) target = i;
+        }
+
+        uint256 bal = ICollateralVault(vault).balanceOf(account, quote);
+        uint256 reserved = _reservedMarginForToken(account, quote);
+        uint256 baseUnit = ICollateralVault(vault).getConfig(quote).baseUnit;
+        // Pass 0 settles every market; pass 1 retries those left in debt.
+        for (uint256 pass = 0; pass < 2; pass++) {
+            for (uint256 i = 0; i < n; i++) {
+                int256 x = net[i];
+                if (!sameQuote[i] || x == 0 || (pass == 1 && x > 0)) continue;
+                if (x > 0) {
+                    uint256 units = Calculations.mulDiv(uint256(x), baseUnit, 1e18);
+                    uint256 v = _quoteValueX18(quote, units);
+                    bal += units;
+                    margin[i] += v;
+                    reserved += v;
+                    net[i] = 0;
+                } else {
+                    uint256 debit = uint256(-x);
+                    uint256 value = bal == 0 ? 0 : _quoteValueX18(quote, bal);
+                    uint256 cap = margin[i] + (value > reserved ? value - reserved : 0);
+                    uint256 paidX18 = debit < cap ? debit : cap;
+                    uint256 units = Calculations.mulDivRoundingUp(paidX18, baseUnit, 1e18);
+                    if (units > bal) {
+                        units = bal;
+                        paidX18 = Calculations.mulDiv(bal, 1e18, baseUnit);
+                    }
+                    bal -= units;
+                    uint256 cut = paidX18 < margin[i] ? paidX18 : margin[i];
+                    margin[i] -= cut;
+                    reserved = reserved > cut ? reserved - cut : 0;
+                    net[i] = -int256(debit - paidX18);
+                }
+            }
+        }
+        return net[target] < 0;
+    }
+
+    /// @dev Funding not yet settled for a position, from the vAMM's current (accrued) indices.
+    function _pendingFunding(address account, bytes32 marketId) internal view returns (int256) {
+        IClearingHouse.PositionView storage position = positions[account][marketId];
+        if (position.size == 0) return 0;
+        IVAMM vamm = IVAMM(IMarketRegistry(marketRegistry).getMarket(marketId).vamm);
+        uint256 payDelta;
+        uint256 receiveDelta;
+        if (position.size > 0) {
+            payDelta = vamm.currentCumulativeLongPayPerUnitX18() - position.lastFundingPayIndex;
+            receiveDelta = vamm.currentCumulativeLongReceivePerUnitX18() - position.lastFundingReceiveIndex;
+        } else {
+            payDelta = vamm.currentCumulativeShortPayPerUnitX18() - position.lastFundingPayIndex;
+            receiveDelta = vamm.currentCumulativeShortReceivePerUnitX18() - position.lastFundingReceiveIndex;
+        }
+        uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
+        return receiveDelta >= payDelta
+            ? int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18))
+            : -int256(Calculations.mulDiv(payDelta - receiveDelta, absSize, 1e18));
+    }
+
     /// @dev Value of the account's quote-token balance above the margin reserved on that token.
     function _freeQuoteValue(address account, address quoteToken) internal view returns (uint256) {
         uint256 balance = ICollateralVault(vault).balanceOf(account, quoteToken);
@@ -267,7 +355,7 @@ contract ClearingHouseLogic {
         uint256 creditValue;
         if (realized != 0) {
             // Only a liquidation may realize a loss beyond the account's vault balance.
-            uint256 credited = _settlePnLInVault(account, marketId, realized, isLiquidation, 0);
+            uint256 credited = _settlePnLInVault(account, marketId, realized, isLiquidation, 0, type(uint256).max);
             if (realized > 0) creditValue = _quoteValueX18(m.quoteToken, credited);
         }
 
@@ -483,11 +571,11 @@ contract ClearingHouseLogic {
                 // Reserved at the haircut value of the tokens credited, as the margin checks value
                 // the balance, so a credit never leaves the account's other margins unbacked.
                 uint256 creditValue =
-                    _quoteValueX18(m.quoteToken, _settlePnLInVault(account, marketId, net, true, 0));
+                    _quoteValueX18(m.quoteToken, _settlePnLInVault(account, marketId, net, true, 0, 0));
                 position.margin += creditValue;
                 _totalReservedMargin[account] += creditValue;
             } else if (net < 0) {
-                (uint256 paidX18, uint256 unpaidX18) = _chargeFunding(account, m.quoteToken, uint256(-net));
+                (uint256 paidX18, uint256 unpaidX18) = _chargeFunding(account, position, m.quoteToken, uint256(-net));
                 position.fundingDebt = unpaidX18;
                 // Only what the vault actually paid leaves the margin; the unpaid part is the debt.
                 _reduceMargin(account, position, paidX18);
@@ -531,21 +619,32 @@ contract ClearingHouseLogic {
     }
 
     /// @dev Debits up to `debitX18` of funding (converted at the fixed PnL rate, rounded up) from the
-    /// account's vault balance. Returns the value paid and the value the balance could not cover.
-    function _chargeFunding(address account, address quoteToken, uint256 debitX18)
-        internal
-        returns (uint256 paidX18, uint256 unpaidX18)
-    {
-        uint256 owed = _pnlToQuoteUnits(debitX18, quoteToken, true);
+    /// account's vault balance, but never more than the paying position's margin plus the account's
+    /// free collateral value (_fundingCapX18), so one position's funding never takes the collateral
+    /// that backs the account's other positions. Returns the value paid and the value left unpaid,
+    /// which the caller carries as funding debt.
+    function _chargeFunding(
+        address account,
+        IClearingHouse.PositionView storage position,
+        address quoteToken,
+        uint256 debitX18
+    ) internal returns (uint256 paidX18, uint256 unpaidX18) {
+        uint256 cap = _fundingCapX18(account, position.margin, quoteToken);
+        paidX18 = debitX18 < cap ? debitX18 : cap;
+        uint256 paid = _pnlToQuoteUnits(paidX18, quoteToken, true);
         uint256 available = ICollateralVault(vault).balanceOf(account, quoteToken);
-        uint256 paid = owed;
-        paidX18 = debitX18;
-        if (owed > available) {
+        if (paid > available) {
             paid = available;
             paidX18 = Calculations.mulDiv(available, 1e18, ICollateralVault(vault).getConfig(quoteToken).baseUnit);
-            unpaidX18 = debitX18 - paidX18;
         }
+        unpaidX18 = debitX18 - paidX18;
         if (paid > 0) ICollateralVault(vault).settlePnL(account, quoteToken, -int256(paid));
+    }
+
+    /// @dev Most funding a position with `margin` can be charged now: its margin plus the value of
+    /// the account's collateral that no position reserves.
+    function _fundingCapX18(address account, uint256 margin, address quoteToken) internal view returns (uint256) {
+        return margin + _freeQuoteValue(account, quoteToken);
     }
 
     /// @dev Lowers a position's margin and the account's reserved margin by `amount`, floored at zero.
@@ -571,9 +670,12 @@ contract ClearingHouseLogic {
         position.fundingDebt = 0;
         position.fundingDebtSurplus = 0;
         if (closesSide) {
-            _settlePnLInVault(account, marketId, -int256(debt), isLiquidation, surplusX18);
+            // Paid from the position's margin and the free collateral only (see _chargeFunding); in a
+            // liquidation the rest is written off, a voluntary trade reverts.
+            uint256 capUnits = _pnlToQuoteUnits(_fundingCapX18(account, position.margin, quoteToken), quoteToken, true);
+            _settlePnLInVault(account, marketId, -int256(debt), isLiquidation, surplusX18, capUnits);
         } else {
-            (uint256 paidX18, uint256 unpaidX18) = _chargeFunding(account, quoteToken, debt);
+            (uint256 paidX18, uint256 unpaidX18) = _chargeFunding(account, position, quoteToken, debt);
             position.fundingDebt = unpaidX18;
             _reduceMargin(account, position, paidX18);
             _bookFundingSurplus(marketId, quoteToken, _carryDebtSurplus(position, surplusX18, unpaidX18));
@@ -605,13 +707,16 @@ contract ClearingHouseLogic {
     /// @param surplusX18 Part of a loss that is funding surplus owed to the insurance fund (funding
     /// debt's carried share). It is the last part paid: what the balance pays of it is booked to
     /// fundingSurplus, and a written-off remainder of it is dropped instead of drawn from the fund.
+    /// @param maxLossUnits Most quote-token units a loss may take from the balance; beyond it the loss
+    /// is treated as exceeding the balance. Unused for a profit.
     /// @return credited Quote-token units credited for a profit (0 for a loss).
     function _settlePnLInVault(
         address account,
         bytes32 marketId,
         int256 realized,
         bool allowBadDebt,
-        uint256 surplusX18
+        uint256 surplusX18,
+        uint256 maxLossUnits
     ) internal returns (uint256 credited) {
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
 
@@ -625,6 +730,7 @@ contract ClearingHouseLogic {
             uint256 surplusUnits = _pnlToQuoteUnits(surplusX18, m.quoteToken, false);
             if (lossInQuote > 0) {
                 uint256 available = ICollateralVault(vault).balanceOf(account, m.quoteToken);
+                if (available > maxLossUnits) available = maxLossUnits;
                 if (lossInQuote > available) {
                     if (!allowBadDebt) revert InsufficientQuoteCollateral();
                     uint256 badDebt = lossInQuote - available;
