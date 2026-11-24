@@ -129,7 +129,7 @@ contract AuditFixesPart2FundingTest is BaseTest {
         _warpHours(1);
         MockOracle newOracle = new MockOracle(1960e18, 18);
         vm.prank(admin);
-        vamm.setOracle(address(newOracle));
+        marketRegistry.setOracle(ETH_PERP, address(newOracle));
 
         assertEq(vamm.cumulativeLongPayPerUnitX18(), payBefore, "outage time charged on setOracle");
         assertEq(vamm.lastFundingTimestamp(), _now, "clock not advanced");

@@ -106,7 +106,11 @@ contract DeployH100Market is Script {
         vAMM h100Vamm = vAMM(address(h100VammProxy));
         console.log("H100-PERP vAMM:      ", address(h100Vamm));
 
-        // 5. Register H100-PERP in MarketRegistry
+        // 5. Wire vAMM to MarketRegistry (enables pauseSwaps and setOracle; addMarket requires it)
+        h100Vamm.setRegistry(address(REGISTRY));
+        console.log("vAMM registry wired");
+
+        // Register H100-PERP in MarketRegistry
         REGISTRY.addMarket(IMarketRegistry.AddMarketConfig({
             marketId:      H100_PERP,
             vamm:          address(h100Vamm),
@@ -135,10 +139,6 @@ contract DeployH100Market is Script {
         // Liquidation price band (pre-trade mark vs index); must satisfy band + penalty <= MMR.
         CH.setLiquidationPriceBand(H100_PERP, LIQ_PRICE_BAND_BPS);
         console.log("Liquidation price band: 3%");
-
-        // 7. Wire vAMM to MarketRegistry (enables pauseSwaps)
-        h100Vamm.setRegistry(address(REGISTRY));
-        console.log("vAMM registry wired");
 
         vm.stopBroadcast();
 

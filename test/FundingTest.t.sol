@@ -574,22 +574,23 @@ contract FundingTest is BaseTest {
         fundAndDeposit(alice, depositAmount);
         openLongPosition(alice, ethQty(5), 0);
 
-        // Deploy a broken oracle that always reverts
-        MockOracle brokenOracle = new MockOracle(0, 18);
-
-        // Set the broken oracle (setOracle will try to fetch price but it returns 0,
-        // so cache keeps old value)
+        // Move the market to a new oracle (through the registry, which also moves the vAMM's funding
+        // oracle and requires a live price), then break it.
+        MockOracle newOracle = new MockOracle(INITIAL_ETH_PRICE, 18);
         vm.prank(admin);
-        vamm.setOracle(address(brokenOracle));
+        marketRegistry.setOracle(ETH_PERP, address(newOracle));
+        newOracle.setPrice(0);
+        uint256 cached = vamm.cachedIndexPrice();
 
-        // Trades should still succeed even with broken oracle
-        // because _accrueFunding uses cached price, not a live oracle call
+        // Swaps still succeed with the oracle broken, because _accrueFunding uses the cached price,
+        // not a live oracle call
         skipTime(10 minutes);
 
-        // These should not revert
-        fundAndDeposit(bob, depositAmount);
-        openLongPosition(bob, ethQty(1), 0);
-        openShortPosition(bob, ethQty(1), 0);
+        vm.startPrank(address(clearingHouse));
+        vamm.buyBase(uint128(ethQty(1)), 0);
+        vamm.sellBase(uint128(ethQty(1)), 0);
+        vm.stopPrank();
+        assertEq(vamm.cachedIndexPrice(), cached, "swap must not touch the oracle cache");
     }
 
     function test_ContinuousAccrual_FundingFrozenDuringPause() public {
@@ -656,9 +657,9 @@ contract FundingTest is BaseTest {
         // Deploy new oracle with different price
         MockOracle newOracle = new MockOracle(2500 * PRICE_PRECISION, 18);
 
-        // setOracle should flush funding at old price, then update cache
+        // setOracle (through the registry) should flush funding at old price, then update cache
         vm.prank(admin);
-        vamm.setOracle(address(newOracle));
+        marketRegistry.setOracle(ETH_PERP, address(newOracle));
 
         uint256 fundingAfter = getCumulativeFunding();
         uint256 cachedAfter = vamm.cachedIndexPrice();

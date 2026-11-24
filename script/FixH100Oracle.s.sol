@@ -4,10 +4,12 @@ pragma solidity 0.8.28;
 import "forge-std/Script.sol";
 import "../src/Oracle/MultiAssetOracleAdapter.sol";
 import "../src/vAMM.sol";
+import "../src/MarketRegistry.sol";
 
 /**
  * @title FixH100Oracle
- * @notice Deploys the missing H100 oracle adapter and updates the H100 vAMM to use it
+ * @notice Deploys the missing H100 oracle adapter and moves the H100 market (risk and vAMM funding) to it
+ * @dev MARKET_REGISTRY and MARKET_ID (bytes32) name the market whose vAMM is H100_VAMM.
  *
  * Run with:
  * forge script script/FixH100Oracle.s.sol:FixH100Oracle --rpc-url $SEPOLIA_RPC_URL --broadcast -vvvv
@@ -42,9 +44,12 @@ contract FixH100Oracle is Script {
         console.log("H100 Oracle Adapter deployed at:", address(h100Adapter));
         console.log("");
 
-        // Update H100 vAMM to use new oracle
-        console.log("Step 2: Updating H100 vAMM oracle...");
-        vAMM(H100_VAMM).setOracle(address(h100Adapter));
+        // Move the H100 market (registry and vAMM) to the new oracle
+        console.log("Step 2: Updating H100 market oracle...");
+        MarketRegistry registry = MarketRegistry(vm.envAddress("MARKET_REGISTRY"));
+        bytes32 marketId = vm.envBytes32("MARKET_ID");
+        require(registry.getMarket(marketId).vamm == H100_VAMM, "market is not the H100 vAMM");
+        registry.setOracle(marketId, address(h100Adapter));
         console.log("H100 vAMM oracle updated to:", address(h100Adapter));
         console.log("");
 

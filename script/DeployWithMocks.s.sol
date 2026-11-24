@@ -198,6 +198,7 @@ contract DeployWithMocks is Script {
             feeRouter: address(feeRouter),
             insuranceFund: address(insuranceFund)
         });
+        vamm.setRegistry(address(marketRegistry)); // addMarket requires the vAMM to name the registry
         marketRegistry.addMarket(marketConfig);
         console.log("ETH-PERP market registered");
         console.log("");

@@ -3,15 +3,18 @@ pragma solidity 0.8.28;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
+import {IMarketRegistry} from "../src/Interfaces/IMarketRegistry.sol";
+import {MarketRegistry} from "../src/MarketRegistry.sol";
 
 interface IVAMM {
-    function setOracle(address newOracle) external;
     function oracle() external view returns (address);
     function owner() external view returns (address);
 }
 
 /// @title UpdateVAMMOracle
-/// @notice Update vAMM to point to the correct Oracle
+/// @notice Point a market (its risk oracle and its vAMM's funding oracle) to the correct Oracle.
+/// @dev The vAMM's oracle can only be moved through MarketRegistry.setOracle. MARKET_REGISTRY and
+///      MARKET_ID (bytes32) name the market whose vAMM is vammAddress.
 contract UpdateVAMMOracle is Script {
     
     function run() external {
@@ -33,8 +36,12 @@ contract UpdateVAMMOracle is Script {
         address currentOracle = vamm.oracle();
         console.log("Current Oracle:", currentOracle);
         
-        // Update to new oracle
-        vamm.setOracle(newOracleAddress);
+        // Update to new oracle through the registry
+        MarketRegistry registry = MarketRegistry(vm.envAddress("MARKET_REGISTRY"));
+        bytes32 marketId = vm.envBytes32("MARKET_ID");
+        IMarketRegistry.Market memory market = registry.getMarket(marketId);
+        require(market.vamm == vammAddress, "market is not this vAMM");
+        registry.setOracle(marketId, newOracleAddress);
         console.log("");
         console.log("Oracle updated successfully!");
         

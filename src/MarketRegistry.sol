@@ -41,12 +41,17 @@ contract MarketRegistry is IMarketRegistry, AccessControl {
 
 
     /// @notice Register a new perpetual market with its vAMM, oracle, fee router, insurance fund and metadata.
+    /// @dev The vAMM must already name this registry (vAMM.setRegistry), and its funding oracle is set to
+    ///      `config.oracle` if it differs, so risk and funding read the same index from the start.
     /// @param config Packed market configuration including routing and metadata.
     function addMarket(AddMarketConfig calldata config) external override onlyAllowed {
         // Uniqueness and basic sanity checks
         Market storage market = markets[config.marketId];
         _validateConfig(config, market);
         _storeMarket(config, market);
+        IVAMM vamm = IVAMM(config.vamm);
+        require(vamm.registry() == address(this), "vAMM registry mismatch");
+        if (vamm.oracle() != config.oracle) vamm.setOracle(config.oracle);
         emit MarketAdded(config.marketId, config.vamm);
     }
 
@@ -103,6 +108,8 @@ contract MarketRegistry is IMarketRegistry, AccessControl {
 
     /// @notice Update the oracle address for an existing market.
     /// @dev Only callable by MARKET_ADMIN or DEFAULT_ADMIN. Use when migrating to upgraded oracle.
+    /// Moves both the risk oracle and the vAMM's funding oracle (funding accrued so far is flushed at
+    /// the old index). Reverts unless the new oracle already reports a non-zero price.
     /// WARNING: The new oracle price takes effect immediately for all risk calculations
     /// (margin checks, liquidation eligibility). Positions healthy under the old oracle
     /// may become instantly liquidatable if the new oracle returns a different price.
@@ -116,6 +123,7 @@ contract MarketRegistry is IMarketRegistry, AccessControl {
         
         address oldOracle = market.oracle;
         market.oracle = newOracle;
+        IVAMM(market.vamm).setOracle(newOracle);
         emit OracleUpdated(marketId, oldOracle, newOracle);
     }
 

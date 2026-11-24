@@ -572,6 +572,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 			// Index outage (revert or zero): advance the clock without accruing so
 			// outage time is never charged to payers.
 			lastFundingTimestamp = uint64(block.timestamp);
+			emit FundingSkipped(uint64(block.timestamp));
 		}
 
 		// Derive the signed funding rate delta from the long pay index change
@@ -622,15 +623,18 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	}
 
 	/// @notice Sets the oracle used to retrieve index prices for funding calculations.
-	/// @dev Flushes pending funding at the old oracle price, then refreshes the cache with the new oracle.
-	/// @param newOracle Address of the oracle contract; must not be zero.
-	function setOracle(address newOracle) external onlyOwner {
+	/// @dev Registry-only: MarketRegistry.setOracle (and addMarket) move the market's risk oracle and
+	///      this funding oracle in one call, so the two never split. Flushes pending funding at the old
+	///      oracle price, then seeds the cache from the new oracle, which must report a price.
+	/// @param newOracle Address of the oracle contract; must not be zero and must return a non-zero price.
+	function setOracle(address newOracle) external {
+		require(msg.sender == registry, "Not registry");
 		require(newOracle != address(0), "oracle=0");
 		_pokeFundingInternal(); // Flush funding at old oracle price; skipped (clock advanced) while it is down
+		uint256 price = IOracle(newOracle).getPrice();
+		require(price > 0, "oracle price=0");
 		oracle = newOracle;
-		try IOracle(newOracle).getPrice() returns (uint256 price) {
-			if (price > 0) _cachedIndexPriceX18 = price;
-		} catch {}
+		_cachedIndexPriceX18 = price;
 		emit OracleChanged(newOracle);
 	}
 

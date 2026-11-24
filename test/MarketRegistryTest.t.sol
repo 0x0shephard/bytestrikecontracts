@@ -3,6 +3,9 @@ pragma solidity 0.8.28;
 
 import {BaseTest} from "./BaseTest.sol";
 import {IMarketRegistry} from "../src/Interfaces/IMarketRegistry.sol";
+import {MockOracle} from "./mocks/MockOracle.sol";
+import {vAMM} from "../src/vAMM.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @title MarketRegistryTest
 /// @notice Comprehensive tests for MarketRegistry
@@ -15,8 +18,17 @@ contract MarketRegistryTest is BaseTest {
     function setUp() public override {
         super.setUp();
 
-        newVamm = makeAddr("newVamm");
-        newOracle = makeAddr("newOracle");
+        // addMarket requires a vAMM that names this registry, and points its funding oracle at the
+        // market's oracle, which must report a price.
+        newOracle = address(new MockOracle(50_000e18, 18));
+        vm.startPrank(admin);
+        bytes memory init = abi.encodeCall(
+            vAMM.initialize,
+            (address(clearingHouse), address(oracle), 50_000e18, 1_000e18, 1e24, 0, 100, 1e18)
+        );
+        newVamm = address(new ERC1967Proxy(address(new vAMM()), init));
+        vAMM(newVamm).setRegistry(address(marketRegistry));
+        vm.stopPrank();
     }
 
     // ============ Add Market Tests ============

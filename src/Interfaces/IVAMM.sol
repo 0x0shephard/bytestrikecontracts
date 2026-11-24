@@ -97,4 +97,13 @@ interface IVAMM {
 
     /// @notice Optional trading pause (e.g., after lastTradeTimestamp for dated futures). Closing-only is enforced by CH.
     function pauseSwaps(bool paused) external;
+
+    /// @notice Registry-only: moves the funding index oracle (MarketRegistry.setOracle / addMarket).
+    function setOracle(address newOracle) external;
+
+    /// @notice Index oracle read for funding.
+    function oracle() external view returns (address);
+
+    /// @notice Market registry allowed to pause swaps and set the oracle.
+    function registry() external view returns (address);
 }

@@ -424,7 +424,9 @@ contract ClearingHouseLogic {
         // Funding only accrues while it can be settled in the quote token. If the quote oracle is
         // unavailable (stale round, sequencer down or in grace period), advance the funding clock
         // without accruing so payers are not charged for time in which they cannot act.
-        if (!_quoteOracleLive(m.quoteToken)) {
+        // The same holds while the market's index oracle (the risk price) is down, since positions can
+        // then be neither closed nor liquidated.
+        if (!_quoteOracleLive(m.quoteToken) || !_indexOracleLive(m.oracle)) {
             vamm.skipFunding();
             return;
         }
@@ -793,6 +795,16 @@ contract ClearingHouseLogic {
     function _quoteOracleLive(address quoteToken) internal view returns (bool) {
         ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
         try IOracle(ICollateralVault(vault).oracle()).getPrice(cfg.oracleSymbol) returns (uint256 priceX18) {
+            return priceX18 > 0;
+        } catch {
+            return false;
+        }
+    }
+
+    /// @dev True when the market's index oracle is set and returns a non-zero price.
+    function _indexOracleLive(address oracle) internal view returns (bool) {
+        if (oracle == address(0)) return false;
+        try IOracle(oracle).getPrice() returns (uint256 priceX18) {
             return priceX18 > 0;
         } catch {
             return false;

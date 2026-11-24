@@ -136,7 +136,9 @@ contract SetupH100Live is Script {
         vAMM h100Vamm = vAMM(address(vammProxy));
         console.log("H100-PERP-LIVE vAMM deployed:", address(h100Vamm));
 
-        // ── 8. Register H100-PERP-LIVE market ────────────────────────────────
+        // ── 8. Wire vAMM to registry (addMarket requires it) and register H100-PERP-LIVE ──
+        h100Vamm.setRegistry(REGISTRY);
+        console.log("vAMM registry wired");
         MarketRegistry(REGISTRY).addMarket(IMarketRegistry.AddMarketConfig({
             marketId:      H100_PERP_LIVE,
             vamm:          address(h100Vamm),
@@ -163,10 +165,6 @@ contract SetupH100Live is Script {
         console.log("Risk params set: IMR=10% MMR=5%");
         ClearingHouse(payable(CH)).setLiquidationPriceBand(H100_PERP_LIVE, LIQ_PRICE_BAND_BPS);
         console.log("Liquidation price band: 3%");
-
-        // ── 10. Wire vAMM to registry ────────────────────────────────────────
-        h100Vamm.setRegistry(REGISTRY);
-        console.log("vAMM registry wired");
 
         // ── 11. Approve vault and deposit collateral ─────────────────────────
         IERC20(USDC_LIVE).approve(VAULT, DEPOSIT_AMOUNT);

@@ -211,6 +211,10 @@ contract DeployBytestrike_BattleChain is BCScript {
         console.log("CollateralVault wired and USDC registered");
 
         // ===== 12. Register CU-PERP market =====
+        // registry is address(0) after initialize; addMarket requires the vAMM to name the registry,
+        // which also lets it call pauseSwaps and setOracle.
+        vamm.setRegistry(address(marketRegistry));
+        console.log("vAMM registry set to MarketRegistry");
         marketRegistry.addMarket(IMarketRegistry.AddMarketConfig({
             marketId: CU_PERP,
             vamm: address(vamm),
@@ -244,11 +248,6 @@ contract DeployBytestrike_BattleChain is BCScript {
         marketRegistry.grantRole(marketRegistry.PAUSE_GUARDIAN_ROLE(), deployer);
         marketRegistry.grantRole(marketRegistry.MARKET_ADMIN_ROLE(), deployer);
         console.log("MarketRegistry roles granted to deployer");
-
-        // ===== 15. Wire vAMM registry =====
-        // registry is address(0) after initialize; MarketRegistry cannot call pauseSwaps without this.
-        vamm.setRegistry(address(marketRegistry));
-        console.log("vAMM registry set to MarketRegistry");
 
         // ===== 16. Whitelist deployer as liquidator =====
         clearingHouse.setWhitelistedLiquidator(deployer, true);

@@ -22,12 +22,17 @@ contract SimpleETHOracle is IOracle {
 }
 
 interface IVAMM {
-    function setOracle(address oracle) external;
     function oracle() external view returns (address);
+}
+
+interface IMarketRegistryOracle {
+    function setOracle(bytes32 marketId, address newOracle) external;
 }
 
 contract DeploySimpleETHOracle is Script {
     address constant VAMM = 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5;
+    address constant MARKET_REGISTRY = 0x937F40013B088832919992E0Bd0D0F48520dC964;
+    bytes32 constant MARKET_ID = keccak256("ETH-PERP-V2");
 
     function run() external {
         address deployer = msg.sender;
@@ -51,10 +56,10 @@ contract DeploySimpleETHOracle is Script {
         uint256 price = oracle.getPrice();
         console.log("  Oracle price:", price);
 
-        // Set vAMM oracle
+        // Move the market's oracle (risk and vAMM funding)
         console.log("");
-        console.log("Step 2: Setting vAMM oracle...");
-        IVAMM(VAMM).setOracle(address(oracle));
+        console.log("Step 2: Setting market oracle...");
+        IMarketRegistryOracle(MARKET_REGISTRY).setOracle(MARKET_ID, address(oracle));
         console.log("  Oracle set!");
 
         vm.stopBroadcast();

@@ -16,7 +16,7 @@ interface ICuOracleAdapterView {
 
 /// @notice Replaces the per-market Sepolia CuOracleAdapters with 12h maxAge adapters.
 /// @dev Broadcast with `--account <keystore-name>` for an account that can call MarketRegistry.setOracle
-///      and vAMM.setOracle for the active frontend markets.
+///      for the active frontend markets; it also moves each market's vAMM funding oracle.
 contract MigrateSepoliaAdapters12h is Script {
     address constant CU_ORACLE = 0x97f557594bA32e51c0eA215B1886111F24E957af;
     address constant REGISTRY = 0x236b75D39203506ee3180Ef2E1c7460a188C43c6;
@@ -82,7 +82,6 @@ contract MigrateSepoliaAdapters12h is Script {
 
         address newAdapter = address(new CuOracleAdapter(CU_ORACLE, assetId, NEW_MAX_AGE));
         MarketRegistry(REGISTRY).setOracle(spec.marketId, newAdapter);
-        vAMM(market.vamm).setOracle(newAdapter);
 
         IMarketRegistry.Market memory updated = MarketRegistry(REGISTRY).getMarket(spec.marketId);
         require(updated.oracle == newAdapter, "registry oracle mismatch");

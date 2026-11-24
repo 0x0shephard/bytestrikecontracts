@@ -14,13 +14,18 @@ interface ICuOracle {
 }
 
 interface IVAMM {
-    function setOracle(address oracle) external;
     function oracle() external view returns (address);
+}
+
+interface IMarketRegistryOracle {
+    function setOracle(bytes32 marketId, address newOracle) external;
 }
 
 contract FixIndexPrice is Script {
     address constant CU_ORACLE = 0x7d1cc77Cb9C0a30a9aBB3d052A5542aB5E254c9c;
     address constant VAMM = 0x3f9b634b9f09e7F8e84348122c86d3C2324841b5;
+    address constant MARKET_REGISTRY = 0x937F40013B088832919992E0Bd0D0F48520dC964;
+    bytes32 constant MARKET_ID = keccak256("ETH-PERP-V2");
 
     bytes32 constant ETH_ASSET_ID = keccak256("ETH");
     uint256 constant ETH_PRICE = 3_790_000_000_000_000_000; // $3.79
@@ -91,10 +96,10 @@ contract FixIndexPrice is Script {
             console.log("  Adapter test failed:", reason);
         }
 
-        // Step 5: Set vAMM oracle to adapter
+        // Step 5: Move the market's oracle (risk and vAMM funding) to the adapter
         console.log("");
-        console.log("Step 4: Setting vAMM oracle to adapter...");
-        IVAMM(VAMM).setOracle(address(adapter));
+        console.log("Step 4: Setting market oracle to adapter...");
+        IMarketRegistryOracle(MARKET_REGISTRY).setOracle(MARKET_ID, address(adapter));
         console.log("  Oracle updated!");
 
         vm.stopBroadcast();
