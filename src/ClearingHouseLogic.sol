@@ -421,10 +421,13 @@ contract ClearingHouseLogic {
             if (realized > 0) creditValue = _quoteValueX18(m.quoteToken, credited);
         }
 
-        // Margin share of the closed slice, taken from the margin before any realized loss.
+        // Margin share of the closed slice, taken from the margin before any realized loss. A flip
+        // keeps the market's whole margin for the new position, so its closed size has no slice
+        // margin and its realized loss is charged to that margin.
         bool reducing = s0 != 0 && ((s0 > 0) != (baseDelta > 0));
+        bool flip = reducing && absBaseDelta > absS0;
         uint256 sliceMargin;
-        if (reducing) {
+        if (reducing && !flip) {
             uint256 reduceAmt = absBaseDelta <= absS0 ? absBaseDelta : absS0;
             sliceMargin = (position.margin * reduceAmt) / absS0;
         }
@@ -466,9 +469,11 @@ contract ClearingHouseLogic {
             // it above). After a gain outside a liquidation, release the slice's pre-trade share plus
             // the whole credited profit, which is already in the vault balance, so the size that stays
             // open keeps only its own share. A liquidation in profit or a break-even releases a
-            // proportional share.
+            // proportional share. A flip releases nothing: the new position keeps the margin.
             uint256 marginRelease;
-            if (realized < 0) {
+            if (flip) {
+                // kept for the new position
+            } else if (realized < 0) {
                 marginRelease = sliceMargin <= position.margin ? sliceMargin : position.margin;
             } else if (realized > 0 && !isLiquidation) {
                 marginRelease = sliceMargin + creditValue;
@@ -482,16 +487,22 @@ contract ClearingHouseLogic {
             // Funding debt carried on the side being reduced is paid from the balance, which now
             // includes any profit this trade realized.
             if (position.fundingDebt != 0) {
+                uint256 debt = position.fundingDebt;
                 _settleFundingDebt(account, marketId, position, m.quoteToken, absBaseDelta >= absS0, isLiquidation);
+                // A flip pays the whole debt (a voluntary trade reverts otherwise) from the balance
+                // backing the kept margin, so the margin drops by it.
+                if (flip) _reduceMargin(account, position, debt);
             }
 
-            if (absBaseDelta > absS0) {
+            if (flip) {
                 uint256 openAmt = absBaseDelta - absS0;
                 uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
                 uint256 oraclePrice = _getRiskPrice(m);
                 uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
                 uint256 openNotional = Calculations.mulDivRoundingUp(openAmt, imrPrice, 1e18);
                 uint256 marginRequired = Calculations.mulDivRoundingUp(openNotional, rp.imrBps, BPS_DENOMINATOR);
+                // Only what the kept margin is short of the new position's requirement is reserved.
+                marginRequired = marginRequired > position.margin ? marginRequired - position.margin : 0;
                 if (!isLiquidation && marginRequired > 0) {
                     _ensureAvailableCollateral(account, marginRequired, m.quoteToken);
                 }
