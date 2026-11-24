@@ -7,7 +7,7 @@ import {BaseTest} from "./BaseTest.sol";
 contract AuditFixesPart2LiquidationFloorTest is BaseTest {
     function setUp() public override {
         super.setUp();
-        fundAndDeposit(alice, 1_100 * USDC_UNIT);
+        fundAndDeposit(alice, 1_300 * USDC_UNIT);
         fundAndDeposit(bob, 100_000 * USDC_UNIT);
     }
 

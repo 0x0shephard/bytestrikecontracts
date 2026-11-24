@@ -10,19 +10,22 @@ import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
 contract LiquidationProtectionTest is BaseTest {
     uint128 internal constant VICTIM_SIZE = 50 ether; // 5% of the 1,000 ETH virtual reserve
     uint128 internal constant PUSH_SIZE = 400 ether;
-    uint256 internal constant VICTIM_DEPOSIT = 8_400 * 1e18;
+    // Covers the open's reserve (initial margin plus its own loss at the index) and fee.
+    uint256 internal constant VICTIM_DEPOSIT = 11_000 * 1e18;
     uint256 internal constant ATTACKER_DEPOSIT = 250_000 * 1e18;
 
-    /// @dev Thin long that passes IMR and the post-trade MMR check.
+    /// @dev Thin long: its margin, net of its own loss at the index, is just the initial margin.
     function _openThinLong() internal {
         fundAndDeposit(alice, VICTIM_DEPOSIT);
-        openWithMargin(alice, ETH_PERP, true, VICTIM_SIZE, 0, 2_600 * USDC_UNIT);
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, VICTIM_SIZE, 0);
     }
 
     /// @dev Thin short mirroring _openThinLong.
     function _openThinShort() internal {
         fundAndDeposit(alice, VICTIM_DEPOSIT);
-        openWithMargin(alice, ETH_PERP, false, VICTIM_SIZE, 0, 2_600 * USDC_UNIT);
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH_PERP, false, VICTIM_SIZE, 0);
     }
 
     function _attackerPushes(bool isLong) internal {
@@ -40,7 +43,7 @@ contract LiquidationProtectionTest is BaseTest {
 
     function test_FrontRunLiquidationOfLongReverts() public {
         _openThinLong();
-        setOraclePrice(1_990 * PRICE_PRECISION);
+        setOraclePrice(1_930 * PRICE_PRECISION);
         assertTrue(isLiquidatable(alice));
 
         _attackerPushes(false); // mark pushed far below index
@@ -63,7 +66,7 @@ contract LiquidationProtectionTest is BaseTest {
 
     function test_FrontRunLiquidationOfShortReverts() public {
         _openThinShort();
-        setOraclePrice(2_010 * PRICE_PRECISION);
+        setOraclePrice(2_060 * PRICE_PRECISION);
         assertTrue(isLiquidatable(alice));
 
         _attackerPushes(true); // mark pushed far above index
@@ -86,7 +89,7 @@ contract LiquidationProtectionTest is BaseTest {
 
     function test_OwnerCanWidenTheBand() public {
         _openThinLong();
-        setOraclePrice(1_990 * PRICE_PRECISION);
+        setOraclePrice(1_930 * PRICE_PRECISION);
         _attackerPushes(false);
 
         // The band is capped at mmrBps - liquidationPenaltyBps, so widening it means raising the MMR.
@@ -100,7 +103,7 @@ contract LiquidationProtectionTest is BaseTest {
 
     function test_BandIsMeasuredOnThePreTradeMark() public {
         _openThinLong();
-        setOraclePrice(1_990 * PRICE_PRECISION);
+        setOraclePrice(1_930 * PRICE_PRECISION);
         _attackerPushes(false);
 
         // Even at the narrowest allowed band, the pushed pre-trade mark is caught.

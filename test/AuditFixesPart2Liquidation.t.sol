@@ -31,7 +31,7 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
     /// the floor (finding 43), so the whole size fills and the penalty is charged on it. A partial
     /// (capped) fill is charged on its filled size: see test_CappedLiquidationChargesPenaltyOnFilledSize.
     function test_LiquidationPenaltyOnFilledSize() public {
-        fundAndDeposit(alice, 1_100 * USDC_UNIT);
+        fundAndDeposit(alice, 1_300 * USDC_UNIT);
         fundAndDeposit(bob, 200_000 * USDC_UNIT);
 
         vm.prank(alice);
@@ -159,7 +159,8 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
     /// used to revert MustLiquidateMore because the remainder stayed liquidatable. It now passes,
     /// pays the penalty from free collateral and leaves the remainder's ratio no worse.
     function test_PartialLiquidationAtLossWithinSliceMarginSucceeds() public {
-        _liquidatableLong(530 ether, 1_900 ether);
+        // The open's reserve already holds its ~200 loss at the index, so less is added on top.
+        _liquidatableLong(330 ether, 1_900 ether);
         (int256 effBefore, uint256 sizeBefore) = _effAndSize(alice);
         uint256 marginBefore = getMargin(alice);
 

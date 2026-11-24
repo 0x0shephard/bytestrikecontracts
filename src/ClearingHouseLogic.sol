@@ -456,9 +456,11 @@ contract ClearingHouseLogic {
             uint256 oraclePrice = _getRiskPrice(m);
             uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
             // Rounded up at both steps so the slices' reserves always cover the requirement on the
-            // whole position, which is rounded down once.
+            // whole position, which is rounded down once. The slice also reserves its own loss at
+            // the index from its fill, so a fresh open meets the initial margin net of that loss.
             uint256 tradeNotional = Calculations.mulDivRoundingUp(absBaseDelta, imrPrice, 1e18);
-            uint256 marginRequired = Calculations.mulDivRoundingUp(tradeNotional, rp.imrBps, BPS_DENOMINATOR);
+            uint256 marginRequired = Calculations.mulDivRoundingUp(tradeNotional, rp.imrBps, BPS_DENOMINATOR)
+                + _sliceLoss(baseDelta > 0, execPxX18, absBaseDelta, oraclePrice);
             if (!isLiquidation && marginRequired > 0) {
                 _ensureAvailableCollateral(account, marginRequired, m.quoteToken);
             }
@@ -500,7 +502,8 @@ contract ClearingHouseLogic {
                 uint256 oraclePrice = _getRiskPrice(m);
                 uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
                 uint256 openNotional = Calculations.mulDivRoundingUp(openAmt, imrPrice, 1e18);
-                uint256 marginRequired = Calculations.mulDivRoundingUp(openNotional, rp.imrBps, BPS_DENOMINATOR);
+                uint256 marginRequired = Calculations.mulDivRoundingUp(openNotional, rp.imrBps, BPS_DENOMINATOR)
+                    + _sliceLoss(s1 > 0, position.entryPriceX18, openAmt, oraclePrice);
                 // Only what the kept margin is short of the new position's requirement is reserved.
                 marginRequired = marginRequired > position.margin ? marginRequired - position.margin : 0;
                 if (!isLiquidation && marginRequired > 0) {
@@ -546,13 +549,20 @@ contract ClearingHouseLogic {
                     }
                 }
             }
-            // IMR applies to trades that open, increase or flip. A trade that only shrinks the
-            // position on the same side adds no exposure and is bounded by the maintenance check.
+            int256 unrealizedPnL = _computeUnrealizedPnL(position, oraclePrice);
+            // IMR applies to trades that open, increase or flip: the margin, net of unrealized loss at
+            // the index (profit ignored) and of funding debt, must cover the initial margin of the
+            // whole position. An existing shortfall reverts the trade; it is not pulled from free
+            // collateral. A trade that only shrinks the position on the same side adds no exposure
+            // and is bounded by the maintenance check.
             bool onlyReduces = s0 != 0 && (s0 > 0) == (s1 > 0) && absS1 < absS0;
-            if (!onlyReduces && !(marginValue >= requiredMargin)) revert IMRBreach();
+            if (
+                !onlyReduces
+                    && int256(marginValue) + (unrealizedPnL < 0 ? unrealizedPnL : int256(0))
+                        - int256(position.fundingDebt) < int256(requiredMargin)
+            ) revert IMRBreach();
 
             {
-                int256 unrealizedPnL = _computeUnrealizedPnL(position, oraclePrice);
                 int256 effectiveMargin = int256(marginValue) + unrealizedPnL - int256(position.fundingDebt);
                 uint256 riskNotional = Calculations.mulDivRoundingUp(absS1, oraclePrice, 1e18);
                 uint256 maintenanceMargin = Calculations.mulDivRoundingUp(riskNotional, rp.mmrBps, BPS_DENOMINATOR);
@@ -1036,6 +1046,13 @@ contract ClearingHouseLogic {
         uint256 indexPrice = IOracle(m.oracle).getPrice();
         if (!(indexPrice > 0)) revert OraclePriceZero();
         return indexPrice;
+    }
+
+    /// @dev Loss at `indexX18` of `qty` base just filled at `pxX18` on the long (`isLong`) or short
+    /// side, rounded up; 0 if the fill is no worse than the index.
+    function _sliceLoss(bool isLong, uint256 pxX18, uint256 qty, uint256 indexX18) internal pure returns (uint256) {
+        if (isLong ? pxX18 <= indexX18 : pxX18 >= indexX18) return 0;
+        return Calculations.mulDivRoundingUp(isLong ? pxX18 - indexX18 : indexX18 - pxX18, qty, 1e18);
     }
 
     function _computeUnrealizedPnL(IClearingHouse.PositionView storage position, uint256 priceX18) internal view returns (int256) {

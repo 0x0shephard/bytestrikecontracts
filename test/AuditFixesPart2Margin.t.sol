@@ -195,8 +195,11 @@ contract AuditFixesPart2MarginTest is BaseTest {
         vm.prank(alice);
         clearingHouse.openPosition(ETH_PERP, true, 10 ether, 0);
 
-        // price rises: the long is in profit at both mark and index
-        setOraclePrice(2_200 ether);
+        // price rises: the long is in profit at both mark and index. The open reserved its own loss
+        // at the 2,000 index on top of the initial margin, so the index rises far enough for the
+        // initial margin to outgrow that margin.
+        uint256 index = 2_600 ether;
+        setOraclePrice(index);
         vm.prank(bob);
         clearingHouse.openPosition(ETH_PERP, true, 40 ether, 0);
         IClearingHouse.PositionView memory pos = getPosition(alice);
@@ -205,7 +208,7 @@ contract AuditFixesPart2MarginTest is BaseTest {
         (uint256 imrReq,) = _imrAndLoss(alice);
         uint256 margin = getMargin(alice);
         assertLt(margin, imrReq);
-        uint256 px = getMarkPrice() < 2_200 ether ? getMarkPrice() : 2_200 ether;
+        uint256 px = getMarkPrice() < index ? getMarkPrice() : index;
         uint256 profit = (px - pos.entryPriceX18) * 10; // 10 ETH position
         // counting the profit would leave plenty above IMR
         assertGt(margin + profit - 1 ether, imrReq);

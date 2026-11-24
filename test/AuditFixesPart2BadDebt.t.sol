@@ -56,7 +56,7 @@ contract AuditFixesPart2BadDebtTest is BaseTest {
     /// @dev Account A opens a long, then account B's large short pushes the mark far below the
     /// index, so A is not liquidatable at the index but closing realizes a loss above its balance.
     function _openPair() internal {
-        fundAndDeposit(accountA, 242e18);
+        fundAndDeposit(accountA, 350e18); // initial margin plus the open's own loss at the index
         vm.prank(accountA);
         clearingHouse.openPosition(ZERO_FEE_PERP, true, 500e18, 0);
 

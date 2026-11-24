@@ -172,8 +172,9 @@ contract VAMMEdgeCaseTest is BaseTest {
         // Create massive imbalance
         fundAndDeposit(alice, 200000 * USDC_UNIT);
 
-        vm.startPrank(alice);
-
+        // A single prank, so the ClearingHouse prank below for pokeFunding does not collide with it
+        // now that the open (which reserves its own loss at the index) goes through.
+        vm.prank(alice);
         try clearingHouse.openPosition(ETH_PERP, true, ethQty(150), 0) {
             skipTime(1 hours);
 
@@ -191,7 +192,6 @@ contract VAMMEdgeCaseTest is BaseTest {
             // Expected if position too large
             assertTrue(true);
         }
-        vm.stopPrank();
     }
 
     // ============ Fee Accumulation Tests ============

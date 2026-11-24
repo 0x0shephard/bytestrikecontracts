@@ -34,13 +34,13 @@ contract AuditFixesPart2VaultTest is BaseTest {
         _setUsdcAccountCap(1_000 * USDC_UNIT);
 
         vm.prank(alice);
-        clearingHouse.openPosition(ETH_PERP, true, 9e18, 0);
+        clearingHouse.openPosition(ETH_PERP, true, 8e18, 0);
         setOraclePrice(1_880e18);
         assertTrue(isLiquidatable(alice), "alice should be liquidatable");
 
         uint256 keeperBefore = getCollateralBalance(liquidator);
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, 9e18, 0);
+        clearingHouse.liquidate(alice, ETH_PERP, 8e18, 0);
 
         assertEq(getPosition(alice).size, 0, "position liquidated");
         assertGt(getCollateralBalance(liquidator), keeperBefore, "keeper received incentive");
@@ -95,14 +95,14 @@ contract AuditFixesPart2VaultTest is BaseTest {
     function test_Finding64_disabledQuoteTokenStillAllowsLiquidation() public {
         fundAndDeposit(alice, 1_000 * USDC_UNIT);
         vm.prank(alice);
-        clearingHouse.openPosition(ETH_PERP, true, 9e18, 0);
+        clearingHouse.openPosition(ETH_PERP, true, 8e18, 0);
 
         _setUsdcEnabled(false);
         setOraclePrice(1_880e18);
         assertTrue(isLiquidatable(alice), "alice should be liquidatable");
 
         vm.prank(liquidator);
-        clearingHouse.liquidate(alice, ETH_PERP, 9e18, 0);
+        clearingHouse.liquidate(alice, ETH_PERP, 8e18, 0);
         assertEq(getPosition(alice).size, 0, "position liquidated");
     }
 

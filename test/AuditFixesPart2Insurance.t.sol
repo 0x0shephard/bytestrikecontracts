@@ -230,7 +230,7 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
     /// @dev Since finding 10 the shortfall is first carried as funding debt on the position, and the
     /// fund pays it into the vault when the position is liquidated.
     function test_Finding1_fundingDebitBeyondBalancePaidIntoVault() public {
-        fundAndDeposit(alice, 1_100e18);
+        fundAndDeposit(alice, 1_250e18);
         fundAndDeposit(carol, 100_000e18);
         vm.prank(alice);
         clearingHouse.openPosition(ETH_PERP, true, 10e18, 0);

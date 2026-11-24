@@ -71,14 +71,20 @@ contract AuditFixesPart2SurplusMarginTest is BaseTest {
 
         fundAndDeposit(bob, 100_000e18);
         vm.prank(bob);
-        clearingHouse.openPosition(ETH_PERP, false, 25e18, 0);
-        setOraclePrice(1_950e18);
+        // Pushed deep enough that the long's liquidation loss, which its larger opening margin
+        // (initial margin plus its own loss at the index) absorbs, still leaves it short of the penalty.
+        clearingHouse.openPosition(ETH_PERP, false, 30e18, 0);
+        setOraclePrice(INDEX);
         assertTrue(clearingHouse.isLiquidatable(alice, ETH_PERP), "A not liquidatable");
         assertFalse(clearingHouse.isLiquidatable(alice, MARKET_B), "B liquidatable");
     }
 
-    // 1.5% of 10 ETH at the 1,950 index, half to the liquidator and half to the fee router
-    uint256 internal constant PENALTY = 292.5e18;
+    // Index after the drop. The long's open reserved its own loss at the index on top of the
+    // initial margin, so the index falls below the 1,950 that liquidated a long holding only the
+    // initial margin.
+    uint256 internal constant INDEX = 1_900e18;
+    // 1.5% of 10 ETH at the index, half to the liquidator and half to the fee router
+    uint256 internal constant PENALTY = 10 * INDEX * LIQUIDATION_PENALTY_BPS / 10_000;
 
     function test_Finding12_penaltyDrawnFromSurplusMarginOnOtherPosition() public {
         _setUp(10e18, true);
@@ -104,7 +110,7 @@ contract AuditFixesPart2SurplusMarginTest is BaseTest {
         _setUp(1e18, false);
         uint256 marginB = clearingHouse.getPosition(alice, MARKET_B).margin;
         // B's own penalty floor: 1.5% of 1 ETH at the index.
-        uint256 floorB = 29.25e18;
+        uint256 floorB = INDEX * LIQUIDATION_PENALTY_BPS / 10_000;
         assertLt(marginB - floorB, PENALTY, "test setup: B surplus covers the whole penalty");
 
         liquidateFully(alice, ETH_PERP, bob);
@@ -144,8 +150,10 @@ contract AuditFixesPart2SurplusMarginTest is BaseTest {
         vm.stopPrank();
         assertEq(_freeCollateral(alice), 0, "free collateral left");
 
-        // bob's short brings ETH_PERP's mark to 1,940 and the index follows
-        uint256 target = 1_940e18;
+        // bob's short brings ETH_PERP's mark to 1,920 and the index follows (low enough that the
+        // released slice margin, which includes the open's own loss at the index, falls short of
+        // the penalty)
+        uint256 target = 1_920e18;
         fundAndDeposit(bob, 500_000e18);
         (uint256 x, uint256 y) = getReserves();
         uint256 xTarget = _sqrtBase((x * y / target) * 1e18);

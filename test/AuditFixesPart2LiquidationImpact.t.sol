@@ -79,14 +79,15 @@ contract AuditFixesPart2LiquidationImpactTest is BaseTest {
         uint256 longIn = _openLongAtMaintenanceEdge(size);
         assertGt(getPosition(longAcct).entryPriceX18, INITIAL_ETH_PRICE * 110 / 100, "entry far above index");
 
+        _indexJustBelowEdge(longAcct);
+        uint256 index = oracle.getPrice();
+
         // second account shorts at the elevated mark, bringing it back to the index
         uint256 shortIn = 100_000 * USDC_UNIT;
         fundAndDeposit(shortAcct, shortIn);
+        (uint256 xs, uint256 ys) = getReserves();
         vm.prank(shortAcct);
-        clearingHouse.openPosition(ETH_PERP, false, size, 0);
-
-        _indexJustBelowEdge(longAcct);
-        uint256 index = oracle.getPrice();
+        clearingHouse.openPosition(ETH_PERP, false, uint128(_sqrtBase((xs * ys / index) * 1e18) - xs), 0);
         // What the long's equity is short of the maintenance margin: the only loss beyond its
         // balance that bounded fills can produce.
         uint256 mm = (_absSize(longAcct) * index / 1e18) * H_MMR / 10_000;
@@ -132,17 +133,15 @@ contract AuditFixesPart2LiquidationImpactTest is BaseTest {
     /// @dev Closing a short: the average fill stays at or under index * (1 + (mmr - penalty)).
     function test_ShortLiquidationFillBounded() public {
         uint128 size = 100 ether;
+        // The open reserves the initial margin plus its own loss at the index.
         fundAndDeposit(alice, 40_000 * USDC_UNIT);
-        vm.startPrank(alice);
-        clearingHouse.openPosition(ETH_PERP, false, 1 ether, 0);
-        clearingHouse.addMargin(ETH_PERP, 9_000 * USDC_UNIT);
-        clearingHouse.openPosition(ETH_PERP, false, size - 1 ether, 0);
-        vm.stopPrank();
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH_PERP, false, size, 0);
         // a buyer returns the mark to the index; the index then rises past alice's maintenance edge
         fundAndDeposit(bob, 100_000 * USDC_UNIT);
         vm.prank(bob);
         clearingHouse.openPosition(ETH_PERP, true, size, 0);
-        uint256 index = 2_020 ether;
+        uint256 index = 2_100 ether;
         setOraclePrice(index);
         assertTrue(isLiquidatable(alice));
 
@@ -162,11 +161,14 @@ contract AuditFixesPart2LiquidationImpactTest is BaseTest {
     function test_CappedLiquidationChargesPenaltyOnFilledSize() public {
         uint128 size = 100 ether;
         _openLongAtMaintenanceEdge(size);
-        fundAndDeposit(shortAcct, 100_000 * USDC_UNIT);
-        vm.prank(shortAcct);
-        clearingHouse.openPosition(ETH_PERP, false, size, 0);
         _indexJustBelowEdge(longAcct);
         uint256 index = oracle.getPrice();
+        // A seller brings the mark down to the index, so closing the whole long would fill far
+        // below it and the call is capped.
+        fundAndDeposit(shortAcct, 100_000 * USDC_UNIT);
+        (uint256 x, uint256 y) = getReserves();
+        vm.prank(shortAcct);
+        clearingHouse.openPosition(ETH_PERP, false, uint128(_sqrtBase((x * y / index) * 1e18) - x), 0);
 
         uint256 liqBefore = getCollateralBalance(liquidator);
         vm.prank(liquidator);

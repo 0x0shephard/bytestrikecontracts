@@ -615,9 +615,9 @@ contract AuditFindingsTest is BaseTest {
         uint256 oracleBefore = oracle.getPrice();
         uint256 markBefore   = getMarkPrice();
 
-        // Give Alice enough collateral to pass the margin allocation check
-        // (80 ETH * $2000 * 5% = $8000 IMR + ~$148 fee) but the massive price
-        // impact makes the position immediately liquidatable at oracle price.
+        // Give Alice enough collateral for the IMR alone (80 ETH * $2000 * 5% = $8000 + ~$148 fee).
+        // The open also reserves its own loss at the oracle price from the massive price impact
+        // (finding 40, part 2), so instead of opening immediately liquidatable it cannot be funded.
         fundAndDeposit(alice, 10_000 * USDC_UNIT);
 
         // Alice opens a LARGE SHORT.
@@ -625,8 +625,8 @@ contract AuditFindingsTest is BaseTest {
         uint128 size = ethQty(80);
 
         vm.startPrank(alice);
-        // Should revert with ImmediatelyLiquidatable due to the post-trade health check
-        vm.expectRevert(ClearingHouse.ImmediatelyLiquidatable.selector);
+        // Reverts: the reserve, which includes the self-inflicted loss, exceeds her collateral
+        vm.expectRevert(ClearingHouse.InsufficientQuoteCollateral.selector);
         clearingHouse.openPosition(ETH_PERP, false, size, 0);
         vm.stopPrank();
     }
@@ -643,8 +643,9 @@ contract AuditFindingsTest is BaseTest {
         // The trade's price impact will push the post-trade required margin slightly higher
         // than what she explicitly committed, but the contract must NOT silently pull more.
         // Deposit enough to cover addMargin (preTradeIMR ~5000) + risk-priced
-        // allocation (~5540 at post-trade mark) + trade fee (~105).
-        uint256 depositAmount = 15000 * USDC_UNIT;
+        // allocation (~5540 at post-trade mark) + the slice's own loss at the index (~5000)
+        // + trade fee (~105).
+        uint256 depositAmount = 20000 * USDC_UNIT;
         fundAndDeposit(alice, depositAmount);
 
         // Manually add margin that is sufficient for the pre-trade notional but not post-trade.
@@ -660,10 +661,17 @@ contract AuditFindingsTest is BaseTest {
         // would be immediately liquidatable, so open a small slice first, commit the margin, then
         // open the rest.
         uint128 seed = ethQty(1);
+        (, uint256 quoteReserveBefore) = getReserves();
         vm.prank(alice);
         clearingHouse.openPosition(ETH_PERP, true, seed, 0);
+        (, uint256 quoteReserveAfter) = getReserves();
         uint256 seedMargin = clearingHouse.getPosition(alice, ETH_PERP).margin;
-        assertEq(seedMargin, _riskPricedImr(seed), "seed margin is its risk-priced allocation only");
+        // Each slice reserves its risk-priced IMR plus its own loss at the index (finding 40, part 2).
+        assertEq(
+            seedMargin,
+            _riskPricedImr(seed) + _sliceLossAtIndex(quoteReserveAfter - quoteReserveBefore, seed),
+            "seed margin is its risk-priced allocation only"
+        );
 
         vm.startPrank(alice);
         // Commit exactly the pre-trade IMR — not enough for post-trade
@@ -672,11 +680,14 @@ contract AuditFindingsTest is BaseTest {
         // Open the rest — initial allocation uses post-trade risk price, so the allocated amount
         // covers the IMR check. The user's explicit addMargin plus the allocations should
         // determine total margin; no silent extra is pulled.
+        (, quoteReserveBefore) = getReserves();
         clearingHouse.openPosition(ETH_PERP, true, size - seed, 0);
+        (, quoteReserveAfter) = getReserves();
         vm.stopPrank();
 
         IClearingHouse.PositionView memory pos = clearingHouse.getPosition(alice, ETH_PERP);
-        uint256 expectedAllocation = _riskPricedImr(size - seed);
+        uint256 expectedAllocation =
+            _riskPricedImr(size - seed) + _sliceLossAtIndex(quoteReserveAfter - quoteReserveBefore, size - seed);
         uint256 expectedMargin = seedMargin + preTradeIMR + expectedAllocation;
 
         assertEq(pos.margin, expectedMargin, "Margin should be explicit addMargin + risk-priced allocation only");
@@ -684,6 +695,15 @@ contract AuditFindingsTest is BaseTest {
         console.log("Risk-priced allocation:", expectedAllocation);
         console.log("Total position margin:", pos.margin);
         console.log("GOOD: No silent auto-commit - margin matches explicit commitment");
+    }
+
+    /// @dev Loss at the index of a long slice of `size` base bought for `quoteIn`, rounded up as the
+    /// slice reserve rounds it; 0 when the fill is at or under the index.
+    function _sliceLossAtIndex(uint256 quoteIn, uint256 size) internal view returns (uint256) {
+        uint256 fillPx = quoteIn * 1e18 / size;
+        uint256 index = oracle.getPrice();
+        if (fillPx <= index) return 0;
+        return ((fillPx - index) * size + 1e18 - 1) / 1e18;
     }
 
     /// @dev IMR the ClearingHouse allocates for `size` at the current risk price (max of mark and index).
