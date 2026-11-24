@@ -691,7 +691,9 @@ contract AuditFindingsTest is BaseTest {
         uint256 markNow = vamm.getMarkPrice();
         uint256 oracleNow = oracle.getPrice();
         uint256 riskPrice = markNow > oracleNow ? markNow : oracleNow;
-        return (size * riskPrice / 1e18) * IMR_BPS / 10000;
+        // The slice reserve rounds up at both steps (Cyfrin bytestrike part 2, finding 46)
+        uint256 notional = (size * riskPrice + 1e18 - 1) / 1e18;
+        return (notional * IMR_BPS + 10000 - 1) / 10000;
     }
 
     // ============================================================

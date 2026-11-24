@@ -299,8 +299,10 @@ contract ClearingHouseLogic {
             uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
             uint256 oraclePrice = _getRiskPrice(m);
             uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
-            uint256 tradeNotional = absBaseDelta.mulDiv(imrPrice, 1e18);
-            uint256 marginRequired = tradeNotional.mulDiv(rp.imrBps, BPS_DENOMINATOR);
+            // Rounded up at both steps so the slices' reserves always cover the requirement on the
+            // whole position, which is rounded down once.
+            uint256 tradeNotional = Calculations.mulDivRoundingUp(absBaseDelta, imrPrice, 1e18);
+            uint256 marginRequired = Calculations.mulDivRoundingUp(tradeNotional, rp.imrBps, BPS_DENOMINATOR);
             if (!isLiquidation && marginRequired > 0) {
                 _ensureAvailableCollateral(account, marginRequired, m.quoteToken);
             }
@@ -335,8 +337,8 @@ contract ClearingHouseLogic {
                 uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
                 uint256 oraclePrice = _getRiskPrice(m);
                 uint256 imrPrice = markPrice > oraclePrice ? markPrice : oraclePrice;
-                uint256 openNotional = openAmt.mulDiv(imrPrice, 1e18);
-                uint256 marginRequired = openNotional.mulDiv(rp.imrBps, BPS_DENOMINATOR);
+                uint256 openNotional = Calculations.mulDivRoundingUp(openAmt, imrPrice, 1e18);
+                uint256 marginRequired = Calculations.mulDivRoundingUp(openNotional, rp.imrBps, BPS_DENOMINATOR);
                 if (!isLiquidation && marginRequired > 0) {
                     _ensureAvailableCollateral(account, marginRequired, m.quoteToken);
                 }

@@ -249,4 +249,30 @@ contract AuditFixesPart2MarginTest is BaseTest {
         assertEq(getMargin(alice), remaining);
         assertFalse(isLiquidatable(alice));
     }
+
+    // ---------------------------------------------------------------------
+    // Finding 46: per-slice IMR reserve rounding
+    // ---------------------------------------------------------------------
+
+    /// @dev Finding 46: a short added at an unchanged index with no funding paid used to revert
+    /// IMRBreach by 1 wei, because each slice's reserve was rounded down while the requirement on the
+    /// whole position is rounded down once. Slice reserves now round up.
+    function test_Finding46_sameSideAddAtUnchangedIndexNeverBreachesByRounding() public {
+        fundAndDeposit(alice, 50_000 * USDC_UNIT);
+        setOraclePrice(2_000.123456789123456789e18); // non-round index so each step rounds
+        uint256 seed = 0x46;
+        for (uint256 i = 0; i < 40; i++) {
+            seed = uint256(keccak256(abi.encode(seed)));
+            uint128 first = uint128(0.1 ether + seed % 2 ether);
+            uint128 second = uint128(0.1 ether + (seed >> 128) % 2 ether);
+
+            uint256 snap = vm.snapshotState();
+            vm.startPrank(alice);
+            clearingHouse.openPosition(ETH_PERP, false, first, 0);
+            clearingHouse.openPosition(ETH_PERP, false, second, 0); // mark falls, index unchanged
+            vm.stopPrank();
+            assertEq(getPosition(alice).size, -int256(uint256(first) + uint256(second)));
+            vm.revertToState(snap);
+        }
+    }
 }
