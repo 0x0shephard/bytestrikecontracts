@@ -262,9 +262,13 @@ contract ClearingHouseLogic {
             _removeActiveMarket(account, marketId);
         }
 
+        // A realized profit backs margin at the haircut value of the tokens actually credited, as
+        // the margin checks value the balance, so the credit never leaves reserved margin unbacked.
+        uint256 creditValue;
         if (realized != 0) {
             // Only a liquidation may realize a loss beyond the account's vault balance.
-            _settlePnLInVault(account, marketId, realized, isLiquidation, 0);
+            uint256 credited = _settlePnLInVault(account, marketId, realized, isLiquidation, 0);
+            if (realized > 0) creditValue = _quoteValueX18(m.quoteToken, credited);
         }
 
         // Margin share of the closed slice, taken from the margin before any realized loss.
@@ -276,9 +280,8 @@ contract ClearingHouseLogic {
         }
 
         if (realized > 0) {
-            uint256 credit = uint256(realized);
-            position.margin += credit;
-            _totalReservedMargin[account] += credit;
+            position.margin += creditValue;
+            _totalReservedMargin[account] += creditValue;
         } else if (realized < 0) {
             // The closed slice's own margin absorbs its loss; only the excess is charged to the
             // margin of the size that stays open.
@@ -311,14 +314,14 @@ contract ClearingHouseLogic {
         } else {
             // After a loss, release the slice's pre-loss margin share (its loss was netted against
             // it above). After a gain outside a liquidation, release the slice's pre-trade share plus
-            // the whole profit, which is already in the vault balance, so the size that stays open
-            // keeps only its own share. A liquidation in profit or a break-even releases a
+            // the whole credited profit, which is already in the vault balance, so the size that stays
+            // open keeps only its own share. A liquidation in profit or a break-even releases a
             // proportional share.
             uint256 marginRelease;
             if (realized < 0) {
                 marginRelease = sliceMargin <= position.margin ? sliceMargin : position.margin;
             } else if (realized > 0 && !isLiquidation) {
-                marginRelease = sliceMargin + uint256(realized);
+                marginRelease = sliceMargin + creditValue;
             } else {
                 uint256 reduceAmt = absBaseDelta <= absS0 ? absBaseDelta : absS0;
                 marginRelease = (position.margin * reduceAmt) / absS0;
@@ -477,9 +480,12 @@ contract ClearingHouseLogic {
                 + Calculations.mulDiv(currentSurplus - position.lastFundingSurplusIndex, absSize, 1e18);
             position.fundingDebtSurplus = 0;
             if (net > 0) {
-                _settlePnLInVault(account, marketId, net, true, 0);
-                position.margin += uint256(net);
-                _totalReservedMargin[account] += uint256(net);
+                // Reserved at the haircut value of the tokens credited, as the margin checks value
+                // the balance, so a credit never leaves the account's other margins unbacked.
+                uint256 creditValue =
+                    _quoteValueX18(m.quoteToken, _settlePnLInVault(account, marketId, net, true, 0));
+                position.margin += creditValue;
+                _totalReservedMargin[account] += creditValue;
             } else if (net < 0) {
                 (uint256 paidX18, uint256 unpaidX18) = _chargeFunding(account, m.quoteToken, uint256(-net));
                 position.fundingDebt = unpaidX18;
@@ -599,19 +605,20 @@ contract ClearingHouseLogic {
     /// @param surplusX18 Part of a loss that is funding surplus owed to the insurance fund (funding
     /// debt's carried share). It is the last part paid: what the balance pays of it is booked to
     /// fundingSurplus, and a written-off remainder of it is dropped instead of drawn from the fund.
+    /// @return credited Quote-token units credited for a profit (0 for a loss).
     function _settlePnLInVault(
         address account,
         bytes32 marketId,
         int256 realized,
         bool allowBadDebt,
         uint256 surplusX18
-    ) internal {
+    ) internal returns (uint256 credited) {
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
 
         if (realized > 0) {
-            uint256 profitInQuote = _pnlToQuoteUnits(uint256(realized), m.quoteToken, false);
-            if (profitInQuote > 0) {
-                ICollateralVault(vault).settlePnL(account, m.quoteToken, int256(profitInQuote));
+            credited = _pnlToQuoteUnits(uint256(realized), m.quoteToken, false);
+            if (credited > 0) {
+                ICollateralVault(vault).settlePnL(account, m.quoteToken, int256(credited));
             }
         } else {
             uint256 lossInQuote = _pnlToQuoteUnits(uint256(-realized), m.quoteToken, true);

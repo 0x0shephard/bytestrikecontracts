@@ -256,7 +256,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         uint256 quoteBalance = ICollateralVault(vault).balanceOf(msg.sender, m.quoteToken);
         uint256 quoteValueX18 = _quoteValueX18(m.quoteToken, quoteBalance);
         uint256 reservedForToken = _reservedMarginForToken(msg.sender, m.quoteToken);
-        if (!(amount <= quoteValueX18 - reservedForToken)) revert InsufficientQuoteBalance();
+        if (quoteValueX18 < reservedForToken || amount > quoteValueX18 - reservedForToken) {
+            revert InsufficientQuoteBalance();
+        }
         positions[msg.sender][marketId].margin += amount;
         _totalReservedMargin[msg.sender] += amount;
         emit MarginAdded(msg.sender, marketId, amount);
