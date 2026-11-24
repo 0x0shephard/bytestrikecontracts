@@ -266,11 +266,17 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         assertEq(debt, debit - aliceBalance, "rest carried as funding debt");
         assertEq(usdc.balanceOf(address(vault)), vaultTokensBefore, "fund drawn before the position closes");
 
-        // Liquidation settles the debt; the fund pays what the account cannot into the vault.
+        // Part of the debt is alice's funding surplus share, owed to the insurance fund itself and
+        // backing no receiver's credit (finding 3).
+        uint256 carried = clearingHouse.getPosition(alice, ETH_PERP).fundingDebtSurplus;
+        assertLe(carried, debt, "carried surplus exceeds the debt");
+
+        // Liquidation settles the debt; the fund pays what the account cannot into the vault, except
+        // the carried surplus share, which is dropped.
         vm.prank(liquidator);
         clearingHouse.liquidate(alice, ETH_PERP, 10e18, 0);
         assertEq(clearingHouse.getPosition(alice, ETH_PERP).fundingDebt, 0, "debt not settled");
-        assertGe(usdc.balanceOf(address(vault)) - vaultTokensBefore, debt, "fund covers the debt");
+        assertGe(usdc.balanceOf(address(vault)) - vaultTokensBefore, debt - carried, "fund covers the debt");
         // Only the protocol's uncollected penalty share (0.75% of 10 ETH at the 1,900 index) is recorded.
         assertEq(clearingHouse.totalBadDebt() - badDebtBefore, 142.5e18, "funding written off while the fund can pay");
     }

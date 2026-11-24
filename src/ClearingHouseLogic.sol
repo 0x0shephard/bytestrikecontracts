@@ -264,7 +264,7 @@ contract ClearingHouseLogic {
 
         if (realized != 0) {
             // Only a liquidation may realize a loss beyond the account's vault balance.
-            _settlePnLInVault(account, marketId, realized, isLiquidation);
+            _settlePnLInVault(account, marketId, realized, isLiquidation, 0);
         }
 
         // Margin share of the closed slice, taken from the margin before any realized loss.
@@ -461,11 +461,13 @@ contract ClearingHouseLogic {
             // vault balance cannot pay stays on the position as debt instead of being written off.
             int256 net = fundingPayment - int256(debt);
             position.fundingDebt = 0;
-            // This position's share of the payment no receiver is credited (owed to the insurance fund).
-            uint256 surplusX18 =
-                Calculations.mulDiv(currentSurplus - position.lastFundingSurplusIndex, absSize, 1e18);
+            // This position's share of the payment no receiver is credited (owed to the insurance
+            // fund): this interval's share plus the share carried with earlier unpaid debt.
+            uint256 surplusX18 = position.fundingDebtSurplus
+                + Calculations.mulDiv(currentSurplus - position.lastFundingSurplusIndex, absSize, 1e18);
+            position.fundingDebtSurplus = 0;
             if (net > 0) {
-                _settlePnLInVault(account, marketId, net, true);
+                _settlePnLInVault(account, marketId, net, true, 0);
                 position.margin += uint256(net);
                 _totalReservedMargin[account] += uint256(net);
             } else if (net < 0) {
@@ -473,14 +475,11 @@ contract ClearingHouseLogic {
                 position.fundingDebt = unpaidX18;
                 // Only what the vault actually paid leaves the margin; the unpaid part is the debt.
                 _reduceMargin(account, position, paidX18);
-                // A shortfall is charged to the surplus first, so only surplus the payer actually paid
-                // into the vault is booked for the insurance fund.
-                surplusX18 = surplusX18 > unpaidX18 ? surplusX18 - unpaidX18 : 0;
+                // The surplus is the last part of the debit to be paid: up to the unpaid amount of it is
+                // carried with the debt, and only the rest, which the payer actually paid, is booked.
+                surplusX18 = _carryDebtSurplus(position, surplusX18, unpaidX18);
             }
-            if (surplusX18 > 0) {
-                // Booked in token units at the fixed PnL rate, rounded down.
-                fundingSurplus[marketId] += _pnlToQuoteUnits(surplusX18, m.quoteToken, false);
-            }
+            _bookFundingSurplus(marketId, m.quoteToken, surplusX18);
 
             if (payDelta != 0 || receiveDelta != 0) emit FundingSettled(marketId, account, fundingPayment);
         }
@@ -552,14 +551,34 @@ contract ClearingHouseLogic {
         bool isLiquidation
     ) internal {
         uint256 debt = position.fundingDebt;
+        uint256 surplusX18 = position.fundingDebtSurplus;
         position.fundingDebt = 0;
+        position.fundingDebtSurplus = 0;
         if (closesSide) {
-            _settlePnLInVault(account, marketId, -int256(debt), isLiquidation);
+            _settlePnLInVault(account, marketId, -int256(debt), isLiquidation, surplusX18);
         } else {
             (uint256 paidX18, uint256 unpaidX18) = _chargeFunding(account, quoteToken, debt);
             position.fundingDebt = unpaidX18;
             _reduceMargin(account, position, paidX18);
+            _bookFundingSurplus(marketId, quoteToken, _carryDebtSurplus(position, surplusX18, unpaidX18));
         }
+    }
+
+    /// @dev Carries min(surplusX18, unpaidX18) of a funding surplus share with the position's unpaid
+    /// funding debt and returns the rest, which the payer paid and which can be booked.
+    function _carryDebtSurplus(IClearingHouse.PositionView storage position, uint256 surplusX18, uint256 unpaidX18)
+        internal
+        returns (uint256 paidSurplusX18)
+    {
+        uint256 carried = surplusX18 < unpaidX18 ? surplusX18 : unpaidX18;
+        position.fundingDebtSurplus = carried;
+        return surplusX18 - carried;
+    }
+
+    /// @dev Books paid funding surplus for the insurance fund, in token units at the fixed PnL rate,
+    /// rounded down.
+    function _bookFundingSurplus(bytes32 marketId, address quoteToken, uint256 surplusX18) internal {
+        if (surplusX18 > 0) fundingSurplus[marketId] += _pnlToQuoteUnits(surplusX18, quoteToken, false);
     }
 
     /// @dev Books realized PnL or funding in the vault. Both legs of one zero-sum exchange are
@@ -567,7 +586,16 @@ contract ClearingHouseLogic {
     /// loser's debit net in tokens whatever quote-token price each settlement would read.
     /// @param allowBadDebt True for liquidations and funding, where a loss beyond the vault balance
     /// is written off; a voluntary trade with such a loss reverts instead.
-    function _settlePnLInVault(address account, bytes32 marketId, int256 realized, bool allowBadDebt) internal {
+    /// @param surplusX18 Part of a loss that is funding surplus owed to the insurance fund (funding
+    /// debt's carried share). It is the last part paid: what the balance pays of it is booked to
+    /// fundingSurplus, and a written-off remainder of it is dropped instead of drawn from the fund.
+    function _settlePnLInVault(
+        address account,
+        bytes32 marketId,
+        int256 realized,
+        bool allowBadDebt,
+        uint256 surplusX18
+    ) internal {
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
 
         if (realized > 0) {
@@ -577,12 +605,18 @@ contract ClearingHouseLogic {
             }
         } else {
             uint256 lossInQuote = _pnlToQuoteUnits(uint256(-realized), m.quoteToken, true);
+            uint256 surplusUnits = _pnlToQuoteUnits(surplusX18, m.quoteToken, false);
             if (lossInQuote > 0) {
                 uint256 available = ICollateralVault(vault).balanceOf(account, m.quoteToken);
                 if (lossInQuote > available) {
                     if (!allowBadDebt) revert InsufficientQuoteCollateral();
                     uint256 badDebt = lossInQuote - available;
                     lossInQuote = available;
+                    // The unpaid part is the surplus share first: no receiver's credit stands behind
+                    // it, so it is dropped rather than drawn from the fund it is owed to.
+                    uint256 dropped = surplusUnits < badDebt ? surplusUnits : badDebt;
+                    surplusUnits -= dropped;
+                    badDebt -= dropped;
                     // The winners' credits sit in the vault: back the uncovered loss with insurance
                     // tokens paid into the vault, and record only what the fund cannot pay.
                     badDebt -= _drawInsurance(m, badDebt);
@@ -595,6 +629,7 @@ contract ClearingHouseLogic {
                     ICollateralVault(vault).settlePnL(account, m.quoteToken, -int256(lossInQuote));
                 }
             }
+            if (surplusUnits > 0) fundingSurplus[marketId] += surplusUnits;
         }
     }
 

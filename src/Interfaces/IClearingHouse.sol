@@ -17,6 +17,10 @@ interface IClearingHouse {
         // Funding surplus index (IVAMM.cumulative{Long,Short}SurplusPerUnitX18) of the position's side
         // at its last settlement.
         uint256 lastFundingSurplusIndex;
+        // Part of fundingDebt that is the position's funding surplus share (owed to the insurance fund,
+        // not to any receiver), in quote value (1e18). Booked to fundingSurplus once the debt is paid;
+        // dropped, with no insurance draw for it, if the debt is written off.
+        uint256 fundingDebtSurplus;
     }
 
     struct MarketRiskParams {

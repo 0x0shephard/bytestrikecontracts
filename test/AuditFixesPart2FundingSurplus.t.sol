@@ -113,4 +113,74 @@ contract AuditFixesPart2FundingSurplusTest is BaseTest {
             + getCollateralBalance(liquidator) + getCollateralBalance(address(feeRouter));
         assertGe(usdc.balanceOf(address(vault)), owed, "vault insolvent after sweep");
     }
+
+    /// @dev Tokens the vault holds beyond what its accounts and the booked surplus claim.
+    function _vaultExcess() internal view returns (int256) {
+        uint256 owed = getCollateralBalance(alice) + getCollateralBalance(carol) + getCollateralBalance(dave)
+            + getCollateralBalance(liquidator) + getCollateralBalance(address(feeRouter))
+            + getCollateralBalance(address(clearingHouse)) + clearingHouse.fundingSurplus(ETH_PERP);
+        return int256(usdc.balanceOf(address(vault))) - int256(owed);
+    }
+
+    /// @dev Alice keeps only her margin in the vault and accrues funding beyond it, so part of her
+    /// funding (surplus share included) is carried as debt.
+    function _aliceCarriesDebt() internal returns (uint256 surplusPerUnit0) {
+        _openHonestLongAndDustPair();
+        surplusPerUnit0 = getPosition(alice).lastFundingSurplusIndex;
+        setOraclePrice(INITIAL_ETH_PRICE);
+        vm.startPrank(alice);
+        clearingHouse.withdraw(address(usdc), getCollateralBalance(alice) - getMargin(alice));
+        vm.stopPrank();
+
+        _accrueHours(40);
+        settleFunding(carol);
+        settleFunding(dave);
+        settleFunding(alice);
+        assertGt(getPosition(alice).fundingDebt, 0, "test setup: no debt carried");
+        assertEq(getCollateralBalance(alice), 0, "test setup: balance left");
+    }
+
+    /// @dev Finding 3 (follow-up): a settlement that could not pay in full took the whole unpaid
+    /// amount off its own surplus share and nothing booked that share when the debt was paid later,
+    /// so it stayed in the vault unclaimed. The unpaid surplus is now carried with the debt and
+    /// booked when the debt is paid.
+    function test_Finding3_carriedSurplusBookedWhenDebtPaid() public {
+        uint256 surplusIdx0 = _aliceCarriesDebt();
+        IClearingHouse.PositionView memory p = getPosition(alice);
+        assertGt(p.fundingDebtSurplus, 0, "surplus share not carried");
+        assertLe(p.fundingDebtSurplus, p.fundingDebt, "carried share exceeds the debt");
+
+        // alice tops up and pays her debt in full
+        fundAndDeposit(alice, 10_000e18);
+        settleFunding(alice);
+        p = getPosition(alice);
+        assertEq(p.fundingDebt, 0, "debt not paid");
+        assertEq(p.fundingDebtSurplus, 0, "carried share not cleared");
+
+        // the whole surplus of the paying side (alice and dave) is booked, nothing is left unclaimed
+        uint256 expected = ((vamm.cumulativeLongSurplusPerUnitX18() - surplusIdx0) * 10.01e18) / 1e18;
+        assertApproxEqAbs(clearingHouse.fundingSurplus(ETH_PERP), expected, 1e6, "surplus lost");
+        assertApproxEqAbs(_vaultExcess(), 0, 1e6, "paid surplus left unclaimed in the vault");
+    }
+
+    /// @dev Finding 3 (follow-up): a liquidation that wrote the debt off drew the whole unpaid debt
+    /// from the insurance fund into the vault, surplus share included, where nothing claimed it. The
+    /// fund now pays only the unpaid debt beyond the carried surplus share, which is dropped.
+    function test_Finding3_writeOffDoesNotDrawCarriedSurplus() public {
+        _aliceCarriesDebt();
+        uint256 carried = getPosition(alice).fundingDebtSurplus;
+        assertGt(carried, 0, "surplus share not carried");
+        uint256 surplusBefore = clearingHouse.fundingSurplus(ETH_PERP);
+        int256 excessBefore = _vaultExcess();
+
+        assertTrue(isLiquidatable(alice), "test setup: not liquidatable");
+        vm.prank(liquidator);
+        clearingHouse.liquidate(alice, ETH_PERP, 10e18, 0);
+        assertEq(getPosition(alice).size, 0, "not fully liquidated");
+        assertEq(getPosition(alice).fundingDebtSurplus, 0, "carried share not dropped");
+
+        // the dropped share is neither booked nor drawn: the vault holds no more unclaimed tokens
+        assertEq(clearingHouse.fundingSurplus(ETH_PERP), surplusBefore, "unpaid surplus booked");
+        assertLe(_vaultExcess(), excessBefore + 1e6, "fund drew the surplus share into the vault");
+    }
 }
