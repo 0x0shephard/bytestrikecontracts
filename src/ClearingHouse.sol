@@ -677,6 +677,16 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
         if (!(uint256(size) <= absSize)) revert ReduceExceedsPosition();
 
+        // Enforce minPositionSize on the requested remainder to prevent dust. A fill the vAMM reserve
+        // floor clamps may leave less; the trader closes it in full once there is room.
+        {
+            uint256 remainingSize = absSize - uint256(size);
+            uint256 minSize = marketRiskParams[marketId].minPositionSize;
+            if (minSize > 0 && remainingSize > 0) {
+                if (!(remainingSize >= minSize)) revert RemainingBelowMinCloseFull();
+            }
+        }
+
         IVAMM vamm = IVAMM(m.vamm);
         // If long, sell base to close; if short, buy base to close
         (int256 baseDelta, int256 quoteDelta, uint256 avgPrice) = position.size > 0
@@ -686,15 +696,6 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         // Store realized PnL before applying trade
         int256 oldRealizedPnL = position.realizedPnL;
         _applyTrade(msg.sender, marketId, baseDelta, quoteDelta, false);
-
-        // Enforce minPositionSize on remaining position to prevent dust
-        {
-            uint256 remainingSize = uint256(position.size > 0 ? position.size : -position.size);
-            uint256 minSize = marketRiskParams[marketId].minPositionSize;
-            if (minSize > 0 && remainingSize > 0) {
-                if (!(remainingSize >= minSize)) revert RemainingBelowMinCloseFull();
-            }
-        }
 
         emit PositionClosed(
             msg.sender,

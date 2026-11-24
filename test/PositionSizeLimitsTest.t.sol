@@ -63,4 +63,35 @@ contract PositionSizeLimitsTest is BaseTest {
         vm.expectRevert(ClearingHouse.ExceedsMaxSize.selector);
         clearingHouse.openPosition(ETH_PERP, false, ethQty(16), 0);
     }
+
+    // --- minPositionSize on closePosition ---
+
+    function test_FullCloseClampedByReserveFloorLeavesDustWithoutReverting() public {
+        _open(alice, false, ethQty(10));
+        vm.prank(alice);
+        clearingHouse.addMargin(ETH_PERP, 2_000 * USDC_UNIT);
+        _setSizeLimits(0, 1 ether);
+
+        // Base floor leaves 9.5 ETH of room: a full close of the 10 ETH short is clamped to 9.5
+        (uint256 baseReserve,) = getReserves();
+        vm.prank(admin);
+        vamm.setMinReserves(baseReserve - 9.5 ether, 0);
+
+        vm.prank(alice);
+        clearingHouse.closePosition(ETH_PERP, ethQty(10), 0);
+        assertEq(getPosition(alice).size, -0.5 ether, "clamped close leaves the unfilled rest");
+    }
+
+    function test_PartialCloseLeavingDustStillReverts() public {
+        _open(alice, true, ethQty(10));
+        _setSizeLimits(0, 1 ether);
+
+        vm.prank(alice);
+        vm.expectRevert(ClearingHouse.RemainingBelowMinCloseFull.selector);
+        clearingHouse.closePosition(ETH_PERP, 9.5 ether, 0);
+
+        vm.prank(alice);
+        clearingHouse.closePosition(ETH_PERP, ethQty(9), 0); // leaves exactly the minimum
+        assertEq(getPosition(alice).size, 1 ether);
+    }
 }
