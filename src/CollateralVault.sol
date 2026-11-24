@@ -216,7 +216,8 @@ contract CollateralVault is ICollateralVault, AccessControl {
     /// and underflow in valuation helpers.
     function _validateConfig(CollateralConfig calldata cfg) internal pure {
         require(cfg.baseUnit > 0, "CV: baseUnit zero");
-        require(cfg.haircutBps <= BPS_DENOMINATOR, "CV: haircutBps exceeds max");
+        // A 100% haircut would value every balance at 0 and freeze positions quoted in the token
+        require(cfg.haircutBps < BPS_DENOMINATOR, "CV: haircutBps exceeds max");
         require(cfg.liqIncentiveBps <= BPS_DENOMINATOR, "CV: liqIncentiveBps exceeds max");
     }
 
@@ -235,11 +236,13 @@ contract CollateralVault is ICollateralVault, AccessControl {
     }
 
     /// @notice Value a token amount in USD 1e18 using oracleSymbol and baseUnit, applying haircut.
-    /// @dev Returns 0 for a disabled token, a zero amount or a zero oracle price. Reverts if the
-    ///      oracle call reverts (e.g. stale round or sequencer down); callers must handle that.
+    /// @dev Returns 0 for an unregistered token, a zero amount or a zero oracle price. A disabled
+    ///      token takes no new deposits but existing balances keep their value, so positions quoted in
+    ///      it can still be managed and wound down. Reverts if the oracle call reverts (e.g. stale
+    ///      round or sequencer down); callers must handle that.
     function getTokenValueX18(address token, uint256 amount) external view override returns (uint256 usdX18) {
         CollateralConfig memory cfg = collateralConfigs[token];
-        if (!cfg.enabled || amount == 0) return 0;
+        if (cfg.baseUnit == 0 || amount == 0) return 0;
 
         uint256 pxX18 = Oracle(oracle).getPrice(cfg.oracleSymbol);
         if (pxX18 == 0) return 0;
@@ -283,7 +286,7 @@ contract CollateralVault is ICollateralVault, AccessControl {
         return collateralConfigs[token].withdrawPaused;
     }
 
-    /// @notice Whether the token is enabled for valuation and deposits.
+    /// @notice Whether the token is enabled for deposits and counted in getAccountCollateralValueX18.
     function isEnabled(address token) external view override returns (bool) {
         return collateralConfigs[token].enabled;
     }

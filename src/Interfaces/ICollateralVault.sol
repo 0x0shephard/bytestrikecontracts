@@ -9,11 +9,12 @@ interface ICollateralVault {
     struct CollateralConfig {
         address token;            // ERC20 token address
         uint256 baseUnit;         // 10**decimals for the token
-        uint16 haircutBps;        // risk haircut (bps) applied to value (e.g., 100 = 1%)
+        uint16 haircutBps;        // risk haircut (bps) applied to value (e.g., 100 = 1%); below 10000
         uint16 liqIncentiveBps;   // liquidation incentive (bps) paid to liquidator
         uint256 cap;              // total token cap across all users (0 = unlimited)
         uint256 accountCap;       // per-account cap for this token (0 = unlimited)
-        bool enabled;             // if false, deposits blocked and token excluded from value
+        bool enabled;             // if false, deposits blocked and token excluded from account value
+                                  // (getTokenValueX18 still values existing balances)
         bool depositPaused;       // per-token deposit pause
         bool withdrawPaused;      // per-token withdraw pause
         string oracleSymbol;      // symbol used to query the price from the Oracle (e.g., "USDC")

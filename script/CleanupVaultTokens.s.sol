@@ -57,7 +57,8 @@ contract CleanupVaultTokens is Script {
 
         vm.startBroadcast();
 
-        // Disable old tokens
+        // Disable old tokens. This blocks new deposits only: existing balances keep their value, so
+        // positions in markets quoted in these tokens can still be topped up, closed and liquidated.
         console.log("Disabling old tokens...");
 
         // Get and modify Token 1 config

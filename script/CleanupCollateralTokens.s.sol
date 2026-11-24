@@ -116,6 +116,8 @@ contract CleanupCollateralTokens is Script {
         console.log("=========================================");
     }
 
+    /// @dev Disabling blocks new deposits only: existing balances keep their value, so positions in
+    ///      markets quoted in the token can still be topped up, closed and liquidated.
     function _disableToken(CollateralVault vault, address token, string memory name) internal {
         console.log("Disabling:", name, "at", token);
 
