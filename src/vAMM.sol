@@ -573,9 +573,12 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	}
 
 	/// @notice Toggles the swap execution flag, enabling or disabling all trading through the vAMM.
+	/// @dev Registry-only, so the flag always moves with MarketRegistry.pauseMarket and funding never
+	///      runs while the registry keeps the market paused. setRegistry must be called on every vAMM
+	///      before its market can be paused.
 	/// @param paused True to pause swaps, false to resume.
 	function pauseSwaps(bool paused) external {
-		require(msg.sender == owner() || msg.sender == clearinghouse || msg.sender == registry, "Not authorized");
+		require(msg.sender == registry, "Not authorized");
 		if (paused) {
 			// Flush any accumulated funding under the current price before pausing
 			_pokeFundingInternal();

@@ -413,6 +413,12 @@ contract ClearingHouseLogic {
 
         IVAMM vamm = IVAMM(m.vamm);
 
+        // No funding accrues while the market is not active: its traders cannot top up, trade or close.
+        if (!IMarketRegistry(marketRegistry).isActive(marketId)) {
+            vamm.skipFunding();
+            return;
+        }
+
         // Funding only accrues while it can be settled in the quote token. If the quote oracle is
         // unavailable (stale round, sequencer down or in grace period), advance the funding clock
         // without accruing so payers are not charged for time in which they cannot act.

@@ -603,16 +603,16 @@ contract FundingTest is BaseTest {
         vamm.pokeFunding();
         uint256 fundingBeforePause = getCumulativeFunding();
 
-        // Pause swaps directly on the vAMM (owner can call pauseSwaps)
+        // Pause the market (the registry pauses the vAMM's swaps)
         vm.prank(admin);
-        vamm.pauseSwaps(true);
+        marketRegistry.pauseMarket(ETH_PERP, true);
 
         // Skip a lot of time while paused
         skipTime(24 hours);
 
         // Unpause
         vm.prank(admin);
-        vamm.pauseSwaps(false);
+        marketRegistry.pauseMarket(ETH_PERP, false);
 
         uint256 fundingAfterUnpause = getCumulativeFunding();
 
