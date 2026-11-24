@@ -534,8 +534,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
 
     /// @notice Sets the aggregate open-interest caps for a market. 0 disables a cap.
-    /// @dev Lowering a cap below current OI never traps positions: only trades that
-    ///      increase the capped measure are rejected, and closes and liquidations are never capped.
+    /// @dev Lowering a cap below current OI never traps positions: only trades that increase the
+    ///      capped measure, or move net OI above its cap to the other side, are rejected, and closes,
+    ///      pure reductions and liquidations are never capped.
     /// @param marketId The market to configure.
     /// @param maxGrossOI Cap on long OI + short OI, in base units (1e18).
     /// @param maxNetOI Cap on |long OI - short OI|, in base units (1e18). Limits new one-sided exposure only;
@@ -558,7 +559,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
     /// @notice Reverts if a trade raised gross or net OI above its cap.
-    /// @dev A trade that lowers a measure is always allowed, even if the measure is still above its cap.
+    /// @dev A trade that lowers a measure is allowed even if the measure is still above its cap, but net
+    ///      OI left above its cap must stay on the same side: moving it to the other side is new exposure.
     function _checkOpenInterestCaps(
         bytes32 marketId,
         OpenInterestCaps memory oiCaps,
@@ -579,7 +581,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             uint256 netAfter = longOIAfter > shortOIAfter ? longOIAfter - shortOIAfter : shortOIAfter - longOIAfter;
             uint256 netBefore =
                 longOIBefore > shortOIBefore ? longOIBefore - shortOIBefore : shortOIBefore - longOIBefore;
-            if (netAfter > oiCaps.maxNetOI && netAfter > netBefore) revert ExceedsMaxNetOI();
+            bool sideChanged = (longOIAfter > shortOIAfter) != (longOIBefore > shortOIBefore);
+            if (netAfter > oiCaps.maxNetOI && (netAfter > netBefore || sideChanged)) revert ExceedsMaxNetOI();
         }
     }
 

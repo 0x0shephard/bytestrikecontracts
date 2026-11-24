@@ -156,6 +156,20 @@ contract OpenInterestCapsTest is BaseTest {
         _expectOpenRevert(bob, false, ethQty(5), ClearingHouse.ExceedsMaxNetOI.selector); // net would be -3
     }
 
+    function test_NetCapBlocksMovingExcessNetToTheOtherSide() public {
+        _open(alice, true, ethQty(5));
+        _setCaps(NO_GROSS_LIMIT, 2 ether); // net long 5, already above the cap
+
+        // net +5 -> -5: same size, but new one-sided exposure on the short side
+        _expectOpenRevert(bob, false, ethQty(10), ClearingHouse.ExceedsMaxNetOI.selector);
+        // net +5 -> -3: smaller, but still above the cap on the other side
+        _expectOpenRevert(bob, false, ethQty(8), ClearingHouse.ExceedsMaxNetOI.selector);
+
+        _open(bob, false, ethQty(7)); // net +5 -> -2, within the cap
+        assertEq(_net(), 2 ether);
+        assertEq(clearingHouse.totalShortOI(ETH_PERP), 7 ether);
+    }
+
     // --- Lowered caps never trap positions ---
 
     function test_RiskReducingOpenIsAllowedAboveTheNetCap() public {
@@ -241,18 +255,21 @@ contract OpenInterestCapsTest is BaseTest {
             uint128 size = uint128(bound(sizes[i], 1, 4)) * 1 ether;
             address trader = traders[i % 3];
             uint256 netBefore = _net();
+            bool longBefore = clearingHouse.totalLongOI(ETH_PERP) > clearingHouse.totalShortOI(ETH_PERP);
             int256 sizeBefore = clearingHouse.getPosition(trader, ETH_PERP).size;
             vm.prank(trader);
             try clearingHouse.openPosition(ETH_PERP, sides[i], size, 0) {} catch {}
             int256 sizeAfter = clearingHouse.getPosition(trader, ETH_PERP).size;
 
-            // Gross is a hard bound. Net is bounded for any trade that grows it, except a
-            // pure reduction of the trader's own position, which is exempt like closePosition.
+            // Gross is a hard bound. Net is bounded for any trade that grows it or moves it to the
+            // other side, except a pure reduction of the trader's own position, which is exempt
+            // like closePosition.
             assertLe(_gross(), 6 ether);
             bool pureReduction = (sizeBefore > 0 && sizeAfter >= 0 && sizeAfter <= sizeBefore)
                 || (sizeBefore < 0 && sizeAfter <= 0 && sizeAfter >= sizeBefore);
             uint256 netAfter = _net();
-            if (netAfter > netBefore && !pureReduction) assertLe(netAfter, 3 ether);
+            bool longAfter = clearingHouse.totalLongOI(ETH_PERP) > clearingHouse.totalShortOI(ETH_PERP);
+            if ((netAfter > netBefore || longAfter != longBefore) && !pureReduction) assertLe(netAfter, 3 ether);
         }
     }
 }
