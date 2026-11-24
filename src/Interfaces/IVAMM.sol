@@ -27,6 +27,14 @@ interface IVAMM {
         uint256 minQuoteOut
     ) external returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18);
 
+    /// @notice ClearingHouse-only liquidation close: buys (`buy`) or sells `baseAmount` of base without
+    ///         the reserve floor clamp. `amountLimit` is maxQuoteIn when buying, minQuoteOut when selling.
+    function liquidationSwap(
+        bool buy,
+        uint128 baseAmount,
+        uint256 amountLimit
+    ) external returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18);
+
     // ========= Views =========
     /// @notice Current mark price derived from sqrtPrice (1e18-scaled quote per base).
     function getMarkPrice() external view returns (uint256);

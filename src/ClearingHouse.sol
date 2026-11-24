@@ -712,8 +712,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     ///      fill is capped at the size whose average price stays within mmrBps - liquidationPenaltyBps
     ///      of the index (see _maxLiquidationBase), with amountLimit scaled to the capped size. The
     ///      penalty is charged on the filled size. A partial liquidation must leave the remainder with
-    ///      a margin ratio no worse than before, unless the fill was capped or the vAMM reserve floor
-    ///      clamped it.
+    ///      a margin ratio no worse than before, unless the fill was capped. The close trades through
+    ///      the vAMM reserve floors (vAMM.liquidationSwap), so a parked reserve cannot block it.
     /// @param account The address of the user whose position is being liquidated.
     /// @param marketId The ID of the market.
     /// @param size The amount of the position to liquidate.
@@ -742,9 +742,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         // Snapshot risk price before the vAMM trade
         uint256 riskPrice = _getRiskPrice(m);
 
-        // Close position via vAMM. The fill is capped at the size whose average price stays within
-        // the fill bound, and the vAMM reserve floor may fill less still. Either way the rest of
-        // `size` is left for later calls and the remainder check below does not apply.
+        // Close position via vAMM, ignoring its reserve floors. The fill is capped at the size whose
+        // average price stays within the fill bound; the rest of `size` is then left for later calls
+        // and the remainder check below does not apply.
         uint256 filled;
         bool capped;
         {
@@ -760,9 +760,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
                 // Scale the quote limit with the size so it keeps the same average price.
                 amountLimit = Calculations.mulDiv(amountLimit, maxBase, size);
             }
-            (int256 baseDelta, int256 quoteDelta, ) = closingLong
-                ? vamm.sellBase(tradeSize, amountLimit)
-                : vamm.buyBase(tradeSize, amountLimit);
+            (int256 baseDelta, int256 quoteDelta, ) = vamm.liquidationSwap(!closingLong, tradeSize, amountLimit);
             _applyTrade(account, marketId, baseDelta, quoteDelta, true);
             filled = uint256(baseDelta >= 0 ? baseDelta : -baseDelta);
         }
@@ -837,9 +835,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         // A partial liquidation must not leave the remainder with a worse margin ratio than the
         // position had before (effective margin per unit of size; the index is unchanged), with
         // 1 wei of slack for the rounding of the released slice margin and of unrealized PnL. A fill
-        // capped by the fill bound or clamped by the vAMM reserve floor is exempt, so the rest can
-        // be liquidated once the mark or reserves allow.
-        if (position.size != 0 && !capped && filled == uint256(size)) {
+        // capped by the fill bound is exempt, so the rest can be liquidated once the mark allows.
+        if (position.size != 0 && !capped) {
             uint256 absSizeAfter = uint256(position.size > 0 ? position.size : -position.size);
             (int256 effectiveMarginAfter,) = _marginState(account, marketId);
             if ((effectiveMarginAfter + 1) * int256(absSizeBefore) < effectiveMarginBefore * int256(absSizeAfter)) {

@@ -165,6 +165,44 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		uint128 baseAmount,
 		uint256 maxQuoteIn
 	) external onlyCH returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18) {
+		return _buyBase(baseAmount, maxQuoteIn, true);
+	}
+
+	/// @notice Sell base asset to receive quote. Used for shorting or closing longs.
+	/// @param baseAmount Amount of base asset to sell.
+	/// @param minQuoteOut Slippage protection: minimum quote tokens expected to receive for baseAmount. 0 =
+	///        no limit. If the reserve floor clamps the fill, the limit is scaled to the base consumed so
+	///        the limit price per unit is kept.
+	/// @return baseDelta Negative base sold by trader.
+	/// @return quoteDelta Positive quote received by trader.
+	/// @return avgPriceX18 Effective execution price.
+	function sellBase(
+		uint128 baseAmount,
+		uint256 minQuoteOut
+	) external onlyCH returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18) {
+		return _sellBase(baseAmount, minQuoteOut, true);
+	}
+
+	/// @notice Closes a liquidated position: buys (`buy`) or sells `baseAmount` of base, ignoring the
+	///         reserve floors, so a trade that parks a reserve on its floor cannot block liquidations.
+	/// @dev ClearingHouse-only. ClearingHouse.liquidate caps the size so the average fill stays within
+	///      mmrBps - liquidationPenaltyBps of the index (_maxLiquidationBase), which bounds how far the
+	///      reserves can move. The floors still clamp every other trade.
+	/// @param amountLimit maxQuoteIn when buying, minQuoteOut when selling; 0 = no limit.
+	function liquidationSwap(
+		bool buy,
+		uint128 baseAmount,
+		uint256 amountLimit
+	) external onlyCH returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18) {
+		return buy ? _buyBase(baseAmount, amountLimit, false) : _sellBase(baseAmount, amountLimit, false);
+	}
+
+	/// @dev buyBase, with the base reserve floor applied only when `useFloor`.
+	function _buyBase(
+		uint128 baseAmount,
+		uint256 maxQuoteIn,
+		bool useFloor
+	) internal returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18) {
 		require(!swapsPaused, "Swaps paused");
 		require(baseAmount > 0, "amount=0");
 		uint256 X = reserveBase;
@@ -175,7 +213,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		// Clamp to available capacity at the reserve boundary so that
 		// near-boundary trades are partially filled instead of reverting.
 		// This prevents front-running from blocking liquidations.
-		if (minReserveBase > 0) {
+		if (useFloor && minReserveBase > 0) {
 			uint256 available = X > minReserveBase ? X - minReserveBase : 0;
 			require(available > 0, "Reserve base depleted");
 			if (uint256(baseAmount) > available) {
@@ -216,18 +254,12 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		emit Swap(msg.sender, baseDelta, quoteDelta, avgPriceX18);
 	}
 
-	/// @notice Sell base asset to receive quote. Used for shorting or closing longs.
-	/// @param baseAmount Amount of base asset to sell.
-	/// @param minQuoteOut Slippage protection: minimum quote tokens expected to receive for baseAmount. 0 =
-	///        no limit. If the reserve floor clamps the fill, the limit is scaled to the base consumed so
-	///        the limit price per unit is kept.
-	/// @return baseDelta Negative base sold by trader.
-	/// @return quoteDelta Positive quote received by trader.
-	/// @return avgPriceX18 Effective execution price.
-	function sellBase(
+	/// @dev sellBase, with the quote reserve floor applied only when `useFloor`.
+	function _sellBase(
 		uint128 baseAmount,
-		uint256 minQuoteOut
-	) external onlyCH returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18) {
+		uint256 minQuoteOut,
+		bool useFloor
+	) internal returns (int256 baseDelta, int256 quoteDelta, uint256 avgPriceX18) {
 		require(!swapsPaused, "Swaps paused");
 		require(baseAmount > 0, "amount=0");
 		uint256 X = reserveBase;
@@ -243,7 +275,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 		// Clamp to available reserve capacity so that near-boundary trades
 		// are partially filled instead of reverting.
-		if (minReserveQuote > 0) {
+		if (useFloor && minReserveQuote > 0) {
 			uint256 newReserveQuote = Y - quoteOut;
 			if (newReserveQuote < minReserveQuote) {
 				uint256 maxQuoteOut = Y > minReserveQuote ? Y - minReserveQuote : 0;

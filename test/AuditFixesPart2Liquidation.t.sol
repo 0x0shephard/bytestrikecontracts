@@ -26,9 +26,10 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
     // Draft finding 21: penalty on the filled size
     // ---------------------------------------------------------------------
 
-    /// @dev A long liquidated while the mark trades well above its entry and the index, with the
-    /// vAMM reserve floor clamping the fill to half the requested size: the penalty is charged
-    /// on the filled half only.
+    /// @dev A long liquidated while the mark trades well above its entry and the index, with a vAMM
+    /// reserve floor that would clamp a trade to half the requested size. Liquidations trade through
+    /// the floor (finding 43), so the whole size fills and the penalty is charged on it. A partial
+    /// (capped) fill is charged on its filled size: see test_CappedLiquidationChargesPenaltyOnFilledSize.
     function test_LiquidationPenaltyOnFilledSize() public {
         fundAndDeposit(alice, 1_100 * USDC_UNIT);
         fundAndDeposit(bob, 200_000 * USDC_UNIT);
@@ -52,8 +53,7 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
 
         IClearingHouse.PositionView memory pos = getPosition(alice);
         uint256 filled = 10 ether - uint256(pos.size);
-        assertGt(pos.size, 0, "fill was clamped");
-        assertApproxEqAbs(filled, 5 ether, 1e6);
+        assertEq(filled, 10 ether, "liquidation clamped by the reserve floor");
 
         uint256 penalty = (((filled * index) / 1e18) * LIQUIDATION_PENALTY_BPS + 9_999) / 10_000;
         uint256 liqIncentive = penalty - penalty / 2;
@@ -231,17 +231,15 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
         assertEq(getPosition(alice).size, 0);
     }
 
-    /// @dev Finding 5: a fill the vAMM reserve floor clamps below the requested size is exempt from
-    /// the remainder check, so the liquidation closes what reserves allow.
-    function test_ClampedLiquidationAtLossSucceeds() public {
+    /// @dev Finding 5 originally exempted a fill the vAMM reserve floor clamped. Since finding 43
+    /// liquidations trade through the floor, so a liquidation at a loss closes the requested size.
+    function test_ReserveFloorDoesNotClampLiquidationAtLoss() public {
         _liquidatableLong(0, 1_900 ether);
         _clampSellsTo(5 ether);
 
         vm.prank(liquidator);
         clearingHouse.liquidate(alice, ETH_PERP, 10 ether, 0);
-        int256 remaining = getPosition(alice).size;
-        assertGt(remaining, 0);
-        assertLt(remaining, 10 ether);
+        assertEq(getPosition(alice).size, 0);
     }
 
     // ---------------------------------------------------------------------
