@@ -618,12 +618,16 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             shortOIBefore = totalShortOI[marketId];
         }
 
-        IVAMM vamm = IVAMM(m.vamm);
-        (int256 baseDelta, int256 quoteDelta, uint256 avgPrice) = isLong
-            ? vamm.buyBase(size, amountLimit)
-            : vamm.sellBase(size, amountLimit);
-
-        _applyTrade(msg.sender, marketId, baseDelta, quoteDelta, false);
+        // Fills the trade (a flip as a closing and an opening swap, each leg priced at its own fill).
+        (int256 baseDelta, int256 quoteDelta, uint256 closeQuote, uint256 avgPrice) = abi.decode(
+            _delegate(
+                abi.encodeWithSignature(
+                    "fillOpen(address,bytes32,bool,uint128,uint256)", msg.sender, marketId, isLong, size, amountLimit
+                )
+            ),
+            (int256, int256, uint256, uint256)
+        );
+        _applyTrade(msg.sender, marketId, baseDelta, quoteDelta, false, closeQuote);
 
         // A trade that only shrinks the trader's position (no flip) is exempt from the OI caps and
         // maxPositionSize, matching closePosition. A flip is checked in full.
@@ -695,7 +699,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         // Store realized PnL before applying trade
         int256 oldRealizedPnL = position.realizedPnL;
-        _applyTrade(msg.sender, marketId, baseDelta, quoteDelta, false);
+        _applyTrade(msg.sender, marketId, baseDelta, quoteDelta, false, 0);
 
         emit PositionClosed(
             msg.sender,
@@ -761,7 +765,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
                 amountLimit = Calculations.mulDiv(amountLimit, maxBase, size);
             }
             (int256 baseDelta, int256 quoteDelta, ) = vamm.liquidationSwap(!closingLong, tradeSize, amountLimit);
-            _applyTrade(account, marketId, baseDelta, quoteDelta, true);
+            _applyTrade(account, marketId, baseDelta, quoteDelta, true, 0);
             filled = uint256(baseDelta >= 0 ? baseDelta : -baseDelta);
         }
 
@@ -1011,10 +1015,24 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
     /// @dev Forwards to ClearingHouseLogic.applyTrade via delegatecall.
     ///      The logic contract shares this contract's storage, msg.sender, and address(this).
-    function _applyTrade(address account, bytes32 marketId, int256 baseDelta, int256 quoteDelta, bool isLiquidation) internal {
+    ///      `closeQuote` is the closing swap's quote for a flip filled as two swaps, else 0.
+    function _applyTrade(
+        address account,
+        bytes32 marketId,
+        int256 baseDelta,
+        int256 quoteDelta,
+        bool isLiquidation,
+        uint256 closeQuote
+    ) internal {
         _delegate(
             abi.encodeWithSignature(
-                "applyTrade(address,bytes32,int256,int256,bool)", account, marketId, baseDelta, quoteDelta, isLiquidation
+                "applyTrade(address,bytes32,int256,int256,bool,uint256)",
+                account,
+                marketId,
+                baseDelta,
+                quoteDelta,
+                isLiquidation,
+                closeQuote
             )
         );
     }

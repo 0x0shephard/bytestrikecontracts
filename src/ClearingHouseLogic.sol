@@ -94,9 +94,57 @@ contract ClearingHouseLogic {
         bytes32 marketId,
         int256 baseDelta,
         int256 quoteDelta,
-        bool isLiquidation
+        bool isLiquidation,
+        uint256 closeQuote
     ) external {
-        _applyTrade(account, marketId, baseDelta, quoteDelta, isLiquidation);
+        _applyTrade(account, marketId, baseDelta, quoteDelta, isLiquidation, closeQuote);
+    }
+
+    /// @notice Fills an openPosition trade on the vAMM; ClearingHouse then applies it with applyTrade.
+    /// @dev Delegatecall target of ClearingHouse.openPosition. A flip (an opposite-side trade larger
+    ///      than the position) is filled as two swaps, the closing size first and then the rest, so
+    ///      the closed position is realized at the closing swap's price and the new position entered
+    ///      at the opening swap's price, as closePosition followed by openPosition would. The caller's
+    ///      amountLimit applies to the summed quote (scaled to the filled size if a reserve floor
+    ///      clamps a leg); if the closing swap is clamped, the opening one is skipped.
+    ///      Returns the trade deltas, the closing swap quote of a flip (else 0) and the average price.
+    function fillOpen(address account, bytes32 marketId, bool isLong, uint128 size, uint256 amountLimit)
+        external
+        returns (int256 baseDelta, int256 quoteDelta, uint256 closeQuote, uint256 avgPriceX18)
+    {
+        IVAMM vamm = IVAMM(IMarketRegistry(marketRegistry).getMarket(marketId).vamm);
+        int256 s0 = positions[account][marketId].size;
+        uint256 absS0 = uint256(s0 >= 0 ? s0 : -s0);
+        if (s0 == 0 || (s0 > 0) == isLong || uint256(size) <= absS0) {
+            (baseDelta, quoteDelta, avgPriceX18) = _swap(vamm, isLong, size, amountLimit);
+        } else {
+            (baseDelta, quoteDelta,) = _swap(vamm, isLong, uint128(absS0), 0);
+            closeQuote = uint256(quoteDelta >= 0 ? quoteDelta : -quoteDelta);
+            if (uint256(baseDelta >= 0 ? baseDelta : -baseDelta) == absS0) {
+                (int256 b2, int256 q2,) = _swap(vamm, isLong, size - uint128(absS0), 0);
+                baseDelta += b2;
+                quoteDelta += q2;
+            }
+            uint256 filled = uint256(baseDelta >= 0 ? baseDelta : -baseDelta);
+            uint256 totalQuote = uint256(quoteDelta >= 0 ? quoteDelta : -quoteDelta);
+            if (amountLimit != 0) {
+                // Same rule as the vAMM: a total for `size`, scaled to the filled size.
+                require(
+                    isLong
+                        ? totalQuote <= Calculations.mulDiv(amountLimit, filled, size)
+                        : totalQuote >= Calculations.mulDivRoundingUp(amountLimit, filled, size),
+                    "slippage"
+                );
+            }
+            avgPriceX18 = Calculations.mulDiv(totalQuote, 1e18, filled);
+        }
+    }
+
+    function _swap(IVAMM vamm, bool isLong, uint128 size, uint256 limit)
+        internal
+        returns (int256, int256, uint256)
+    {
+        return isLong ? vamm.buyBase(size, limit) : vamm.sellBase(size, limit);
     }
 
     function settleFundingInternal(bytes32 marketId, address account) external {
@@ -106,8 +154,8 @@ contract ClearingHouseLogic {
     /// @notice Settles funding for `account` in its active markets and in `marketId` (skipped when 0).
     /// @dev With `sameQuoteOnly`, only markets sharing `marketId`'s quote token are settled, so markets
     ///      on other quote tokens cannot block a close or liquidation. Markets left carrying funding
-    ///      debt are settled again afterwards, so a credit settled in a later market pays the debt
-    ///      whatever order the markets are settled in.
+    ///      debt are settled again afterwards with the free collateral left at the end. A credit in
+    ///      another market is reserved as that market's margin and does not pay the debt (finding 61).
     function settleAccountFunding(address account, bytes32 marketId, bool sameQuoteOnly) external {
         address quote;
         if (sameQuoteOnly) quote = IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken;
@@ -281,7 +329,17 @@ contract ClearingHouseLogic {
     // Core logic (moved from ClearingHouse)
     // =========================================================================
 
-    function _applyTrade(address account, bytes32 marketId, int256 baseDelta, int256 quoteDelta, bool isLiquidation) internal {
+    /// @param closeQuote For a flip filled as two swaps, the quote of the swap that closed the old
+    ///        position (0 otherwise): the closed size is realized at its price and the new position
+    ///        entered at the price of the rest of the quote.
+    function _applyTrade(
+        address account,
+        bytes32 marketId,
+        int256 baseDelta,
+        int256 quoteDelta,
+        bool isLiquidation,
+        uint256 closeQuote
+    ) internal {
         IClearingHouse.PositionView storage position = positions[account][marketId];
         int256 s0 = position.size;
         int256 s1 = s0 + baseDelta;
@@ -305,16 +363,20 @@ contract ClearingHouseLogic {
             position.entryPriceX18 = newNotional / absS1;
         } else {
             uint256 reduceAmt = absBaseDelta <= absS0 ? absBaseDelta : absS0;
+            bool flips = (s0 > 0 && s1 < 0) || (s0 < 0 && s1 > 0);
+            // A flip filled as two swaps prices each leg at its own fill.
+            uint256 closePxX18 = flips && closeQuote != 0 ? Calculations.mulDiv(closeQuote, 1e18, absS0) : execPxX18;
             if (s0 > 0) {
-                realized = (int256(execPxX18) - int256(position.entryPriceX18)) * int256(reduceAmt) / 1e18;
+                realized = (int256(closePxX18) - int256(position.entryPriceX18)) * int256(reduceAmt) / 1e18;
             } else {
-                realized = (int256(position.entryPriceX18) - int256(execPxX18)) * int256(reduceAmt) / 1e18;
+                realized = (int256(position.entryPriceX18) - int256(closePxX18)) * int256(reduceAmt) / 1e18;
             }
 
             if (absS1 == 0) {
                 position.entryPriceX18 = 0;
-            } else if ((s0 > 0 && s1 < 0) || (s0 < 0 && s1 > 0)) {
-                position.entryPriceX18 = execPxX18;
+            } else if (flips) {
+                position.entryPriceX18 =
+                    closeQuote != 0 ? Calculations.mulDiv(absQuote - closeQuote, 1e18, absS1) : execPxX18;
             }
         }
 
