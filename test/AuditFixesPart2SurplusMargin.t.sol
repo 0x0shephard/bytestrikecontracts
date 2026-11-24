@@ -77,8 +77,8 @@ contract AuditFixesPart2SurplusMarginTest is BaseTest {
         assertFalse(clearingHouse.isLiquidatable(alice, MARKET_B), "B liquidatable");
     }
 
-    // 2% of 10 ETH at the 1,950 index, half to the liquidator and half to the fee router
-    uint256 internal constant PENALTY = 390e18;
+    // 1.5% of 10 ETH at the 1,950 index, half to the liquidator and half to the fee router
+    uint256 internal constant PENALTY = 292.5e18;
 
     function test_Finding12_penaltyDrawnFromSurplusMarginOnOtherPosition() public {
         _setUp(10e18, true);
@@ -88,7 +88,8 @@ contract AuditFixesPart2SurplusMarginTest is BaseTest {
         liquidateFully(alice, ETH_PERP, bob);
 
         // The account pays the whole penalty: the liquidator is paid in the vault, not by the fund.
-        assertEq(vault.balanceOf(liquidator, address(usdc)), PENALTY / 2, "incentive not collected");
+        // (each liquidation call rounds its incentive up by at most 1 wei)
+        assertApproxEqAbs(vault.balanceOf(liquidator, address(usdc)), PENALTY / 2, 2, "incentive not collected");
         assertEq(usdc.balanceOf(liquidator), 0, "insurance paid the liquidator");
         assertEq(clearingHouse.totalBadDebt(), badDebtBefore, "protocol share written off");
 
@@ -100,10 +101,10 @@ contract AuditFixesPart2SurplusMarginTest is BaseTest {
     }
 
     function test_Finding12_drawStopsAtPenaltyFloor() public {
-        _setUp(2e18, false);
+        _setUp(1e18, false);
         uint256 marginB = clearingHouse.getPosition(alice, MARKET_B).margin;
-        // B's own penalty floor: 2% of 2 ETH at the index.
-        uint256 floorB = 78e18;
+        // B's own penalty floor: 1.5% of 1 ETH at the index.
+        uint256 floorB = 29.25e18;
         assertLt(marginB - floorB, PENALTY, "test setup: B surplus covers the whole penalty");
 
         liquidateFully(alice, ETH_PERP, bob);

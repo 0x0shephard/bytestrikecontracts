@@ -297,12 +297,42 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
         vm.expectRevert(ClearingHouse.InvalidLiquidationPriceBand.selector);
         clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 201, PENALTY_CAP, 0, 0);
 
-        // with the band reset to default, only penalty <= mmr is required; the default is capped
+        // with the band reset to default, mmr - penalty must still leave the minimum band; the
+        // default is capped at that gap
         clearingHouse.setLiquidationPriceBand(ETH_PERP, 0);
-        clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 450, PENALTY_CAP, 0, 0);
-        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), 50);
+        clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 400, PENALTY_CAP, 0, 0);
+        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), 100);
         vm.expectRevert(ClearingHouse.InvalidLiquidationPriceBand.selector);
         clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 501, PENALTY_CAP, 0, 0);
+        vm.stopPrank();
+    }
+
+    /// @dev Finding 9 (follow-up): with no band stored, setRiskParams only required penalty <= mmr, so
+    /// a penalty at or just under the MMR left an effective band of 0 or a few bps, and one long
+    /// liquidation leaving the mark under the index blocked the next. The gap mmr - penalty must now
+    /// be at least MIN_LIQUIDATION_BAND_BPS, and an explicit band may not be narrower.
+    function test_SetRiskParamsRequiresMinimumBand() public {
+        uint256 minBand = clearingHouse.MIN_LIQUIDATION_BAND_BPS();
+        assertEq(minBand, 100);
+        vm.startPrank(admin);
+        // penalty equal to the MMR (band 0) and a 1 bps gap are rejected
+        vm.expectRevert(ClearingHouse.InvalidLiquidationPriceBand.selector);
+        clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 500, PENALTY_CAP, 0, 0);
+        vm.expectRevert(ClearingHouse.InvalidLiquidationPriceBand.selector);
+        clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 499, PENALTY_CAP, 0, 0);
+        vm.expectRevert(ClearingHouse.InvalidLiquidationPriceBand.selector);
+        clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 500 - minBand + 1, PENALTY_CAP, 0, 0);
+
+        // the smallest allowed gap gives the minimum band
+        clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 500 - minBand, PENALTY_CAP, 0, 0);
+        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), minBand);
+
+        // an explicit band narrower than the minimum is rejected
+        clearingHouse.setRiskParams(ETH_PERP, 1_000, 500, 200, PENALTY_CAP, 0, 0);
+        vm.expectRevert(ClearingHouse.InvalidLiquidationPriceBand.selector);
+        clearingHouse.setLiquidationPriceBand(ETH_PERP, minBand - 1);
+        clearingHouse.setLiquidationPriceBand(ETH_PERP, minBand);
+        assertEq(clearingHouse.liquidationPriceBandBps(ETH_PERP), minBand);
         vm.stopPrank();
     }
 }

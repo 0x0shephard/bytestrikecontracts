@@ -149,7 +149,7 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
 
     /// @dev Alice's 30 ETH long, liquidated after a 10% index gap, realizes a loss above her balance.
     /// @dev The vAMM is 10x deeper than the default, so the 30 ETH close from a mark at the index
-    ///      fits in one call within the liquidation fill bound (mmr - penalty = 0.5%, findings 1 + 4).
+    ///      fits in one call within the liquidation fill bound (mmr - penalty = 1%, findings 1 + 4).
     function _setUpUnderwaterLong() internal {
         vm.warp(block.timestamp + 1 days); // past the reset cooldown
         vm.prank(admin);
@@ -191,8 +191,8 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         assertGt(drawn, 0, "fund paid the shortfall into the vault");
         assertLe(drawn, trackedBefore - _trackedInsurance(), "draw is booked as a fund payout");
         // The fund paid the loss and the keeper incentive; only the uncollected protocol share of
-        // the penalty (half of 2% of 30 * 1,800) is recorded, with no fake insurance netting.
-        assertEq(clearingHouse.totalBadDebt(), 540e18, "only the protocol penalty share is recorded");
+        // the penalty (half of 1.5% of 30 * 1,800) is recorded, with no fake insurance netting.
+        assertEq(clearingHouse.totalBadDebt(), 405e18, "only the protocol penalty share is recorded");
 
         vm.prank(bob);
         clearingHouse.closePosition(ETH_PERP, bobSize, 0);
@@ -271,7 +271,7 @@ contract AuditFixesPart2InsuranceTest is BaseTest {
         clearingHouse.liquidate(alice, ETH_PERP, 10e18, 0);
         assertEq(clearingHouse.getPosition(alice, ETH_PERP).fundingDebt, 0, "debt not settled");
         assertGe(usdc.balanceOf(address(vault)) - vaultTokensBefore, debt, "fund covers the debt");
-        // Only the protocol's uncollected penalty share (1% of 10 ETH at the 1,900 index) is recorded.
-        assertEq(clearingHouse.totalBadDebt() - badDebtBefore, 190e18, "funding written off while the fund can pay");
+        // Only the protocol's uncollected penalty share (0.75% of 10 ETH at the 1,900 index) is recorded.
+        assertEq(clearingHouse.totalBadDebt() - badDebtBefore, 142.5e18, "funding written off while the fund can pay");
     }
 }

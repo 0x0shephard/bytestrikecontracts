@@ -19,9 +19,10 @@ contract SetRiskParams is Script {
     bytes32 constant ETH_PERP_MARKET_ID = 0x352291f10e3a0d4a9f7beb3b623eac0b06f735c95170f956bc68b2f8b504a35d;
 
     // Risk Parameters - TESTNET ONLY: Minimal values to bypass margin checks
-    // WARNING: DO NOT USE ON MAINNET - Allows infinite leverage
-    uint256 constant IMR_BPS = 1;                 // 0.01% initial margin requirement (essentially 0)
-    uint256 constant MMR_BPS = 1;                 // 0.01% maintenance margin requirement (minimum allowed)
+    // WARNING: DO NOT USE ON MAINNET - Allows about 99x leverage
+    uint256 constant IMR_BPS = 101;               // 1.01% initial margin requirement (must be >= MMR)
+    uint256 constant MMR_BPS = 101;               // 1.01%: lowest MMR allowed with a 1 bps penalty
+                                                  // (MMR - penalty >= MIN_LIQUIDATION_BAND_BPS = 1%)
     uint256 constant LIQUIDATION_PENALTY_BPS = 1; // 0.01% liquidation penalty
     uint256 constant PENALTY_CAP = 10_000 * 1e18; // 10,000 USDC max penalty
     uint256 constant MAX_POSITION_SIZE = 0;       // 0 = unlimited
@@ -100,11 +101,11 @@ contract SetRiskParams is Script {
         console.log("=== Risk Parameters Set Successfully! ===");
         console.log("TESTNET ONLY - Minimal margin requirements enabled");
         console.log("Frontend will now display:");
-        console.log("  IMR: 0.01% (essentially no margin requirement)");
-        console.log("  MMR: 0.01% (essentially no liquidations)");
+        console.log("  IMR: 1.01% (about 99x leverage)");
+        console.log("  MMR: 1.01% (lowest allowed with the 0.01% penalty)");
         console.log("  Liquidation Penalty: 0.01%");
         console.log("");
-        console.log("WARNING: These settings allow infinite leverage!");
+        console.log("WARNING: These settings allow about 99x leverage!");
         console.log("Remember to restore proper values before mainnet deployment.");
     }
 }

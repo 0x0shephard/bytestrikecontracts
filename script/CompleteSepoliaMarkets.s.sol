@@ -167,7 +167,8 @@ contract CompleteSepoliaMarkets is Script {
         s[6] = Spec("GCP-H200-PERP", "GCP-H200", 660e16, 1000, 500, 250, 1000e18, false);
         s[7] = Spec("ORACLE-H200-PERP", "ORACLE-H200", 647e16, 1000, 500, 250, 1000e18, false);
         s[8] = Spec("T4-PERP", "T4", 45e16, 1000, 500, 250, 1000e18, false);
-        s[9] = Spec("H100-GPU-PERP", "H100-GPU", 375e16, 1000, 250, 200, 10000e18, false);
+        // MMR 3.5%: MMR - penalty must be at least ClearingHouse.MIN_LIQUIDATION_BAND_BPS (1%)
+        s[9] = Spec("H100-GPU-PERP", "H100-GPU", 375e16, 1000, 350, 200, 10000e18, false);
         s[10] = Spec("H100-HyperScalers-PERP", "H100-HyperScalers", 420e16, 1000, 500, 250, 1000e18, false);
         s[11] = Spec("ORACLE-H200-PERPETUAL", "ORACLE_H200_HOUR", 292e16, 1000, 500, 250, 1000e18, false);
         s[12] = Spec("AWS-H200-PERPETUAL", "AWS_H200_HOUR", 265e16, 1000, 500, 250, 1000e18, false);

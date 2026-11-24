@@ -59,7 +59,8 @@ contract DeployWithMocks is Script {
         insuranceFundTradeFeeShareBps = uint16(vm.envOr("FEE_ROUTER_TRADE_FEE_TO_INSURANCE_BPS", uint256(5000))); // 50%
         insuranceFundLiqShareBps = uint16(vm.envOr("FEE_ROUTER_LIQ_PENALTY_TO_INSURANCE_BPS", uint256(5000))); // 50%
         imrBps = vm.envOr("IMR_BPS", uint256(500)); // 5%
-        mmrBps = vm.envOr("MMR_BPS", uint256(250)); // 2.5%
+        // 3.5%: MMR - penalty must be at least ClearingHouse.MIN_LIQUIDATION_BAND_BPS (1%)
+        mmrBps = vm.envOr("MMR_BPS", uint256(350));
         liquidationPenaltyBps = uint16(vm.envOr("LIQUIDATION_PENALTY_BPS", uint256(200))); // 2%
         penaltyCap = vm.envOr("PENALTY_CAP", uint256(10000 * 1e6)); // 10k USDC
 

@@ -55,7 +55,7 @@ abstract contract BaseTest is Test {
     // Risk parameters
     uint256 public constant IMR_BPS = 500; // 5%
     uint256 public constant MMR_BPS = 250; // 2.5%
-    uint256 public constant LIQUIDATION_PENALTY_BPS = 200; // 2%
+    uint256 public constant LIQUIDATION_PENALTY_BPS = 150; // 1.5% (mmr - penalty >= MIN_LIQUIDATION_BAND_BPS)
     uint256 public constant PENALTY_CAP = 10000 * 1e18; // 10k USDC
     uint256 public constant MAX_POSITION_SIZE = 0; // unlimited
     uint256 public constant MIN_POSITION_SIZE = 0; // no minimum

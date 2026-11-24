@@ -208,8 +208,9 @@ contract DeployMoreMarkets is Script {
         s[11] = Spec("ORACLE-H200-PERP",               "ORACLE-H200",           647e16,  1000, 500, 250, 1000e18);
         s[12] = Spec("T4-PERP",                        "T4",                     45e16,  1000, 500, 250, 1000e18);
 
-        // H100-GPU-PERP: distinct risk params (10/2.5/2.0/$10k)
-        s[13] = Spec("H100-GPU-PERP",                  "H100-GPU",              375e16,  1000, 250, 200, 10000e18);
+        // H100-GPU-PERP: distinct risk params (10/3.5/2.0/$10k). MMR - penalty must be at least
+        // ClearingHouse.MIN_LIQUIDATION_BAND_BPS (1%); the earlier 2.5% MMR left only 0.5%.
+        s[13] = Spec("H100-GPU-PERP",                  "H100-GPU",              375e16,  1000, 350, 200, 10000e18);
 
         // ─── Second table: provider-specific H200 markets ────────────────────────
         s[14] = Spec("ORACLE-H200-PERPETUAL",          "ORACLE_H200_HOUR",      292e16,  1000, 500, 250, 1000e18);

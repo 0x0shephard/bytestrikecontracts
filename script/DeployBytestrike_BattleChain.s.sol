@@ -84,8 +84,9 @@ contract DeployBytestrike_BattleChain is BCScript {
     uint16 constant LIQ_TO_FUND_BPS = 3_000;
     /// Initial margin requirement: 5%
     uint256 constant IMR_BPS = 500;
-    /// Maintenance margin requirement: 2.5%
-    uint256 constant MMR_BPS = 250;
+    /// Maintenance margin requirement: 3.5% (MMR - penalty must be at least
+    /// ClearingHouse.MIN_LIQUIDATION_BAND_BPS, 1%)
+    uint256 constant MMR_BPS = 350;
     /// Liquidation penalty: 2%
     uint256 constant LIQ_PENALTY_BPS = 200;
     /// Liquidation penalty cap: $10,000
