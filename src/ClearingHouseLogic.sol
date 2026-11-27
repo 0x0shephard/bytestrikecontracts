@@ -555,9 +555,12 @@ contract ClearingHouseLogic {
             // IMR applies to trades that open, increase or flip: the margin, net of unrealized loss at
             // the index (profit ignored) and of funding debt, must cover the initial margin of the
             // whole position. An existing shortfall reverts the trade; it is not pulled from free
-            // collateral. A trade that only shrinks the position on the same side adds no exposure
-            // and is bounded by the maintenance check.
-            bool onlyReduces = s0 != 0 && (s0 > 0) == (s1 > 0) && absS1 < absS0;
+            // collateral. A trade that only shrinks the position on the same side, with a realized
+            // loss its closed slice's margin covers, adds no exposure and leaves the remaining size's
+            // margin untouched, so only the maintenance check applies. A reduction whose loss exceeds
+            // the slice's margin takes the excess from the remaining size and is checked in full.
+            bool onlyReduces = s0 != 0 && (s0 > 0) == (s1 > 0) && absS1 < absS0
+                && (realized >= 0 || uint256(-realized) <= sliceMargin);
             if (
                 !onlyReduces
                     && int256(marginValue) + (unrealizedPnL < 0 ? unrealizedPnL : int256(0))

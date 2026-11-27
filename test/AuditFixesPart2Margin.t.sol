@@ -76,7 +76,40 @@ contract AuditFixesPart2MarginTest is BaseTest {
         assertFalse(isLiquidatable(alice));
     }
 
-    /// @dev Reductions still enforce maintenance: a reduction that leaves the remainder below MMR reverts.
+    /// @dev Finding 14: the initial margin skip for reductions applies only when the realized loss fits in
+    /// the closed slice's margin. A close pushed far below the index by a second account loses more than
+    /// its slice's margin; the excess would come out of the remaining size's margin and leave it below
+    /// its initial margin, so the close is checked in full and reverts.
+    function test_ReductionLosingMoreThanSliceMarginKeepsImrCheck() public {
+        fundAndDeposit(alice, 10_000 * USDC_UNIT);
+        fundAndDeposit(bob, 100_000 * USDC_UNIT);
+        vm.startPrank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, 10 ether, 0);
+        clearingHouse.addMargin(ETH_PERP, 300 ether);
+        vm.stopPrank();
+        IClearingHouse.PositionView memory pos = getPosition(alice);
+
+        // bob pushes the mark about 9% below the unchanged index
+        vm.prank(bob);
+        clearingHouse.openPosition(ETH_PERP, false, 60 ether, 0);
+        assertFalse(isLiquidatable(alice));
+
+        // even at the pre-trade mark, closing half loses more than the slice's half of the margin
+        uint256 sliceMargin = pos.margin / 2;
+        uint256 expectedLoss = (pos.entryPriceX18 - getMarkPrice()) * 5;
+        assertGt(expectedLoss, sliceMargin);
+
+        vm.prank(alice);
+        vm.expectRevert(bytes4(keccak256("IMRBreach()")));
+        clearingHouse.closePosition(ETH_PERP, 5 ether, 0);
+
+        // a reduction whose loss fits in its slice's margin still skips the check
+        vm.prank(alice);
+        clearingHouse.closePosition(ETH_PERP, 1 ether, 0);
+        assertEq(getPosition(alice).size, 9 ether);
+    }
+
+    /// @dev A reduction that leaves the remainder below MMR still reverts.
     function test_PartialCloseStillEnforcesMaintenance() public {
         fundAndDeposit(alice, 10_000 * USDC_UNIT);
         fundAndDeposit(bob, 50_000 * USDC_UNIT);
@@ -90,9 +123,10 @@ contract AuditFixesPart2MarginTest is BaseTest {
         assertFalse(isLiquidatable(alice));
 
         // closing a large slice at a vAMM price well above the index realizes a loss beyond
-        // the slice margin, leaving the remainder below maintenance
+        // the slice margin, leaving the remainder below maintenance. Since finding 14's follow-up such
+        // a reduction is held to the initial margin, which it fails first.
         vm.prank(alice);
-        vm.expectRevert(bytes4(keccak256("ImmediatelyLiquidatable()")));
+        vm.expectRevert(bytes4(keccak256("IMRBreach()")));
         clearingHouse.closePosition(ETH_PERP, 9 ether, 0);
     }
 
