@@ -90,6 +90,63 @@ contract Oracle is Ownable2Step {
         return (normalizedPrice * 1e18) / baseUnit;
     }
 
+    /**
+     * @notice Returns the moment from which getPrice(symbol) has been unreadable, so funding can be
+     *         accrued for the time before it and skipped only for the outage itself.
+     * @dev Covers the outages whose start can be read from the feeds: a stale price round (stale from
+     *      updatedAt + stale period), a sequencer that is down (since the status round started) and a
+     *      sequencer inside its grace period after a restart (since the previous, down, status round
+     *      started). Returns 0 when the price is readable, or when the start of the outage cannot be
+     *      determined (zero or out-of-bounds price, incomplete round, missing previous status round).
+     * @param _tokenSymbol The symbol of the token (e.g., "USDC").
+     * @return since Timestamp from which the price has been unreadable, or 0.
+     */
+    function priceUnavailableSince(string memory _tokenSymbol) external view returns (uint256 since) {
+        uint256 stalePeriod = priceStalePeriods[_tokenSymbol];
+        AggregatorV3Interface priceFeed = priceFeeds[_tokenSymbol];
+        if (stalePeriod == 0 || address(priceFeed) == address(0)) return 0;
+        since = type(uint256).max;
+
+        if (address(sequencerUptimeFeed) != address(0)) {
+            try sequencerUptimeFeed.latestRoundData() returns (
+                uint80 roundId, int256 answer, uint256 statusStartedAt, uint256, uint80
+            ) {
+                if (statusStartedAt == 0 || statusStartedAt > block.timestamp) return 0;
+                if (answer != 0) {
+                    // Down since the current status round started
+                    since = statusStartedAt;
+                } else if (block.timestamp - statusStartedAt <= SEQUENCER_GRACE_PERIOD) {
+                    // Back up but inside the grace period: unreadable since the outage began, which is
+                    // when the previous (down) status round started
+                    if (roundId == 0) return 0;
+                    try sequencerUptimeFeed.getRoundData(roundId - 1) returns (
+                        uint80, int256 prevAnswer, uint256 prevStartedAt, uint256, uint80
+                    ) {
+                        if (prevAnswer == 0 || prevStartedAt == 0 || prevStartedAt > statusStartedAt) return 0;
+                        since = prevStartedAt;
+                    } catch {
+                        return 0;
+                    }
+                }
+            } catch {
+                return 0;
+            }
+        }
+
+        try priceFeed.latestRoundData() returns (
+            uint80 roundId, int256 price, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound
+        ) {
+            if (price <= 0 || startedAt == 0 || answeredInRound < roundId || updatedAt > block.timestamp) return 0;
+            uint256 staleFrom = updatedAt + stalePeriod;
+            if (staleFrom < block.timestamp && staleFrom < since) since = staleFrom;
+        } catch {
+            return 0;
+        }
+
+        // Nothing found that makes the price unreadable now: it is readable, or the cause is unknown
+        if (since > block.timestamp) return 0;
+    }
+
     // --- Owner Functions ---
 
     /**

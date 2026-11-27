@@ -5,7 +5,7 @@ import {IClearingHouse} from "./Interfaces/IClearingHouse.sol";
 import {ICollateralVault} from "./Interfaces/ICollateralVault.sol";
 import {IMarketRegistry} from "./Interfaces/IMarketRegistry.sol";
 import {IVAMM} from "./Interfaces/IVAMM.sol";
-import {IOracle} from "./Interfaces/IOracle.sol";
+import {IOracle, IOracleAvailability} from "./Interfaces/IOracle.sol";
 import {IInsuranceFund} from "./Interfaces/IInsuranceFund.sol";
 import {IFeeRouter} from "./Interfaces/IFeeRouter.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
@@ -139,7 +139,7 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
     function setHoldingFeeRate(bytes32 marketId, uint256 rateBpsPerYear) external {
         if (IMarketRegistry(marketRegistry).getMarket(marketId).vamm == address(0)) revert MarketNotFound();
         if (rateBpsPerYear > MAX_HOLDING_FEE_BPS_PER_YEAR) revert InvalidHoldingFeeRate();
-        _accrueHoldingFee(marketId, true);
+        _accrueHoldingFee(marketId, block.timestamp);
         holdingFees[marketId].rateBpsPerYear = rateBpsPerYear;
         emit HoldingFeeRateSet(marketId, rateBpsPerYear);
     }
@@ -226,11 +226,14 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
         if (penalty > freeValue) _reduceMargin(account, positions[account][marketId], penalty - freeValue);
     }
 
-    /// @dev Brings the market's holding fee index up to now: accrued at the current rate when `accrue`,
-    ///      else (time in which funding is skipped) only its clock advances. Returns the index.
-    function _accrueHoldingFee(bytes32 marketId, bool accrue) internal returns (uint256) {
+    /// @dev Brings the market's holding fee clock up to now, accruing at the current rate only up to
+    ///      `liveUntil` (capped at now): block.timestamp accrues the whole interval, 0 none of it (time
+    ///      in which funding is skipped), and the moment the quote feed became unavailable accrues the
+    ///      live time before it, as vAMM.skipFunding does for funding. Returns the index.
+    function _accrueHoldingFee(bytes32 marketId, uint256 liveUntil) internal returns (uint256) {
         IClearingHouse.HoldingFee storage h = holdingFees[marketId];
-        if (accrue) h.cumulativeX18 = _holdingFeeIndex(h);
+        uint256 until = liveUntil < block.timestamp ? liveUntil : block.timestamp;
+        if (until > h.updatedAt) h.cumulativeX18 += h.rateBpsPerYear * 1e14 * (until - h.updatedAt) / 365 days;
         h.updatedAt = block.timestamp;
         return h.cumulativeX18;
     }
@@ -548,24 +551,32 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
 
         // No funding accrues while the market is not active: its traders cannot top up, trade or close.
         if (!IMarketRegistry(marketRegistry).isActive(marketId)) {
-            vamm.skipFunding();
-            _accrueHoldingFee(marketId, false);
+            vamm.skipFunding(0);
+            _accrueHoldingFee(marketId, 0);
             return;
         }
 
         // Funding only accrues while it can be settled in the quote token. If the quote oracle is
-        // unavailable (stale round, sequencer down or in grace period), advance the funding clock
-        // without accruing so payers are not charged for time in which they cannot act.
+        // unavailable (stale round, sequencer down or in grace period), funding is accrued up to the
+        // moment it became unavailable and the clock is then advanced without accruing, so payers are
+        // not charged for time in which they cannot act and the live time before it is not dropped.
         // The same holds while the market's index oracle (the risk price) is down, since positions can
-        // then be neither closed nor liquidated.
-        if (!_quoteOracleLive(m.quoteToken) || !_indexOracleLive(m.oracle)) {
-            vamm.skipFunding();
-            _accrueHoldingFee(marketId, false);
+        // then be neither closed nor liquidated; that time is skipped entirely.
+        // The holding fee index follows the same clock.
+        if (!_indexOracleLive(m.oracle)) {
+            vamm.skipFunding(0);
+            _accrueHoldingFee(marketId, 0);
+            return;
+        }
+        if (!_quoteOracleLive(m.quoteToken)) {
+            uint64 liveUntil = _quoteUnavailableSince(m.quoteToken);
+            vamm.skipFunding(liveUntil);
+            _accrueHoldingFee(marketId, liveUntil);
             return;
         }
 
         (uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive) = vamm.pokeFunding();
-        uint256 feeIndex = _accrueHoldingFee(marketId, true);
+        uint256 feeIndex = _accrueHoldingFee(marketId, block.timestamp);
 
         IClearingHouse.PositionView storage position = positions[account][marketId];
 
@@ -952,6 +963,16 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
             p.margin -= take;
             _totalReservedMargin[account] = _totalReservedMargin[account] >= take ? _totalReservedMargin[account] - take : 0;
             drawn += units;
+        }
+    }
+
+    /// @dev When the vault oracle's quote-token price became unreadable (0 if unknown or unsupported).
+    function _quoteUnavailableSince(address quoteToken) internal view returns (uint64) {
+        string memory sym = ICollateralVault(vault).getConfig(quoteToken).oracleSymbol;
+        try IOracleAvailability(ICollateralVault(vault).oracle()).priceUnavailableSince(sym) returns (uint256 t) {
+            return t > block.timestamp ? 0 : uint64(t);
+        } catch {
+            return 0;
         }
     }
 

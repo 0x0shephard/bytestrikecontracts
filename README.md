@@ -543,7 +543,8 @@ if (canLiquidate) {
   fee router like a trade fee (pushed by `sweepFees`); without a router it goes to the funding
   surplus. What the balance cannot pay is carried as funding debt (the position becomes liquidatable)
   and goes to the insurance fund once paid
-- Time in which funding settlement is skipped (market paused, quote or index oracle down) is not charged
+- Time in which funding settlement is skipped (market paused, quote or index oracle down) is not charged;
+  on a quote-feed outage the live time before the feed became unavailable is still charged, as for funding
 - The pending fee counts in `isLiquidatable` and `getMarginRatio` like pending funding
 
 ### Fee Distribution

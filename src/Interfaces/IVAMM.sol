@@ -100,8 +100,9 @@ interface IVAMM {
     /// @return shortReceive Updated cumulative short-receive index (1e18 per unit).
     function pokeFunding() external returns (uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive);
 
-    /// @notice ClearingHouse-only: advance the funding clock without accruing (used while funding cannot be settled).
-    function skipFunding() external;
+    /// @notice ClearingHouse-only: accrue funding up to `liveUntil` (0 = not at all), then advance the
+    ///         funding clock to now without accruing (used while funding cannot be settled).
+    function skipFunding(uint64 liveUntil) external;
 
     /// @notice Optional trading pause (e.g., after lastTradeTimestamp for dated futures). Closing-only is enforced by CH.
     function pauseSwaps(bool paused) external;

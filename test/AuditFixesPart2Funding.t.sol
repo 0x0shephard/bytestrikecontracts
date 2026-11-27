@@ -4,6 +4,39 @@ pragma solidity 0.8.28;
 import {BaseTest} from "./BaseTest.sol";
 import {IOracle} from "../src/Interfaces/IOracle.sol";
 import {MockOracle} from "./mocks/MockOracle.sol";
+import {Oracle} from "../src/Oracle/Oracle.sol";
+
+/// @dev Chainlink-style feed with a round history (price feed or sequencer uptime feed).
+contract RoundHistoryFeed {
+    struct Round {
+        int256 answer;
+        uint256 startedAt;
+        uint256 updatedAt;
+    }
+
+    mapping(uint80 => Round) internal _rounds;
+    uint80 public latestRound;
+
+    function push(int256 answer, uint256 startedAt, uint256 updatedAt) external {
+        latestRound++;
+        _rounds[latestRound] = Round(answer, startedAt, updatedAt);
+    }
+
+    function decimals() external pure returns (uint8) {
+        return 8;
+    }
+
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        Round memory r = _rounds[latestRound];
+        return (latestRound, r.answer, r.startedAt, r.updatedAt, latestRound);
+    }
+
+    function getRoundData(uint80 id) external view returns (uint80, int256, uint256, uint256, uint80) {
+        require(id != 0 && id <= latestRound, "no round");
+        Round memory r = _rounds[id];
+        return (id, r.answer, r.startedAt, r.updatedAt, id);
+    }
+}
 
 /// @notice Regression tests for funding settlement audit fixes (Cyfrin bytestrike part 2).
 contract AuditFixesPart2FundingTest is BaseTest {
@@ -142,7 +175,7 @@ contract AuditFixesPart2FundingTest is BaseTest {
         vamm.pokeFunding();
 
         vm.expectRevert(bytes("Not CH"));
-        vamm.skipFunding();
+        vamm.skipFunding(0);
     }
 
     /// @notice Finding 45: while the quote-token oracle reverts, settleFunding advances the
@@ -190,5 +223,129 @@ contract AuditFixesPart2FundingTest is BaseTest {
         settleFunding(carol);
         assertEq(vamm.cumulativeLongPayPerUnitX18(), payBefore, "funding accrued on zero quote price");
         assertEq(vamm.lastFundingTimestamp(), _now, "clock not advanced");
+    }
+
+    RoundHistoryFeed internal usdcFeed;
+    RoundHistoryFeed internal sequencerFeed;
+
+    /// @dev Values the vault's USDC through a Chainlink Oracle (600s stale period) fed by mock feeds,
+    ///      with the USDC round fresh now and the sequencer up since genesis.
+    function _useChainlinkQuoteOracle() internal {
+        if (_now == 0) _now = block.timestamp;
+        vm.startPrank(admin);
+        Oracle chainlink = new Oracle();
+        usdcFeed = new RoundHistoryFeed();
+        sequencerFeed = new RoundHistoryFeed();
+        usdcFeed.push(1e8, _now, _now);
+        sequencerFeed.push(0, 1, 1); // up since genesis (callers run past the grace period first)
+        chainlink.setPriceFeed("USDC", address(usdcFeed));
+        chainlink.setPriceStalePeriodForToken("USDC", 600);
+        chainlink.setSequencerUptimeFeed(address(sequencerFeed));
+        vault.setOracle(address(chainlink));
+        vm.stopPrank();
+    }
+
+    /// @dev Long pay index the vAMM would hold if funding were accrued at `t` (view at that time).
+    function _longPayIndexAt(uint256 t) internal returns (uint256 idx) {
+        vm.warp(t);
+        idx = vamm.currentCumulativeLongPayPerUnitX18();
+    }
+
+    /// @notice Finding 45 (follow-up): a settle while the quote feed is stale accrues the live time
+    /// up to the moment the feed went stale and skips only the time after it.
+    function test_Finding45_staleQuoteFeedKeepsLiveTimeBeforeIt() public {
+        _openPayingLong();
+        _accrueHours(2);
+        _useChainlinkQuoteOracle();
+        settleFunding(carol);
+        uint256 t0 = _now;
+        uint256 payBefore = vamm.cumulativeLongPayPerUnitX18();
+
+        // The USDC round updated at t0 goes stale at t0 + 600; nobody settles until t0 + 28 minutes.
+        uint256 expected = _longPayIndexAt(t0 + 600);
+        assertGt(expected, payBefore, "no funding owed");
+        _now = t0 + 28 minutes;
+        vm.warp(_now);
+        settleFunding(carol);
+
+        assertEq(vamm.cumulativeLongPayPerUnitX18(), expected, "live time before the stale round dropped");
+        assertEq(vamm.lastFundingTimestamp(), _now, "clock not advanced past the outage");
+
+        // A later settle in the same outage accrues nothing more.
+        _now += 10 minutes;
+        vm.warp(_now);
+        settleFunding(carol);
+        assertEq(vamm.cumulativeLongPayPerUnitX18(), expected, "outage time accrued");
+    }
+
+    /// @notice Finding 45 (follow-up): the first settle inside the sequencer's grace period accrues the
+    /// live time up to the moment the sequencer went down, and skips the outage and the grace period.
+    function test_Finding45_sequencerRestartKeepsLiveTimeBeforeOutage() public {
+        _openPayingLong();
+        _accrueHours(2);
+        _useChainlinkQuoteOracle();
+        settleFunding(carol);
+        uint256 t0 = _now;
+        uint256 payBefore = vamm.cumulativeLongPayPerUnitX18();
+
+        // Live for 15 minutes, sequencer down for 25 minutes, back up 10 minutes before the settle.
+        uint256 expected = _longPayIndexAt(t0 + 15 minutes);
+        assertGt(expected, payBefore, "no funding owed");
+        sequencerFeed.push(1, t0 + 15 minutes, t0 + 15 minutes);
+        sequencerFeed.push(0, t0 + 40 minutes, t0 + 40 minutes);
+        _now = t0 + 50 minutes;
+        vm.warp(_now);
+        usdcFeed.push(1e8, _now, _now);
+        settleFunding(carol);
+
+        assertEq(vamm.cumulativeLongPayPerUnitX18(), expected, "live time before the outage dropped");
+        assertEq(vamm.lastFundingTimestamp(), _now, "clock not advanced past the outage");
+    }
+
+    /// @notice Finding 45 (follow-up): when the start of the outage cannot be read, the whole interval
+    /// is still skipped (no charge for time that may have been an outage).
+    function test_Finding45_unknownOutageStartSkipsWholeInterval() public {
+        _openPayingLong();
+        _accrueHours(2);
+        _useChainlinkQuoteOracle();
+        settleFunding(carol);
+        uint256 payBefore = vamm.cumulativeLongPayPerUnitX18();
+
+        _now += 20 minutes;
+        vm.warp(_now);
+        usdcFeed.push(0, _now, _now); // zero price: unreadable, start unknown
+        settleFunding(carol);
+        assertEq(vamm.cumulativeLongPayPerUnitX18(), payBefore, "accrued with unknown outage start");
+        assertEq(vamm.lastFundingTimestamp(), _now, "clock not advanced");
+    }
+
+    /// @notice Finding 45 with the finding 26 holding fee: a settle while the quote feed is stale
+    /// accrues the holding fee index up to the moment the feed went stale, like funding, and the
+    /// outage time after it is not charged.
+    function test_Finding45_staleQuoteFeedKeepsHoldingFeeTimeBeforeIt() public {
+        _openPayingLong();
+        _accrueHours(2);
+        _useChainlinkQuoteOracle();
+        vm.prank(admin);
+        clearingHouse.setHoldingFeeRate(ETH_PERP, 1_000);
+        uint256 t0 = _now;
+        (, uint256 cumBefore, uint256 updatedAt) = clearingHouse.holdingFees(ETH_PERP);
+        assertEq(updatedAt, t0, "clock not at t0");
+
+        // The USDC round updated at t0 goes stale at t0 + 600; nobody settles until t0 + 28 minutes.
+        _now = t0 + 28 minutes;
+        vm.warp(_now);
+        settleFunding(carol);
+        uint256 expected = cumBefore + uint256(1_000) * 1e14 * 600 / 365 days;
+        (, uint256 cum, uint256 clock) = clearingHouse.holdingFees(ETH_PERP);
+        assertEq(cum, expected, "live time before the stale round dropped or outage charged");
+        assertEq(clock, _now, "clock not advanced past the outage");
+
+        // A later settle in the same outage accrues nothing more.
+        _now += 10 minutes;
+        vm.warp(_now);
+        settleFunding(carol);
+        (, cum,) = clearingHouse.holdingFees(ETH_PERP);
+        assertEq(cum, expected, "outage time accrued");
     }
 }

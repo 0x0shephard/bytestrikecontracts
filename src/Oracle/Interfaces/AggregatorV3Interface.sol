@@ -18,6 +18,17 @@ interface AggregatorV3Interface {
             uint80 answeredInRound
         );
 
+    function getRoundData(uint80 _roundId)
+        external
+        view
+        returns (
+            uint80 roundId,
+            int256 answer,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        );
+
     /// @notice Returns the address of the underlying aggregator
     function aggregator() external view returns (address);
 }

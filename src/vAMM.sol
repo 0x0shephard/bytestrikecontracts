@@ -509,14 +509,21 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		);
 	}
 
-	/// @notice Advances the funding clock without accruing any funding.
+	/// @notice Accrues funding up to `liveUntil`, then advances the funding clock to now without
+	///         accruing the rest.
 	/// @dev ClearingHouse-only. Called instead of pokeFunding while funding cannot be settled
 	///      (the quote-token oracle is unavailable), so payers are never charged for time in which
-	///      they cannot close, add margin or withdraw.
-	function skipFunding() external onlyCH {
+	///      they cannot close, add margin or withdraw. `liveUntil` is when settlement stopped being
+	///      possible (e.g. the moment the quote feed went stale or the sequencer went down): the time
+	///      before it was live and is still accrued. Pass 0 when that moment is unknown, which skips
+	///      the whole interval since the last accrual.
+	/// @param liveUntil Last timestamp at which funding could be settled, or 0 if unknown.
+	function skipFunding(uint64 liveUntil) external onlyCH {
 		if (swapsPaused) return;
-		lastFundingTimestamp = uint64(block.timestamp);
-		emit FundingSkipped(uint64(block.timestamp));
+		uint64 nowTs = uint64(block.timestamp);
+		if (liveUntil > lastFundingTimestamp) _accrueFundingUntil(liveUntil < nowTs ? liveUntil : nowTs);
+		lastFundingTimestamp = nowTs;
+		emit FundingSkipped(nowTs);
 	}
 
 	/// @dev Accrue funding for the elapsed period using current mark price and cached oracle price.
@@ -524,9 +531,14 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	/// Uses two separate indices scaled by OI ratio. A receiver earns at most the paying rate per
 	/// unit, so total paid == total received + surplus, the surplus being tracked per paying unit.
 	function _accrueFunding() internal {
+		_accrueFundingUntil(uint64(block.timestamp));
+	}
+
+	/// @dev Accrues funding from lastFundingTimestamp to `nowTs` (at most block.timestamp) and moves
+	///      the clock to `nowTs`.
+	function _accrueFundingUntil(uint64 nowTs) internal {
 		if (swapsPaused) return;
 
-		uint64 nowTs = uint64(block.timestamp);
 		uint64 lastTs = lastFundingTimestamp;
 		if (nowTs <= lastTs) return;
 		if (_cachedIndexPriceX18 == 0) return;
