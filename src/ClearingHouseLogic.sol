@@ -42,12 +42,15 @@ contract ClearingHouseLogic {
     mapping(bytes32 => uint256) internal fundingSurplus; // slot 15
     mapping(address => mapping(address => uint256)) internal pendingTradeFees; // slot 16
     mapping(address => mapping(address => uint256)) internal pendingLiqPenalties; // slot 17
+    mapping(bytes32 => IClearingHouse.HoldingFee) internal holdingFees; // slot 18
 
     // =========================================================================
     // Constants
     // =========================================================================
 
     uint256 private constant BPS_DENOMINATOR = 10_000;
+    /// @dev Highest holding fee rate: 100% of notional per year.
+    uint256 private constant MAX_HOLDING_FEE_BPS_PER_YEAR = 10_000;
 
     // =========================================================================
     // Events — signatures must match IClearingHouse exactly so that events
@@ -68,6 +71,7 @@ contract ClearingHouseLogic {
     event FundingSettled(bytes32 indexed marketId, address indexed account, int256 fundingPayment);
     event BadDebtRecorded(address indexed account, bytes32 indexed marketId, uint256 shortfall);
     event FundingSurplusSwept(bytes32 indexed marketId, address indexed insuranceFund, uint256 amount);
+    event HoldingFeeRateSet(bytes32 indexed marketId, uint256 rateBpsPerYear);
 
     // =========================================================================
     // Errors — must match ClearingHouse custom errors exactly
@@ -86,6 +90,7 @@ contract ClearingHouseLogic {
     error ZeroAddress();
     error ExceedsMaxGrossOI();
     error ExceedsMaxNetOI();
+    error InvalidHoldingFeeRate();
 
     // =========================================================================
     // External entry points (delegatecall targets from ClearingHouse)
@@ -182,6 +187,23 @@ contract ClearingHouseLogic {
         returns (int256, int256, uint256)
     {
         return isLong ? vamm.buyBase(size, limit) : vamm.sellBase(size, limit);
+    }
+
+    /// @notice Sets a market's holding fee rate, in bps of notional per year.
+    /// @dev Delegatecall target of ClearingHouse.setHoldingFeeRate (owner only). The old rate is
+    ///      accrued up to now first, so a change applies from this moment on.
+    function setHoldingFeeRate(bytes32 marketId, uint256 rateBpsPerYear) external {
+        if (IMarketRegistry(marketRegistry).getMarket(marketId).vamm == address(0)) revert MarketNotFound();
+        if (rateBpsPerYear > MAX_HOLDING_FEE_BPS_PER_YEAR) revert InvalidHoldingFeeRate();
+        _accrueHoldingFee(marketId, true);
+        holdingFees[marketId].rateBpsPerYear = rateBpsPerYear;
+        emit HoldingFeeRateSet(marketId, rateBpsPerYear);
+    }
+
+    /// @notice Funding not yet settled for a position, net of the holding fee accrued since its last
+    ///         settlement. View behind ClearingHouse._getPendingFunding.
+    function pendingFunding(address account, bytes32 marketId) external view returns (int256) {
+        return _pendingFunding(account, marketId);
     }
 
     function settleFundingInternal(bytes32 marketId, address account) external {
@@ -334,11 +356,13 @@ contract ClearingHouseLogic {
         return net[target] < 0;
     }
 
-    /// @dev Funding not yet settled for a position, from the vAMM's current (accrued) indices.
+    /// @dev Funding not yet settled for a position, from the vAMM's current (accrued) indices, minus
+    ///      the holding fee accrued since its last settlement.
     function _pendingFunding(address account, bytes32 marketId) internal view returns (int256) {
         IClearingHouse.PositionView storage position = positions[account][marketId];
         if (position.size == 0) return 0;
-        IVAMM vamm = IVAMM(IMarketRegistry(marketRegistry).getMarket(marketId).vamm);
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        IVAMM vamm = IVAMM(m.vamm);
         uint256 payDelta;
         uint256 receiveDelta;
         if (position.size > 0) {
@@ -349,9 +373,71 @@ contract ClearingHouseLogic {
             receiveDelta = vamm.currentCumulativeShortReceivePerUnitX18() - position.lastFundingReceiveIndex;
         }
         uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
-        return receiveDelta >= payDelta
-            ? int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18))
-            : -int256(Calculations.mulDivRoundingUp(payDelta - receiveDelta, absSize, 1e18));
+        return (
+            receiveDelta >= payDelta
+                ? int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18))
+                : -int256(Calculations.mulDivRoundingUp(payDelta - receiveDelta, absSize, 1e18))
+        ) - int256(_holdingFeeDue(position, m.oracle, _holdingFeeIndex(holdingFees[marketId])));
+    }
+
+    /// @dev The market's holding fee index brought up to now at its current rate.
+    function _holdingFeeIndex(IClearingHouse.HoldingFee storage h) internal view returns (uint256) {
+        return h.cumulativeX18 + h.rateBpsPerYear * 1e14 * (block.timestamp - h.updatedAt) / 365 days;
+    }
+
+    /// @dev Brings the market's holding fee index up to now: accrued at the current rate when `accrue`,
+    ///      else (time in which funding is skipped) only its clock advances. Returns the index.
+    function _accrueHoldingFee(bytes32 marketId, bool accrue) internal returns (uint256) {
+        IClearingHouse.HoldingFee storage h = holdingFees[marketId];
+        if (accrue) h.cumulativeX18 = _holdingFeeIndex(h);
+        h.updatedAt = block.timestamp;
+        return h.cumulativeX18;
+    }
+
+    /// @dev Holding fee a position owes up to index `feeIndex`: its absolute notional at the index
+    ///      times the index's growth since the position's snapshot, rounded up. 0 if the index price
+    ///      cannot be read (funding settlement is then skipped as well).
+    function _holdingFeeDue(IClearingHouse.PositionView storage position, address oracle, uint256 feeIndex)
+        internal
+        view
+        returns (uint256)
+    {
+        if (feeIndex == position.lastHoldingFeeIndexX18 || position.size == 0) return 0;
+        uint256 indexPrice;
+        try IOracle(oracle).getPrice() returns (uint256 p) {
+            indexPrice = p;
+        } catch {
+            return 0;
+        }
+        uint256 notional = Calculations.mulDivRoundingUp(
+            uint256(position.size > 0 ? position.size : -position.size), indexPrice, 1e18
+        );
+        return Calculations.mulDivRoundingUp(notional, feeIndex - position.lastHoldingFeeIndexX18, 1e18);
+    }
+
+    /// @dev Charges a position's holding fee like a funding debit: paid up to its margin plus the free
+    ///      collateral, the paid part credited to the market's fee router (booked for sweepFees) or,
+    ///      without a router, to the funding surplus for the insurance fund. The unpaid part is carried
+    ///      as funding debt with a surplus share, so once paid it goes to the insurance fund.
+    function _chargeHoldingFee(
+        address account,
+        bytes32 marketId,
+        IClearingHouse.PositionView storage position,
+        IMarketRegistry.Market memory m,
+        uint256 feeX18
+    ) internal {
+        (uint256 paidX18, uint256 unpaidX18) = _chargeFunding(account, position, m.quoteToken, feeX18);
+        _reduceMargin(account, position, paidX18);
+        position.fundingDebt += unpaidX18;
+        position.fundingDebtSurplus += unpaidX18;
+        uint256 units = _pnlToQuoteUnits(paidX18, m.quoteToken, false);
+        if (units == 0) return;
+        if (m.feeRouter == address(0)) {
+            fundingSurplus[marketId] += units;
+        } else {
+            ICollateralVault(vault).settlePnL(m.feeRouter, m.quoteToken, int256(units));
+            pendingTradeFees[m.feeRouter][m.quoteToken] += units;
+        }
     }
 
     /// @dev Value of the account's quote-token balance above the margin reserved on that token.
@@ -643,6 +729,7 @@ contract ClearingHouseLogic {
         // No funding accrues while the market is not active: its traders cannot top up, trade or close.
         if (!IMarketRegistry(marketRegistry).isActive(marketId)) {
             vamm.skipFunding();
+            _accrueHoldingFee(marketId, false);
             return;
         }
 
@@ -653,10 +740,12 @@ contract ClearingHouseLogic {
         // then be neither closed nor liquidated.
         if (!_quoteOracleLive(m.quoteToken) || !_indexOracleLive(m.oracle)) {
             vamm.skipFunding();
+            _accrueHoldingFee(marketId, false);
             return;
         }
 
         (uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive) = vamm.pokeFunding();
+        uint256 feeIndex = _accrueHoldingFee(marketId, true);
 
         IClearingHouse.PositionView storage position = positions[account][marketId];
 
@@ -675,6 +764,8 @@ contract ClearingHouseLogic {
             position.lastFundingPayIndex = 0;
             position.lastFundingReceiveIndex = 0;
             position.lastFundingSurplusIndex = 0;
+            // A position opened next is charged the holding fee from now on.
+            position.lastHoldingFeeIndexX18 = feeIndex;
             return;
         }
 
@@ -721,6 +812,13 @@ contract ClearingHouseLogic {
             _bookFundingSurplus(marketId, m.quoteToken, surplusX18);
 
             if (payDelta != 0 || receiveDelta != 0) emit FundingSettled(marketId, account, fundingPayment);
+        }
+
+        // The holding fee accrued since the last settlement, charged after funding (finding 26).
+        {
+            uint256 feeX18 = _holdingFeeDue(position, m.oracle, feeIndex);
+            position.lastHoldingFeeIndexX18 = feeIndex;
+            if (feeX18 != 0) _chargeHoldingFee(account, marketId, position, m, feeX18);
         }
 
         position.lastFundingPayIndex = currentPay;

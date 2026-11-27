@@ -534,6 +534,18 @@ if (canLiquidate) {
   and leave USDC in the vault that no account owns
 - Precision: Uses `mulDivRoundingUp` for low-decimal tokens
 
+### Holding Fee
+- Optional per market, set by the owner with `setHoldingFeeRate(marketId, rateBpsPerYear)` (0 = off,
+  at most 10,000 = 100% a year); a change applies from the moment it is set
+- Every open position pays `|size| * indexPrice * rate * time` at each funding settlement, so a
+  delta-neutral pair parked on the gross OI cap pays for the capacity it blocks
+- Charged after funding, up to the position's margin plus free collateral, and booked to the market's
+  fee router like a trade fee (pushed by `sweepFees`); without a router it goes to the funding
+  surplus. What the balance cannot pay is carried as funding debt (the position becomes liquidatable)
+  and goes to the insurance fund once paid
+- Time in which funding settlement is skipped (market paused, quote or index oracle down) is not charged
+- The pending fee counts in `isLiquidatable` and `getMarginRatio` like pending funding
+
 ### Fee Distribution
 ```
 Trade Fee (100%)

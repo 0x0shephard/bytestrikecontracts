@@ -82,6 +82,10 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Liquidation penalty shares booked to a fee router's vault balance because pushing them out failed.
     mapping(address feeRouter => mapping(address token => uint256 amount)) public pendingLiqPenalties; // slot 17
 
+    /// @notice Per-market holding fee rate and accrual index (see ClearingHouseLogic.setHoldingFeeRate).
+    /// @dev Mirrored in ClearingHouseLogic, which accrues and charges it at funding settlement.
+    mapping(bytes32 marketId => HoldingFee) public holdingFees; // slot 18
+
     /// @notice Band used when a market has none set: 5%.
     uint256 public constant DEFAULT_LIQUIDATION_PRICE_BAND_BPS = 500;
     /// @notice Narrowest liquidation price band a market may have, and so the smallest allowed gap
@@ -116,6 +120,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     error InsufficientQuoteCollateral();
     error InsufficientQuoteForFee();
     error InvalidAdmin();
+    error InvalidHoldingFeeRate();
     error InvalidLiquidationPriceBand();
     error InvalidLogic();
     error InvalidOpenInterestCaps();
@@ -397,14 +402,16 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     ///      value, so funding above that is carried as debt. Replays the account's settlement in
     ///      ClearingHouseLogic.carriesFundingDebt (a delegatecall inside a static self-call).
     function _carriesFundingDebt(address account, bytes32 marketId) internal view returns (bool) {
-        (bool ok, bytes memory ret) = address(this).staticcall(
-            abi.encodeCall(
-                this.delegateView,
-                (abi.encodeWithSignature("carriesFundingDebt(address,bytes32)", account, marketId))
-            )
+        return abi.decode(
+            _logicView(abi.encodeWithSignature("carriesFundingDebt(address,bytes32)", account, marketId)), (bool)
         );
+    }
+
+    /// @dev Runs a ClearingHouseLogic view through a static self-call to delegateView.
+    function _logicView(bytes memory data) internal view returns (bytes memory) {
+        (bool ok, bytes memory ret) = address(this).staticcall(abi.encodeCall(this.delegateView, (data)));
         if (!ok) assembly { revert(add(ret, 32), mload(ret)) }
-        return abi.decode(abi.decode(ret, (bytes)), (bool));
+        return abi.decode(ret, (bytes));
     }
 
     /// @notice Runs a ClearingHouseLogic view against this contract's storage.
@@ -534,35 +541,12 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         return _computeUnrealizedPnL(position, riskPrice);
     }
 
-    /// @notice View-safe helper to compute unsettled funding for a position.
+    /// @notice View-safe helper to compute unsettled funding for a position, net of the holding fee
+    ///         accrued since its last settlement (ClearingHouseLogic.pendingFunding).
     function _getPendingFunding(address account, bytes32 marketId) internal view returns (int256) {
-        PositionView storage position = positions[account][marketId];
-        if (position.size == 0) return 0;
-
-        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
-        if (m.vamm == address(0)) return 0;
-
-        uint256 currentPay;
-        uint256 currentReceive;
-        if (position.size > 0) {
-            currentPay = IVAMM(m.vamm).currentCumulativeLongPayPerUnitX18();
-            currentReceive = IVAMM(m.vamm).currentCumulativeLongReceivePerUnitX18();
-        } else {
-            currentPay = IVAMM(m.vamm).currentCumulativeShortPayPerUnitX18();
-            currentReceive = IVAMM(m.vamm).currentCumulativeShortReceivePerUnitX18();
-        }
-
-        uint256 payDelta = currentPay - position.lastFundingPayIndex;
-        uint256 receiveDelta = currentReceive - position.lastFundingReceiveIndex;
-        if (payDelta == 0 && receiveDelta == 0) return 0;
-
-        uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
-        if (receiveDelta >= payDelta) {
-            return int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18));
-        } else {
-            // A payer's debit rounds up, as in settlement.
-            return -int256(Calculations.mulDivRoundingUp(payDelta - receiveDelta, absSize, 1e18));
-        }
+        return abi.decode(
+            _logicView(abi.encodeWithSignature("pendingFunding(address,bytes32)", account, marketId)), (int256)
+        );
     }
 
     /// @notice Shared helper to compute unrealized PnL from a provided price.
@@ -1045,6 +1029,14 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         return int256(collateralValue) - int256(_totalReservedMargin[account]);
     }
 
+
+    /// @notice Sets a market's holding fee: a continuing fee per year, in bps, on every open position's
+    ///         absolute notional at the index, charged at funding settlement and routed to the fee router.
+    /// @dev Makes holding open interest cost something even for a delta-neutral pair, so filling a
+    ///      gross OI cap is not free. Accrues the old rate up to now first. Runs in ClearingHouseLogic.
+    function setHoldingFeeRate(bytes32 marketId, uint256 rateBpsPerYear) external onlyAdmin {
+        _delegate(abi.encodeWithSignature("setHoldingFeeRate(bytes32,uint256)", marketId, rateBpsPerYear));
+    }
 
     /// @notice Settles funding payments for a user in a perpetual market.
     /// @dev Also settles the account's other markets on the same quote token, so a funding debt carried

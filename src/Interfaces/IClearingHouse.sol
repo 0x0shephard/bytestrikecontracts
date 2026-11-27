@@ -21,6 +21,8 @@ interface IClearingHouse {
         // not to any receiver), in quote value (1e18). Booked to fundingSurplus once the debt is paid;
         // dropped, with no insurance draw for it, if the debt is written off.
         uint256 fundingDebtSurplus;
+        // Market holding fee index (HoldingFee.cumulativeX18) at the position's last settlement.
+        uint256 lastHoldingFeeIndexX18;
     }
 
     struct MarketRiskParams {
@@ -38,7 +40,16 @@ interface IClearingHouse {
         uint128 maxNetOI; // cap on |long OI - short OI|
     }
 
+    /// @notice Per-market holding fee: a continuing fee on every open position's absolute notional at
+    ///         the index, settled with funding and routed to the market's fee router.
+    struct HoldingFee {
+        uint256 rateBpsPerYear; // fee per year on notional, in bps
+        uint256 cumulativeX18; // fee accrued per unit of notional since the market's first rate (1e18 = 100%)
+        uint256 updatedAt; // last time cumulativeX18 was brought up to date
+    }
+
     // ===== Events =====
+    event HoldingFeeRateSet(bytes32 indexed marketId, uint256 rateBpsPerYear);
     event MarginAdded(address indexed user, bytes32 indexed marketId, uint256 amount);
     event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
     event CollateralWithdrawn(address indexed user, address indexed token, uint256 amount, uint256 received);
