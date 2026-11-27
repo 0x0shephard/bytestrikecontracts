@@ -257,16 +257,29 @@ contract OpenInterestCapsTest is BaseTest {
             uint256 netBefore = _net();
             bool longBefore = clearingHouse.totalLongOI(ETH_PERP) > clearingHouse.totalShortOI(ETH_PERP);
             int256 sizeBefore = clearingHouse.getPosition(trader, ETH_PERP).size;
+            uint256 markBefore = vamm.getMarkPrice();
+            bool accepted;
             vm.prank(trader);
-            try clearingHouse.openPosition(ETH_PERP, sides[i], size, 0) {} catch {}
+            try clearingHouse.openPosition(ETH_PERP, sides[i], size, 0) {
+                accepted = true;
+            } catch {}
             int256 sizeAfter = clearingHouse.getPosition(trader, ETH_PERP).size;
 
-            // Gross is a hard bound. Net is bounded for any trade that grows it or moves it to the
-            // other side, except a pure reduction of the trader's own position, which is exempt
-            // like closePosition.
-            assertLe(_gross(), 6 ether);
+            // Gross may exceed its cap only through a trade that moved the mark toward the index
+            // without crossing it (finding 50). Net is bounded for any trade that grows it or moves
+            // it to the other side, except a pure reduction of the trader's own position, which is
+            // exempt like closePosition.
             bool pureReduction = (sizeBefore > 0 && sizeAfter >= 0 && sizeAfter <= sizeBefore)
                 || (sizeBefore < 0 && sizeAfter <= 0 && sizeAfter >= sizeBefore);
+            if (accepted && !pureReduction && _gross() > 6 ether) {
+                uint256 markAfter = vamm.getMarkPrice();
+                uint256 index = oracle.getPrice();
+                assertTrue(
+                    markBefore > index
+                        ? markAfter < markBefore && markAfter >= index
+                        : markAfter > markBefore && markAfter <= index
+                );
+            }
             uint256 netAfter = _net();
             bool longAfter = clearingHouse.totalLongOI(ETH_PERP) > clearingHouse.totalShortOI(ETH_PERP);
             if ((netAfter > netBefore || longAfter != longBefore) && !pureReduction) assertLe(netAfter, 3 ether);

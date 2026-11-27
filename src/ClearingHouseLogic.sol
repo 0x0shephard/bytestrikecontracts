@@ -33,11 +33,11 @@ contract ClearingHouseLogic {
     uint256 internal totalBadDebt; // slot 8
     mapping(bytes32 => uint256) internal totalLongOI; // slot 9
     mapping(bytes32 => uint256) internal totalShortOI; // slot 10
-    // Slots 11-14 are used by ClearingHouse only; they are held here so the slots after them line up.
+    // Slots 11-14 are set by ClearingHouse only; they are held here so the slots after them line up.
     address private _slot11AllowlistManager; // slot 11
     bool private _slot11AllowlistEnforced; // slot 11 (packed)
     mapping(address => bool) private _slot12AllowedTraders; // slot 12
-    mapping(bytes32 => IClearingHouse.OpenInterestCaps) private _slot13OpenInterestCaps; // slot 13
+    mapping(bytes32 => IClearingHouse.OpenInterestCaps) internal openInterestCaps; // slot 13 (read by checkOpenInterestCaps)
     mapping(bytes32 => uint256) private _slot14LiquidationPriceBandBps; // slot 14
     mapping(bytes32 => uint256) internal fundingSurplus; // slot 15
     mapping(address => mapping(address => uint256)) internal pendingTradeFees; // slot 16
@@ -84,6 +84,8 @@ contract ClearingHouseLogic {
     error ImmediatelyLiquidatable();
     error AmountZero();
     error ZeroAddress();
+    error ExceedsMaxGrossOI();
+    error ExceedsMaxNetOI();
 
     // =========================================================================
     // External entry points (delegatecall targets from ClearingHouse)
@@ -137,6 +139,41 @@ contract ClearingHouseLogic {
                 );
             }
             avgPriceX18 = Calculations.mulDiv(totalQuote, 1e18, filled);
+        }
+    }
+
+    /// @notice Reverts if an openPosition trade (not a pure reduction) breaks the market's OI caps.
+    /// @dev Delegatecall target of ClearingHouse.openPosition, after the trade. A trade that leaves gross
+    ///      OI above its cap is accepted only if it moved the vAMM mark toward the index without
+    ///      crossing it, whether gross rose or not. Arbitrage can then always trade a pushed premium
+    ///      back to the index through a filled gross cap, so a pair of offsetting positions cannot
+    ///      hold funding at its clamp; above the cap gross grows only by what that takes. Net OI above
+    ///      its cap may only fall and stay on its side: moving it up or to the other side is new
+    ///      one-sided exposure.
+    function checkOpenInterestCaps(bytes32 marketId, uint256 longOIBefore, uint256 shortOIBefore, uint256 markBefore)
+        external
+        view
+    {
+        IClearingHouse.OpenInterestCaps memory oiCaps = openInterestCaps[marketId];
+        uint256 longOIAfter = totalLongOI[marketId];
+        uint256 shortOIAfter = totalShortOI[marketId];
+
+        if (oiCaps.maxGrossOI != 0 && longOIAfter + shortOIAfter > oiCaps.maxGrossOI) {
+            IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+            uint256 markAfter = IVAMM(m.vamm).getMarkPrice();
+            uint256 index = _getRiskPrice(m);
+            bool towardIndex = markBefore > index
+                ? markAfter < markBefore && markAfter >= index
+                : markAfter > markBefore && markAfter <= index;
+            if (!towardIndex) revert ExceedsMaxGrossOI();
+        }
+
+        if (oiCaps.maxNetOI != 0) {
+            uint256 netAfter = longOIAfter > shortOIAfter ? longOIAfter - shortOIAfter : shortOIAfter - longOIAfter;
+            uint256 netBefore =
+                longOIBefore > shortOIBefore ? longOIBefore - shortOIBefore : shortOIBefore - longOIBefore;
+            bool sideChanged = (longOIAfter > shortOIAfter) != (longOIBefore > shortOIBefore);
+            if (netAfter > oiCaps.maxNetOI && (netAfter > netBefore || sideChanged)) revert ExceedsMaxNetOI();
         }
     }
 
