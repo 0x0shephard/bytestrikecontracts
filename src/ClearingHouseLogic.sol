@@ -11,44 +11,42 @@ import {IFeeRouter} from "./Interfaces/IFeeRouter.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ClearingHouseLogicBase} from "./ClearingHouseLogicBase.sol";
+import {ClearingHouseViews} from "./ClearingHouseViews.sol";
 
 /// @notice Logic contract for ClearingHouse heavy functions, called via delegatecall.
-/// @dev Storage layout MUST mirror ClearingHouse exactly (slots 11-14 are placeholders).
-///      Any addition/removal of storage variables in ClearingHouse must be reflected here.
-contract ClearingHouseLogic {
+/// @dev Storage layout comes from ClearingHouseLogicBase and MUST mirror ClearingHouse exactly.
+///      Selectors not implemented here (views moved out for size) are forwarded by the fallback to
+///      ClearingHouseViews, which runs in the same storage context.
+contract ClearingHouseLogic is ClearingHouseLogicBase {
     using Calculations for uint256;
 
-    // =========================================================================
-    // Storage layout — must mirror ClearingHouse exactly
-    // =========================================================================
+    /// @dev ClearingHouseViews instance deployed with this contract; the fallback delegates to it.
+    address private immutable _views;
 
-    address public vault;           // slot 0
-    address public marketRegistry;  // slot 1
-    mapping(address => bool) public whitelistedLiquidators; // slot 2
-    mapping(address => mapping(bytes32 => IClearingHouse.PositionView)) internal positions; // slot 3
-    mapping(address => uint256) internal _totalReservedMargin; // slot 4
-    mapping(bytes32 => IClearingHouse.MarketRiskParams) internal marketRiskParams; // slot 5
-    mapping(address => bytes32[]) internal _userActiveMarkets; // slot 6
-    mapping(address => mapping(bytes32 => bool)) internal _isMarketActive; // slot 7
-    uint256 internal totalBadDebt; // slot 8
-    mapping(bytes32 => uint256) internal totalLongOI; // slot 9
-    mapping(bytes32 => uint256) internal totalShortOI; // slot 10
-    // Slots 11-14 are set by ClearingHouse only; they are held here so the slots after them line up.
-    address private _slot11AllowlistManager; // slot 11
-    bool private _slot11AllowlistEnforced; // slot 11 (packed)
-    mapping(address => bool) private _slot12AllowedTraders; // slot 12
-    mapping(bytes32 => IClearingHouse.OpenInterestCaps) internal openInterestCaps; // slot 13 (read by checkOpenInterestCaps)
-    mapping(bytes32 => uint256) private _slot14LiquidationPriceBandBps; // slot 14
-    mapping(bytes32 => uint256) internal fundingSurplus; // slot 15
-    mapping(address => mapping(address => uint256)) internal pendingTradeFees; // slot 16
-    mapping(address => mapping(address => uint256)) internal pendingLiqPenalties; // slot 17
-    mapping(bytes32 => IClearingHouse.HoldingFee) internal holdingFees; // slot 18
+    constructor() {
+        _views = address(new ClearingHouseViews());
+    }
+
+    /// @dev Forwards the views that live in ClearingHouseViews (pendingFunding, carriesFundingDebt,
+    ///      checkOpenInterestCaps). Reached only through ClearingHouse's delegatecall, so the second
+    ///      delegatecall keeps ClearingHouse's storage, msg.sender and address(this).
+    fallback() external {
+        address target = _views;
+        assembly ("memory-safe") {
+            let ptr := mload(0x40)
+            calldatacopy(ptr, 0, calldatasize())
+            let ok := delegatecall(gas(), target, ptr, calldatasize(), 0, 0)
+            returndatacopy(ptr, 0, returndatasize())
+            if iszero(ok) { revert(ptr, returndatasize()) }
+            return(ptr, returndatasize())
+        }
+    }
 
     // =========================================================================
     // Constants
     // =========================================================================
 
-    uint256 private constant BPS_DENOMINATOR = 10_000;
     /// @dev Highest holding fee rate: 100% of notional per year.
     uint256 private constant MAX_HOLDING_FEE_BPS_PER_YEAR = 10_000;
 
@@ -72,25 +70,6 @@ contract ClearingHouseLogic {
     event BadDebtRecorded(address indexed account, bytes32 indexed marketId, uint256 shortfall);
     event FundingSurplusSwept(bytes32 indexed marketId, address indexed insuranceFund, uint256 amount);
     event HoldingFeeRateSet(bytes32 indexed marketId, uint256 rateBpsPerYear);
-
-    // =========================================================================
-    // Errors — must match ClearingHouse custom errors exactly
-    // =========================================================================
-
-    error OracleNotSet();
-    error OraclePriceZero();
-    error MarketNotFound();
-    error QuoteTokenValuationUnavailable();
-    error QuoteOracleUnavailable();
-    error InsufficientQuoteCollateral();
-    error InsufficientQuoteForFee();
-    error IMRBreach();
-    error ImmediatelyLiquidatable();
-    error AmountZero();
-    error ZeroAddress();
-    error ExceedsMaxGrossOI();
-    error ExceedsMaxNetOI();
-    error InvalidHoldingFeeRate();
 
     // =========================================================================
     // External entry points (delegatecall targets from ClearingHouse)
@@ -147,41 +126,6 @@ contract ClearingHouseLogic {
         }
     }
 
-    /// @notice Reverts if an openPosition trade (not a pure reduction) breaks the market's OI caps.
-    /// @dev Delegatecall target of ClearingHouse.openPosition, after the trade. A trade that leaves gross
-    ///      OI above its cap is accepted only if it moved the vAMM mark toward the index without
-    ///      crossing it, whether gross rose or not. Arbitrage can then always trade a pushed premium
-    ///      back to the index through a filled gross cap, so a pair of offsetting positions cannot
-    ///      hold funding at its clamp; above the cap gross grows only by what that takes. Net OI above
-    ///      its cap may only fall and stay on its side: moving it up or to the other side is new
-    ///      one-sided exposure.
-    function checkOpenInterestCaps(bytes32 marketId, uint256 longOIBefore, uint256 shortOIBefore, uint256 markBefore)
-        external
-        view
-    {
-        IClearingHouse.OpenInterestCaps memory oiCaps = openInterestCaps[marketId];
-        uint256 longOIAfter = totalLongOI[marketId];
-        uint256 shortOIAfter = totalShortOI[marketId];
-
-        if (oiCaps.maxGrossOI != 0 && longOIAfter + shortOIAfter > oiCaps.maxGrossOI) {
-            IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
-            uint256 markAfter = IVAMM(m.vamm).getMarkPrice();
-            uint256 index = _getRiskPrice(m);
-            bool towardIndex = markBefore > index
-                ? markAfter < markBefore && markAfter >= index
-                : markAfter > markBefore && markAfter <= index;
-            if (!towardIndex) revert ExceedsMaxGrossOI();
-        }
-
-        if (oiCaps.maxNetOI != 0) {
-            uint256 netAfter = longOIAfter > shortOIAfter ? longOIAfter - shortOIAfter : shortOIAfter - longOIAfter;
-            uint256 netBefore =
-                longOIBefore > shortOIBefore ? longOIBefore - shortOIBefore : shortOIBefore - longOIBefore;
-            bool sideChanged = (longOIAfter > shortOIAfter) != (longOIBefore > shortOIBefore);
-            if (netAfter > oiCaps.maxNetOI && (netAfter > netBefore || sideChanged)) revert ExceedsMaxNetOI();
-        }
-    }
-
     function _swap(IVAMM vamm, bool isLong, uint128 size, uint256 limit)
         internal
         returns (int256, int256, uint256)
@@ -198,12 +142,6 @@ contract ClearingHouseLogic {
         _accrueHoldingFee(marketId, true);
         holdingFees[marketId].rateBpsPerYear = rateBpsPerYear;
         emit HoldingFeeRateSet(marketId, rateBpsPerYear);
-    }
-
-    /// @notice Funding not yet settled for a position, net of the holding fee accrued since its last
-    ///         settlement. View behind ClearingHouse._getPendingFunding.
-    function pendingFunding(address account, bytes32 marketId) external view returns (int256) {
-        return _pendingFunding(account, marketId);
     }
 
     function settleFundingInternal(bytes32 marketId, address account) external {
@@ -288,103 +226,6 @@ contract ClearingHouseLogic {
         if (penalty > freeValue) _reduceMargin(account, positions[account][marketId], penalty - freeValue);
     }
 
-    /// @notice True if settling the account's funding now would leave the position in `marketId`
-    ///         carrying funding debt.
-    /// @dev View behind ClearingHouse._isLiquidatable (reached through ClearingHouse.delegateView).
-    ///      Replays settleAccountFunding over the account's markets on the same quote token, in the
-    ///      same order and with the same rules: a credit adds its tokens to the balance and their value
-    ///      to that market's margin; a debit (pending funding net of carried debt) is paid up to the
-    ///      paying market's margin plus the free collateral value and the balance, the rest staying as
-    ///      debt; then markets left in debt are retried. Pending funding is read from the vAMMs'
-    ///      current indices.
-    function carriesFundingDebt(address account, bytes32 marketId) external view returns (bool) {
-        if (_pendingFunding(account, marketId) - int256(positions[account][marketId].fundingDebt) >= 0) {
-            return false;
-        }
-        address quote = IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken;
-        // Funding is not settled while the quote oracle is down: the carried debt stays as it is.
-        if (!_quoteOracleLive(quote)) return positions[account][marketId].fundingDebt != 0;
-
-        bytes32[] memory markets = _userActiveMarkets[account];
-        uint256 n = markets.length;
-        int256[] memory net = new int256[](n);
-        uint256[] memory margin = new uint256[](n);
-        bool[] memory sameQuote = new bool[](n);
-        uint256 target;
-        for (uint256 i = 0; i < n; i++) {
-            if (IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken != quote) continue;
-            sameQuote[i] = true;
-            IClearingHouse.PositionView storage p = positions[account][markets[i]];
-            net[i] = _pendingFunding(account, markets[i]) - int256(p.fundingDebt);
-            margin[i] = p.margin;
-            if (markets[i] == marketId) target = i;
-        }
-
-        uint256 bal = ICollateralVault(vault).balanceOf(account, quote);
-        uint256 reserved = _reservedMarginForToken(account, quote);
-        uint256 baseUnit = ICollateralVault(vault).getConfig(quote).baseUnit;
-        // Pass 0 settles every market; pass 1 retries those left in debt.
-        for (uint256 pass = 0; pass < 2; pass++) {
-            for (uint256 i = 0; i < n; i++) {
-                int256 x = net[i];
-                if (!sameQuote[i] || x == 0 || (pass == 1 && x > 0)) continue;
-                if (x > 0) {
-                    uint256 units = Calculations.mulDiv(uint256(x), baseUnit, 1e18);
-                    uint256 v = _quoteValueX18(quote, units);
-                    bal += units;
-                    margin[i] += v;
-                    reserved += v;
-                    net[i] = 0;
-                } else {
-                    uint256 debit = uint256(-x);
-                    uint256 value = bal == 0 ? 0 : _quoteValueX18(quote, bal);
-                    uint256 cap = margin[i] + (value > reserved ? value - reserved : 0);
-                    uint256 paidX18 = debit < cap ? debit : cap;
-                    uint256 units = Calculations.mulDivRoundingUp(paidX18, baseUnit, 1e18);
-                    if (units > bal) {
-                        units = bal;
-                        paidX18 = Calculations.mulDiv(bal, 1e18, baseUnit);
-                    }
-                    bal -= units;
-                    uint256 cut = paidX18 < margin[i] ? paidX18 : margin[i];
-                    margin[i] -= cut;
-                    reserved = reserved > cut ? reserved - cut : 0;
-                    net[i] = -int256(debit - paidX18);
-                }
-            }
-        }
-        return net[target] < 0;
-    }
-
-    /// @dev Funding not yet settled for a position, from the vAMM's current (accrued) indices, minus
-    ///      the holding fee accrued since its last settlement.
-    function _pendingFunding(address account, bytes32 marketId) internal view returns (int256) {
-        IClearingHouse.PositionView storage position = positions[account][marketId];
-        if (position.size == 0) return 0;
-        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
-        IVAMM vamm = IVAMM(m.vamm);
-        uint256 payDelta;
-        uint256 receiveDelta;
-        if (position.size > 0) {
-            payDelta = vamm.currentCumulativeLongPayPerUnitX18() - position.lastFundingPayIndex;
-            receiveDelta = vamm.currentCumulativeLongReceivePerUnitX18() - position.lastFundingReceiveIndex;
-        } else {
-            payDelta = vamm.currentCumulativeShortPayPerUnitX18() - position.lastFundingPayIndex;
-            receiveDelta = vamm.currentCumulativeShortReceivePerUnitX18() - position.lastFundingReceiveIndex;
-        }
-        uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
-        return (
-            receiveDelta >= payDelta
-                ? int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18))
-                : -int256(Calculations.mulDivRoundingUp(payDelta - receiveDelta, absSize, 1e18))
-        ) - int256(_holdingFeeDue(position, m.oracle, _holdingFeeIndex(holdingFees[marketId])));
-    }
-
-    /// @dev The market's holding fee index brought up to now at its current rate.
-    function _holdingFeeIndex(IClearingHouse.HoldingFee storage h) internal view returns (uint256) {
-        return h.cumulativeX18 + h.rateBpsPerYear * 1e14 * (block.timestamp - h.updatedAt) / 365 days;
-    }
-
     /// @dev Brings the market's holding fee index up to now: accrued at the current rate when `accrue`,
     ///      else (time in which funding is skipped) only its clock advances. Returns the index.
     function _accrueHoldingFee(bytes32 marketId, bool accrue) internal returns (uint256) {
@@ -392,27 +233,6 @@ contract ClearingHouseLogic {
         if (accrue) h.cumulativeX18 = _holdingFeeIndex(h);
         h.updatedAt = block.timestamp;
         return h.cumulativeX18;
-    }
-
-    /// @dev Holding fee a position owes up to index `feeIndex`: its absolute notional at the index
-    ///      times the index's growth since the position's snapshot, rounded up. 0 if the index price
-    ///      cannot be read (funding settlement is then skipped as well).
-    function _holdingFeeDue(IClearingHouse.PositionView storage position, address oracle, uint256 feeIndex)
-        internal
-        view
-        returns (uint256)
-    {
-        if (feeIndex == position.lastHoldingFeeIndexX18 || position.size == 0) return 0;
-        uint256 indexPrice;
-        try IOracle(oracle).getPrice() returns (uint256 p) {
-            indexPrice = p;
-        } catch {
-            return 0;
-        }
-        uint256 notional = Calculations.mulDivRoundingUp(
-            uint256(position.size > 0 ? position.size : -position.size), indexPrice, 1e18
-        );
-        return Calculations.mulDivRoundingUp(notional, feeIndex - position.lastHoldingFeeIndexX18, 1e18);
     }
 
     /// @dev Charges a position's holding fee like a funding debit: paid up to its margin plus the free
@@ -1135,26 +955,6 @@ contract ClearingHouseLogic {
         }
     }
 
-    function _reservedMarginForToken(address account, address quoteToken) internal view returns (uint256 reserved) {
-        bytes32[] memory markets = _userActiveMarkets[account];
-        for (uint256 i = 0; i < markets.length; i++) {
-            IMarketRegistry.Market memory mkt = IMarketRegistry(marketRegistry).getMarket(markets[i]);
-            if (mkt.quoteToken == quoteToken) {
-                reserved += positions[account][markets[i]].margin;
-            }
-        }
-    }
-
-    /// @dev True when the vault's oracle returns a non-zero price for the quote token.
-    function _quoteOracleLive(address quoteToken) internal view returns (bool) {
-        ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
-        try IOracle(ICollateralVault(vault).oracle()).getPrice(cfg.oracleSymbol) returns (uint256 priceX18) {
-            return priceX18 > 0;
-        } catch {
-            return false;
-        }
-    }
-
     /// @dev True when the market's index oracle is set and returns a non-zero price.
     function _indexOracleLive(address oracle) internal view returns (bool) {
         if (oracle == address(0)) return false;
@@ -1163,20 +963,6 @@ contract ClearingHouseLogic {
         } catch {
             return false;
         }
-    }
-
-    /// @dev Value of a quote-token amount as margin: the vault's haircut oracle value, with the token
-    ///      price capped at par (1e18 per whole token, before the haircut). Realized PnL and funding
-    ///      are debited at par, so a token must not back more margin than it pays at that rate.
-    function _quoteValueX18(address quoteToken, uint256 amount) internal view returns (uint256) {
-        if (amount == 0) return 0;
-        uint256 v = ICollateralVault(vault).getTokenValueX18(quoteToken, amount);
-        if (!(v > 0)) revert QuoteTokenValuationUnavailable();
-        ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
-        uint256 par = Calculations.mulDiv(
-            Calculations.mulDiv(1e18, amount, cfg.baseUnit), BPS_DENOMINATOR - cfg.haircutBps, BPS_DENOMINATOR
-        );
-        return v < par ? v : par;
     }
 
     function _notionalToQuoteUnits(uint256 notionalX18, address quoteToken) internal view returns (uint256) {
@@ -1197,13 +983,6 @@ contract ClearingHouseLogic {
         return roundUp
             ? Calculations.mulDivRoundingUp(amountX18, baseUnit, 1e18)
             : Calculations.mulDiv(amountX18, baseUnit, 1e18);
-    }
-
-    function _getRiskPrice(IMarketRegistry.Market memory m) internal view returns (uint256) {
-        if (!(m.oracle != address(0))) revert OracleNotSet();
-        uint256 indexPrice = IOracle(m.oracle).getPrice();
-        if (!(indexPrice > 0)) revert OraclePriceZero();
-        return indexPrice;
     }
 
     /// @dev Loss at `indexX18` of `qty` base just filled at `pxX18` on the long (`isLong`) or short
