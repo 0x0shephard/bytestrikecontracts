@@ -121,6 +121,7 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     error InsufficientQuoteForFee();
     error InvalidAdmin();
     error InvalidHoldingFeeRate();
+    error BackingRatioLowered();
     error InvalidLiquidationPriceBand();
     error InvalidLogic();
     error InvalidOpenInterestCaps();

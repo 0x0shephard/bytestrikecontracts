@@ -59,6 +59,7 @@ abstract contract ClearingHouseLogicBase {
     error ExceedsMaxGrossOI();
     error ExceedsMaxNetOI();
     error InvalidHoldingFeeRate();
+    error BackingRatioLowered();
 
     // =========================================================================
     // Shared helpers

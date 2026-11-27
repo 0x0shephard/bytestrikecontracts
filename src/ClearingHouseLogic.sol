@@ -368,8 +368,12 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
         // the account's other positions; a larger loss reverts. Taken before the position changes (a
         // full close drops the market from the reserved total, which would count its margin twice).
         uint256 lossCapUnits = type(uint256).max;
+        uint256 backingValue;
+        uint256 backingReserved;
         if (realized < 0 && !isLiquidation) {
-            lossCapUnits = _pnlToQuoteUnits(_fundingCapX18(account, position.margin, m.quoteToken), m.quoteToken, true);
+            (backingValue, backingReserved) = _quoteBacking(account, m.quoteToken);
+            lossCapUnits =
+                _pnlToQuoteUnits(_capX18(position.margin, backingValue, backingReserved), m.quoteToken, true);
         }
 
         position.size = s1;
@@ -507,6 +511,14 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
                 position.margin += marginRequired;
                 _totalReservedMargin[account] += marginRequired;
             }
+        }
+
+        // While the account's quote value is below its reserved margin, a voluntary trade that realizes
+        // a loss may not lower value / reserved margin: a partial close then loses at most its slice's
+        // backed share, so it cannot strip the backing of the account's other positions.
+        if (backingValue < backingReserved) {
+            (uint256 valueAfter, uint256 reservedAfter) = _quoteBacking(account, m.quoteToken);
+            if (valueAfter * backingReserved < backingValue * reservedAfter) revert BackingRatioLowered();
         }
 
         if (!isLiquidation && absBaseDelta > 0) {
