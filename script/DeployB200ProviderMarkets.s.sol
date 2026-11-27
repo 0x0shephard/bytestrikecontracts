@@ -14,6 +14,7 @@ import {vAMM} from "../src/vAMM.sol";
 import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
 import {ICollateralVault} from "../src/Interfaces/ICollateralVault.sol";
 import {IMarketRegistry} from "../src/Interfaces/IMarketRegistry.sol";
+import {SeedLimits} from "./SeedLimits.sol";
 
 interface IMintableToken is IERC20 {
     function mint(address to, uint256 amount) external;
@@ -42,9 +43,8 @@ abstract contract B200ProviderBase is Script {
     uint256 constant TARGET_SEED_COLLATERAL_X18 = 10_000e18;
     uint256 constant SEED_TOKEN_BUFFER = 10_000e6;
     uint256 constant GAS_FLOAT = 0.00002 ether;
-    uint256 constant LONG_MAX_BPS = 11_000;
-    uint256 constant SHORT_MIN_BPS = 8_500;
-    uint256 constant BPS = 10_000;
+    // Seed slippage limits: SeedLimits, SEED_SLIPPAGE_BPS from the fill expected at the reserves when each
+    // seed trade is sent, so a trade sequenced ahead of it makes it revert instead of filling at a loss.
     uint256 constant SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
 
     struct Spec {
@@ -252,9 +252,6 @@ contract SeedB200ProviderMarkets is B200ProviderBase {
         }
         vm.stopBroadcast();
 
-        uint256 notional = (uint256(SEED_SIZE) * spec.priceX18) / 1e18;
-        uint256 maxQuoteIn = (notional * LONG_MAX_BPS) / BPS;
-        uint256 minQuoteOut = (notional * SHORT_MIN_BPS) / BPS;
         address seedLong = vm.addr(seedLongPk);
         address seedShort = vm.addr(seedShortPk);
 
@@ -262,7 +259,10 @@ contract SeedB200ProviderMarkets is B200ProviderBase {
         if (longPos.size == 0) {
             vm.startBroadcast(seedLongPk);
             _ensureSeedDeposit(seedLong);
-            ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, maxQuoteIn);
+            // Limit read right before the trade, a few bps from the fill expected at the current reserves
+            ClearingHouse(payable(CH)).openPosition(
+                marketId, true, SEED_SIZE, SeedLimits.longMaxQuoteIn(market.vamm, SEED_SIZE)
+            );
             ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }
@@ -271,7 +271,10 @@ contract SeedB200ProviderMarkets is B200ProviderBase {
         if (shortPos.size == 0) {
             vm.startBroadcast(seedShortPk);
             _ensureSeedDeposit(seedShort);
-            ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, minQuoteOut);
+            // Read after the long seed, which moved the reserves
+            ClearingHouse(payable(CH)).openPosition(
+                marketId, false, SEED_SIZE, SeedLimits.shortMinQuoteOut(market.vamm, SEED_SIZE)
+            );
             ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }

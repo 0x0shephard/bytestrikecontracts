@@ -16,6 +16,7 @@ import {ICollateralVault} from "../src/Interfaces/ICollateralVault.sol";
 import {IMarketRegistry} from "../src/Interfaces/IMarketRegistry.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {SeedLimits} from "./SeedLimits.sol";
 
 /// @title SetupH100Live
 /// @notice Sets up a fully tradeable H100-PERP-LIVE market and opens a test position.
@@ -172,7 +173,10 @@ contract SetupH100Live is Script {
         console.log("Deposited 10,000 USDC into vault");
 
         // ── 12. Open long position: 1 H100 GPU hour ──────────────────────────
-        ClearingHouse(payable(CH)).openPosition(H100_PERP_LIVE, true, POSITION_SIZE, 0);
+        // Limit a few bps from the expected fill, so a trade sequenced ahead of it reverts it
+        ClearingHouse(payable(CH)).openPosition(
+            H100_PERP_LIVE, true, POSITION_SIZE, SeedLimits.longMaxQuoteIn(address(h100Vamm), POSITION_SIZE)
+        );
         console.log("Opened LONG 1 H100 GPU hour on H100-PERP-LIVE");
 
         vm.stopBroadcast();
