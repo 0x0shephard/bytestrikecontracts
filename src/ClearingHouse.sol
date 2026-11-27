@@ -299,7 +299,9 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     /// @dev Requires an open position in the market. Allowed while the market is paused, since it
     ///      touches no vAMM state and lets traders defend positions whose index keeps moving. While
     ///      another position on the same quote token is liquidatable, only a liquidatable position
-    ///      can take margin, so free collateral stays available to that liquidation.
+    ///      can take margin, so free collateral stays available to that liquidation. A position whose
+    ///      own index cannot be read counts as not liquidatable for this check, so a lone position can
+    ///      still be topped up during its index outage.
     /// @param marketId The ID of the market for the position.
     /// @param amount The amount of margin to add (in quote currency value, 1e18).
     function addMargin(bytes32 marketId, uint256 amount) external override {
@@ -307,7 +309,13 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         if (!(amount > 0)) revert AmountZero();
         if (positions[msg.sender][marketId].size == 0) revert NoPosition();
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
-        if (!_isLiquidatable(msg.sender, marketId) && _hasLiquidatable(msg.sender, m.quoteToken, marketId)) {
+        // The topped-up position counts as not liquidatable while its own index cannot be read: it
+        // cannot be liquidated until the index is back, so its outage must not block its top-up.
+        bool ownLiquidatable;
+        try IOracle(m.oracle).getPrice() returns (uint256 indexPrice) {
+            ownLiquidatable = indexPrice > 0 && _isLiquidatable(msg.sender, marketId);
+        } catch {}
+        if (!ownLiquidatable && _hasLiquidatable(msg.sender, m.quoteToken, marketId)) {
             revert HasLiquidatablePosition();
         }
         uint256 quoteBalance = ICollateralVault(vault).balanceOf(msg.sender, m.quoteToken);
