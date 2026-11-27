@@ -59,4 +59,16 @@ contract AuditFixesPart2ImrLossTest is BaseTest {
         vm.expectRevert(ClearingHouse.IMRBreach.selector);
         clearingHouse.openPosition(ETH_PERP, true, 10e18, 0);
     }
+
+    /// @notice A short grown at an unchanged index passes the initial margin check: its averaged entry
+    ///         is rounded up, so its loss at the index never exceeds what its slices reserved.
+    function test_Finding40_shortGrowsAtUnchangedIndex() public {
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH_PERP, false, 30e18, 0);
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH_PERP, false, 10e18, 0);
+        assertEq(getPosition(alice).size, -40e18);
+        (int256 equity, uint256 required) = _imrState(alice);
+        assertGe(equity, int256(required), "grown short below its initial margin");
+    }
 }

@@ -360,7 +360,9 @@ contract ClearingHouseLogic {
         } else if ((s0 > 0 && baseDelta > 0) || (s0 < 0 && baseDelta < 0)) {
             uint256 oldNotional = absS0 * position.entryPriceX18;
             uint256 newNotional = oldNotional + (absBaseDelta * execPxX18);
-            position.entryPriceX18 = newNotional / absS1;
+            // Rounded toward the smaller loss (down for a long, up for a short), so the averaged
+            // position's unrealized loss never exceeds the losses its slices reserved.
+            position.entryPriceX18 = s0 > 0 ? newNotional / absS1 : (newNotional + absS1 - 1) / absS1;
         } else {
             uint256 reduceAmt = absBaseDelta <= absS0 ? absBaseDelta : absS0;
             bool flips = (s0 > 0 && s1 < 0) || (s0 < 0 && s1 > 0);
