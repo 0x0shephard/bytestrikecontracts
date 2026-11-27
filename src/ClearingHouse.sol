@@ -235,9 +235,13 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         // withdrawFor returns actual received amount (fee-on-transfer support)
         uint256 received = ICollateralVault(vault).withdrawFor(msg.sender, token, amount, msg.sender);
 
-        // Post-withdrawal check: ensure no positions become liquidatable
+        // Post-withdrawal check: no position backed by the withdrawn token may become liquidatable.
+        // Positions on other quote tokens are unaffected, so their feeds cannot block the withdrawal.
         for (uint256 i = 0; i < markets.length; i++) {
-            if (_isLiquidatable(msg.sender, markets[i])) revert WouldBeLiquidatable();
+            if (
+                IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken == token
+                    && _isLiquidatable(msg.sender, markets[i])
+            ) revert WouldBeLiquidatable();
         }
 
         emit CollateralWithdrawn(msg.sender, token, amount, received);
@@ -596,9 +600,16 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         bytes32[] memory activeMarkets = _userActiveMarkets[msg.sender];
         _settleAccountFunding(msg.sender, marketId, false);
 
-        // Block new positions if user has any liquidatable position
-        for (uint256 i = 0; i < activeMarkets.length; i++) {
-            if (_isLiquidatable(msg.sender, activeMarkets[i])) revert HasLiquidatablePosition();
+        // Block new positions if the user has a liquidatable position on the target market's quote
+        // token (the collateral the trade draws on); other quote tokens' feeds cannot block the open.
+        {
+            address quote = IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken;
+            for (uint256 i = 0; i < activeMarkets.length; i++) {
+                if (
+                    IMarketRegistry(marketRegistry).getMarket(activeMarkets[i]).quoteToken == quote
+                        && _isLiquidatable(msg.sender, activeMarkets[i])
+                ) revert HasLiquidatablePosition();
+            }
         }
 
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();

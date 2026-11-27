@@ -150,4 +150,29 @@ contract AuditFixesPart2MultiQuoteTest is BaseTest {
         assertEq(getPosition(alice).size, 0, "ETH_PERP not liquidated");
         assertEq(ethVamm2.lastFundingTimestamp(), ts, "same-quote market not settled");
     }
+
+    /// @notice Finding 47 (follow-up): while the USDT feed is down, alice can still withdraw USDC and
+    /// open on a USDC-quoted market: withdraw checks only positions on the withdrawn token, and
+    /// openPosition only positions on the target market's quote token.
+    function test_Finding47_withdrawAndOpenNotBlockedByOtherQuoteFeed() public {
+        _openPositions(1e18);
+        vm.warp(block.timestamp + 1 hours);
+        vm.mockCallRevert(
+            address(oracle), abi.encodeWithSignature("getPrice(string)", "USDT"), "USDT feed stale"
+        );
+
+        uint256 balBefore = vault.balanceOf(alice, address(usdc));
+        vm.prank(alice);
+        clearingHouse.withdraw(address(usdc), 1_000e18);
+        assertEq(vault.balanceOf(alice, address(usdc)), balBefore - 1_000e18, "USDC not withdrawn");
+
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH2_PERP, true, 1e18, 0);
+        assertEq(clearingHouse.getPosition(alice, ETH2_PERP).size, 2e18, "USDC market not opened");
+
+        // The USDT side stays guarded: withdrawing USDT still needs the USDT feed.
+        vm.prank(alice);
+        vm.expectRevert();
+        clearingHouse.withdraw(address(usdt), 1_000e18);
+    }
 }
