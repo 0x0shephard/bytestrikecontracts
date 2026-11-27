@@ -158,6 +158,25 @@ contract CollateralVault is ICollateralVault, AccessControl {
 
     }
 
+    /// @notice Deposit collateral that ClearingHouse adds to an open position's margin. CH only.
+    /// @dev Ignores the deposit pause and the caps, so a position can be topped up while they bind;
+    /// ClearingHouse.depositMargin bounds each top-up by the position's shortfall from its initial margin.
+    /// @param token ERC20 collateral token.
+    /// @param amount Amount to transferFrom.
+    /// @param onBehalfOf Account whose internal balance increases.
+    /// @return received Actual amount credited after transfer fees, if any.
+    function depositForMargin(address token, uint256 amount, address onBehalfOf) external onlyClearingHouse override returns (uint256 received) {
+        require(collateralConfigs[token].enabled, "CV: token disabled");
+        require(amount > 0, "CV: amount=0");
+        require(onBehalfOf != address(0), "CV: zero address");
+
+        uint256 beforeBal = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransferFrom(onBehalfOf, address(this), amount);
+        received = IERC20(token).balanceOf(address(this)) - beforeBal;
+        userBalances[onBehalfOf][token] += received;
+        emit Deposit(msg.sender, token, amount, onBehalfOf, received);
+    }
+
     /// @notice Withdraw collateral on behalf of a user to a destination address. CH only.
     /// @dev Uses balance delta to support fee-on-transfer tokens. Returns actual amount received.
     /// @param user Account whose balance is decreased.

@@ -97,6 +97,11 @@ interface ICollateralVault {
     /// @return received The amount accounted after fee-on-transfer adjustments.
     function deposit(address token, uint256 amount, address onBehalfOf) external returns (uint256 received);
 
+    /// @notice Deposit collateral that ClearingHouse adds to an open position's margin (CH only). Ignores
+    ///         the deposit pause and the caps; ClearingHouse bounds the amount by the position's shortfall.
+    /// @return received The amount accounted after fee-on-transfer adjustments.
+    function depositForMargin(address token, uint256 amount, address onBehalfOf) external returns (uint256 received);
+
     // ===== CH-gated outflows =====
     /// @notice Withdraw collateral on behalf of user to a destination address (CH only).
     /// @return received Actual amount received by destination (may be less due to transfer fees).

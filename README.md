@@ -378,6 +378,11 @@ clearingHouse.addMargin(marketId, amount)
 // Requires an open position; allowed while the market is paused
 // While a position on the same quote token is liquidatable, only liquidatable positions take margin
 
+// Deposit quote tokens straight into a position's margin (top-up)
+clearingHouse.depositMargin(marketId, tokenAmount)
+// Works while vault deposits are paused or the caps are full; reverts if the position's equity
+// after it (margin + unrealizedPnL at the index - funding debt) exceeds IMR * size * max(mark, index)
+
 // Remove margin from position to collateral
 clearingHouse.removeMargin(marketId, amount)
 // Checked (unrealizedPnL at the index, funding debt deducted):

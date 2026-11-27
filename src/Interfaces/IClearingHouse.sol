@@ -120,6 +120,10 @@ interface IClearingHouse {
     /// @notice Add margin to an open position (allowed while the market is paused).
     function addMargin(bytes32 marketId, uint256 amount) external;
 
+    /// @notice Deposit quote tokens and add them to an open position's margin in one call. Ignores the
+    ///         vault's deposit pause and caps; the margin after it may not exceed the initial margin.
+    function depositMargin(bytes32 marketId, uint256 amount) external;
+
     /// @notice Remove margin from a specific position.
     function removeMargin(bytes32 marketId, uint256 amount) external;
 

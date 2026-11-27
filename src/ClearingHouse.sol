@@ -99,6 +99,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     // Custom errors
     error AmountZero();
     error BelowMinSize();
+    error ExceedsMarginTopUp();
     error ExceedsMaxSize();
     error ExceedsMaxGrossOI();
     error ExceedsMaxNetOI();
@@ -208,6 +209,35 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         if (!(amount > 0)) revert AmountZero();
         ICollateralVault(vault).deposit(token, amount, msg.sender);
         emit CollateralDeposited(msg.sender, token, amount);
+    }
+
+    /// @notice Deposits quote tokens and adds them to an open position's margin in one call.
+    /// @dev Stays open while the vault's deposits are paused or its caps are full, so a fully allocated
+    ///      trader can always defend a position. Bounded: the position's equity after the top-up (margin
+    ///      valued at the backing collateral, plus unrealized PnL at the index, minus funding debt) may
+    ///      not exceed its initial margin at max(mark, index), so a top-up only restores what the
+    ///      position needs. removeMargin keeps that margin locked while the position is below it.
+    /// @param marketId The market of the position.
+    /// @param amount The amount of the market's quote token to deposit, in token units.
+    function depositMargin(bytes32 marketId, uint256 amount) external override nonReentrant {
+        _settleFundingInternal(marketId, msg.sender);
+        if (!(amount > 0)) revert AmountZero();
+        PositionView storage position = positions[msg.sender][marketId];
+        if (position.size == 0) revert NoPosition();
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        uint256 valueX18 =
+            _quoteValueX18(m.quoteToken, ICollateralVault(vault).depositForMargin(m.quoteToken, amount, msg.sender));
+        position.margin += valueX18;
+        _totalReservedMargin[msg.sender] += valueX18;
+        (int256 equityAfter,) = _marginState(msg.sender, marketId);
+        uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
+        uint256 riskPrice = _getRiskPrice(m);
+        uint256 imrMargin = uint256(position.size > 0 ? position.size : -position.size).mulDiv(
+            markPrice > riskPrice ? markPrice : riskPrice, 1e18
+        ).mulDiv(marketRiskParams[marketId].imrBps, BPS_DENOMINATOR);
+        if (equityAfter > int256(imrMargin)) revert ExceedsMarginTopUp();
+        emit CollateralDeposited(msg.sender, m.quoteToken, amount);
+        emit MarginAdded(msg.sender, marketId, valueX18);
     }
 
     /// @notice Withdraws collateral from the vault for the caller.
