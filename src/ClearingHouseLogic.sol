@@ -382,6 +382,15 @@ contract ClearingHouseLogic {
             }
         }
 
+        // A voluntary trade's realized loss is paid only up to the position's margin plus the account's
+        // free collateral, the same cap as a funding debit, so it never takes the collateral that backs
+        // the account's other positions; a larger loss reverts. Taken before the position changes (a
+        // full close drops the market from the reserved total, which would count its margin twice).
+        uint256 lossCapUnits = type(uint256).max;
+        if (realized < 0 && !isLiquidation) {
+            lossCapUnits = _pnlToQuoteUnits(_fundingCapX18(account, position.margin, m.quoteToken), m.quoteToken, true);
+        }
+
         position.size = s1;
         position.realizedPnL += realized;
 
@@ -418,8 +427,8 @@ contract ClearingHouseLogic {
         // the margin checks value the balance, so the credit never leaves reserved margin unbacked.
         uint256 creditValue;
         if (realized != 0) {
-            // Only a liquidation may realize a loss beyond the account's vault balance.
-            uint256 credited = _settlePnLInVault(account, marketId, realized, isLiquidation, 0, type(uint256).max);
+            // Only a liquidation may realize a loss beyond the account's vault balance or the cap above.
+            uint256 credited = _settlePnLInVault(account, marketId, realized, isLiquidation, 0, lossCapUnits);
             if (realized > 0) creditValue = _quoteValueX18(m.quoteToken, credited);
         }
 

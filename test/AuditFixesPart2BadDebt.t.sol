@@ -115,4 +115,42 @@ contract AuditFixesPart2BadDebtTest is BaseTest {
         clearingHouse.closePosition(ZERO_FEE_PERP, 100e18, 0);
         assertEq(clearingHouse.getPosition(alice, ZERO_FEE_PERP).size, 0, "closed");
     }
+
+    /// @notice Finding 37 (follow-up): a voluntary loss is capped at the position's margin plus the
+    /// account's free collateral. Closing a zero-fee long whose loss, at a mark pushed down by a second
+    /// account, exceeds that cap would spend the collateral backing the account's ETH long, so it reverts.
+    function test_Finding37_zeroFeeCloseCannotSpendOtherPositionsBacking() public {
+        fundAndDeposit(alice, 900e18);
+        vm.startPrank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, 4e18, 0);
+        clearingHouse.openPosition(ZERO_FEE_PERP, true, 500e18, 0);
+        vm.stopPrank();
+
+        uint256 balance = vault.balanceOf(alice, address(usdc));
+        uint256 reserved = clearingHouse._totalReservedMargin(alice);
+        uint256 cap = clearingHouse.getPosition(alice, ZERO_FEE_PERP).margin + (balance - reserved);
+
+        fundAndDeposit(accountB, 5_000e18);
+        vm.prank(accountB);
+        clearingHouse.openPosition(ZERO_FEE_PERP, false, 1_500e18, 0);
+        assertFalse(clearingHouse.isLiquidatable(alice, ZERO_FEE_PERP), "zero-fee long healthy at index");
+
+        // Even at the pre-trade mark the full close loses more than the cap, though less than the balance.
+        uint256 lossAtMark =
+            (clearingHouse.getPosition(alice, ZERO_FEE_PERP).entryPriceX18 - zfVamm.getMarkPrice()) * 500;
+        assertGt(lossAtMark, cap);
+        assertLt(lossAtMark, balance);
+
+        vm.prank(alice);
+        vm.expectRevert(ClearingHouse.InsufficientQuoteCollateral.selector);
+        clearingHouse.closePosition(ZERO_FEE_PERP, 500e18, 0);
+
+        // Once the mark is back, the close's loss fits in the position's margin and it goes through.
+        vm.prank(accountB);
+        clearingHouse.closePosition(ZERO_FEE_PERP, 1_500e18, 0);
+        vm.prank(alice);
+        clearingHouse.closePosition(ZERO_FEE_PERP, 500e18, 0);
+        assertEq(clearingHouse.getPosition(alice, ZERO_FEE_PERP).size, 0);
+        assertGe(vault.balanceOf(alice, address(usdc)), clearingHouse._totalReservedMargin(alice), "margins backed");
+    }
 }
