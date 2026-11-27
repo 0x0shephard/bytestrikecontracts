@@ -77,6 +77,7 @@ contract CuOracle is Ownable2Step {
     mapping(address => bool) public allowedRoles;
     mapping(bytes32 => address) public commitOwners; // Who made each asset's pending commit
     mapping(bytes32 => uint256) public ownerAnchorPrices; // Owner's last revealed price per asset
+    mapping(bytes32 => uint256) public slotTimestamps; // When each asset's pending commit slot was first taken by its maker
 
     // --- Modifiers ---
     modifier onlyAllowedRole() {
@@ -115,12 +116,20 @@ contract CuOracle is Ownable2Step {
         }
 
         // A live commit can only be replaced by its maker or the owner, so one publisher cannot
-        // keep blocking another's (or the owner's) reveal. An expired commit can be replaced by anyone.
-        if (
-            priceCommits[_assetId] != 0 && msg.sender != commitOwners[_assetId] && msg.sender != owner()
-                && block.timestamp <= commitTimestamps[_assetId] + maxCommitAge
-        ) {
+        // keep blocking another's (or the owner's) reveal. An expired commit, or one whose maker is no
+        // longer authorized, can be replaced by anyone.
+        address maker = commitOwners[_assetId];
+        bool live = priceCommits[_assetId] != 0 && block.timestamp <= slotTimestamps[_assetId] + maxCommitAge
+            && (maker == owner() || allowedRoles[maker]);
+        if (live && msg.sender != maker && msg.sender != owner()) {
             revert CommitPendingFromAnotherPublisher();
+        }
+
+        // A publisher renewing its own live commit keeps the slot's original start, so the slot still
+        // expires maxCommitAge after the first commit however often it renews; the owner's renewals
+        // restart it as before.
+        if (!(live && msg.sender == maker && maker != owner())) {
+            slotTimestamps[_assetId] = block.timestamp;
         }
 
         priceCommits[_assetId] = _commit;
@@ -173,6 +182,7 @@ contract CuOracle is Ownable2Step {
         delete priceCommits[_assetId];
         delete commitOwners[_assetId];
         delete commitTimestamps[_assetId];
+        delete slotTimestamps[_assetId];
 
         // Update the price using commit time (when price was observed, not reveal time)
         latestPrices[_assetId] = PriceData({
@@ -288,6 +298,7 @@ contract CuOracle is Ownable2Step {
         delete priceCommits[_assetId];
         delete commitOwners[_assetId];
         delete commitTimestamps[_assetId];
+        delete slotTimestamps[_assetId];
         delete lastCommitTimestamp[_assetId];
         delete latestPrices[_assetId];
         delete ownerAnchorPrices[_assetId];
