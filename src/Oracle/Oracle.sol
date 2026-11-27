@@ -137,6 +137,14 @@ contract Oracle is Ownable2Step {
             uint80 roundId, int256 price, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound
         ) {
             if (price <= 0 || startedAt == 0 || answeredInRound < roundId || updatedAt > block.timestamp) return 0;
+            // A round at or outside the aggregator's bounds is unreadable (getPrice reverts
+            // PriceOutOfBounds) from the moment it landed, which this round does not tell: unknown.
+            try priceFeed.aggregator() returns (address aggregatorAddr) {
+                if (aggregatorAddr != address(0)) {
+                    AggregatorInterface aggregator = AggregatorInterface(aggregatorAddr);
+                    if (price <= int256(aggregator.minAnswer()) || price >= int256(aggregator.maxAnswer())) return 0;
+                }
+            } catch {}
             uint256 staleFrom = updatedAt + stalePeriod;
             if (staleFrom < block.timestamp && staleFrom < since) since = staleFrom;
         } catch {

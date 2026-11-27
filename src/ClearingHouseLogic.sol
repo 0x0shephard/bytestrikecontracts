@@ -612,19 +612,24 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
         // moment it became unavailable and the clock is then advanced without accruing, so payers are
         // not charged for time in which they cannot act and the live time before it is not dropped.
         // The same holds while the market's index oracle (the risk price) is down, since positions can
-        // then be neither closed nor liquidated; that time is skipped entirely.
-        // The holding fee index follows the same clock.
-        if (!_indexOracleLive(m.oracle)) {
-            vamm.skipFunding(0);
-            _accrueHoldingFee(marketId, 0);
-            return;
+        // then be neither closed nor liquidated: up to the moment the index oracle reports it became
+        // unreadable (IOracleAvailability, e.g. CuOracleAdapter's lastUpdatedAt + maxAge), or none of
+        // it when that moment is unknown. The holding fee index follows the same clock.
+        {
+            uint64 liveUntil = type(uint64).max;
+            if (!_indexOracleLive(m.oracle)) liveUntil = _unavailableSince(m.oracle, "");
+            if (!_quoteOracleLive(m.quoteToken)) {
+                uint64 quoteLiveUntil = _quoteUnavailableSince(m.quoteToken);
+                if (quoteLiveUntil < liveUntil) liveUntil = quoteLiveUntil;
+            }
+            if (liveUntil != type(uint64).max) {
+                vamm.skipFunding(liveUntil);
+                _accrueHoldingFee(marketId, liveUntil);
+                return;
+            }
         }
-        if (!_quoteOracleLive(m.quoteToken)) {
-            uint64 liveUntil = _quoteUnavailableSince(m.quoteToken);
-            vamm.skipFunding(liveUntil);
-            _accrueHoldingFee(marketId, liveUntil);
-            return;
-        }
+        // The vAMM's own funding flushes use the quote token to skip quote outages too.
+        if (vamm.quoteToken() == address(0)) vamm.bindQuoteToken(m.quoteToken);
 
         (uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive) = vamm.pokeFunding();
         uint256 feeIndex = _accrueHoldingFee(marketId, block.timestamp);
@@ -1059,8 +1064,15 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
 
     /// @dev When the vault oracle's quote-token price became unreadable (0 if unknown or unsupported).
     function _quoteUnavailableSince(address quoteToken) internal view returns (uint64) {
-        string memory sym = ICollateralVault(vault).getConfig(quoteToken).oracleSymbol;
-        try IOracleAvailability(ICollateralVault(vault).oracle()).priceUnavailableSince(sym) returns (uint256 t) {
+        return _unavailableSince(
+            ICollateralVault(vault).oracle(), ICollateralVault(vault).getConfig(quoteToken).oracleSymbol
+        );
+    }
+
+    /// @dev When the oracle's price for `sym` became unreadable (IOracleAvailability; 0 if unknown or
+    ///      unsupported).
+    function _unavailableSince(address priceOracle, string memory sym) internal view returns (uint64) {
+        try IOracleAvailability(priceOracle).priceUnavailableSince(sym) returns (uint256 t) {
             return t > block.timestamp ? 0 : uint64(t);
         } catch {
             return 0;

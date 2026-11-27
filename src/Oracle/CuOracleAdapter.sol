@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {IOracle} from "../Interfaces/IOracle.sol";
+import {IOracle, IOracleAvailability} from "../Interfaces/IOracle.sol";
 import {CuOracle} from "./CuOracle.sol";
 
 /// @title CuOracleAdapter
 /// @notice Wraps the commit/reveal CuOracle so it can be plugged anywhere an `IOracle` is required.
 /// @dev Performs basic sanity checks (asset support, non-zero price, optional staleness guard).
-contract CuOracleAdapter is IOracle {
+contract CuOracleAdapter is IOracle, IOracleAvailability {
     error CuOracleAdapter_OracleZeroAddress();
     error CuOracleAdapter_AssetIdZero();
     error CuOracleAdapter_PriceZero();
@@ -42,5 +42,17 @@ contract CuOracleAdapter is IOracle {
     /// @inheritdoc IOracle
     function getPrice(string memory) external view override returns (uint256) {
         return getPrice();
+    }
+
+    /// @notice When getPrice stopped being readable: lastUpdatedAt + maxAge once the price is stale,
+    ///         0 while it is readable, without a staleness bound, or when no price was ever set.
+    /// @dev Lets funding settlement accrue the live time before an index outage and skip only the
+    ///      outage itself. The symbol is ignored, as in getPrice(string).
+    function priceUnavailableSince(string memory) external view override returns (uint256) {
+        if (maxAge == 0) return 0;
+        CuOracle.PriceData memory data = cuOracle.getLatestPrice(assetId);
+        if (data.price == 0) return 0;
+        uint256 staleFrom = data.lastUpdatedAt + maxAge;
+        return staleFrom < block.timestamp ? staleFrom : 0;
     }
 }

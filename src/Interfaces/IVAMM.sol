@@ -104,6 +104,12 @@ interface IVAMM {
     ///         funding clock to now without accruing (used while funding cannot be settled).
     function skipFunding(uint64 liveUntil) external;
 
+    /// @notice Quote token of the vAMM's market, bound by ClearingHouse at its first settlement.
+    function quoteToken() external view returns (address);
+
+    /// @notice Binds the market's quote token (ClearingHouse-only, once).
+    function bindQuoteToken(address quoteToken_) external;
+
     /// @notice Optional trading pause (e.g., after lastTradeTimestamp for dated futures). Closing-only is enforced by CH.
     function pauseSwaps(bool paused) external;
 

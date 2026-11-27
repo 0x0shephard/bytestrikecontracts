@@ -3,12 +3,18 @@ pragma solidity 0.8.28;
 
 import {IVAMM} from "./Interfaces/IVAMM.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
-import {IOracle} from "./Interfaces/IOracle.sol";
+import {IOracle, IOracleAvailability} from "./Interfaces/IOracle.sol";
+import {ICollateralVault} from "./Interfaces/ICollateralVault.sol";
 import {IClearingHouse} from "./Interfaces/IClearingHouse.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
+
+/// @dev ClearingHouse's vault getter, read by the funding flushes to value the quote token.
+interface IVaultHolder {
+	function vault() external view returns (address);
+}
 
 /// @title vAMM (Uniswap v2-style, constant product, no ticks)
 /// @notice Virtual reserves X/Y, fee-on-input swaps, funding, and simple admin. CH-only entry.
@@ -76,6 +82,12 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	///      once the payer has actually paid it.
 	uint256 private _cumulativeLongSurplusPerUnitX18;
 	uint256 private _cumulativeShortSurplusPerUnitX18;
+
+	// ========= Quote token (appended storage) =========
+	/// @notice Quote token of this vAMM's market, bound by ClearingHouse at the market's first settlement.
+	///         The funding flushes (pause, oracle change, parameter change, reserve reset) use it to skip
+	///         time in which the quote token cannot be valued, as ClearingHouse settlement does.
+	address public quoteToken;
 
 	// ========= Events =========
 	event Initialized(
@@ -486,7 +498,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		uint256 kFundingX18_
 	) external onlyOwner {
 		// Settle accumulated funding under current parameters before applying new ones
-		_pokeFundingInternal();
+		_flushFunding();
 		require(feeBps_ == 0, "vAMM fee must be 0");
 		require(frMaxBpsPerHour_ > 0, "frMax=0");
 		require(frMaxBpsPerHour_ <= MAX_FR_BPS_PER_HOUR, "frMax too high");
@@ -530,11 +542,66 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	///      the whole interval since the last accrual.
 	/// @param liveUntil Last timestamp at which funding could be settled, or 0 if unknown.
 	function skipFunding(uint64 liveUntil) external onlyCH {
+		_skipFunding(liveUntil);
+	}
+
+	/// @notice Binds the market's quote token. ClearingHouse-only; set once.
+	function bindQuoteToken(address quoteToken_) external onlyCH {
+		if (quoteToken == address(0)) quoteToken = quoteToken_;
+	}
+
+	function _skipFunding(uint64 liveUntil) internal {
 		if (swapsPaused) return;
 		uint64 nowTs = uint64(block.timestamp);
 		if (liveUntil > lastFundingTimestamp) _accrueFundingUntil(liveUntil < nowTs ? liveUntil : nowTs);
 		lastFundingTimestamp = nowTs;
 		emit FundingSkipped(nowTs);
+	}
+
+	/// @dev Funding flush for the paths ClearingHouse does not drive (pause, oracle change, parameter
+	///      change, reserve reset). Accrues like a ClearingHouse settlement: in full while the quote token
+	///      can be valued (and the index read), otherwise only up to the moment the quote price (or the
+	///      index) became unreadable, skipping the rest, so payers are never charged for time in which
+	///      they could not add margin, close or withdraw.
+	function _flushFunding() internal {
+		uint256 liveUntil = _quoteLiveUntil();
+		if (liveUntil == type(uint256).max) {
+			_pokeFundingInternal();
+			return;
+		}
+		uint256 indexLiveUntil = _indexLiveUntil();
+		_skipFunding(uint64(indexLiveUntil < liveUntil ? indexLiveUntil : liveUntil));
+	}
+
+	/// @dev type(uint256).max while the vault oracle prices the quote token (or none is bound yet),
+	///      otherwise when that price became unreadable (0 if unknown).
+	function _quoteLiveUntil() internal view returns (uint256) {
+		address quote = quoteToken;
+		if (quote == address(0)) return type(uint256).max;
+		ICollateralVault vault = ICollateralVault(IVaultHolder(clearinghouse).vault());
+		address quoteOracle = vault.oracle();
+		string memory sym = vault.getConfig(quote).oracleSymbol;
+		try IOracle(quoteOracle).getPrice(sym) returns (uint256 price) {
+			if (price > 0) return type(uint256).max;
+		} catch {}
+		return _unavailableSince(quoteOracle, sym);
+	}
+
+	/// @dev type(uint256).max while the index oracle returns a price, otherwise when it became unreadable.
+	function _indexLiveUntil() internal view returns (uint256) {
+		try IOracle(oracle).getPrice() returns (uint256 price) {
+			if (price > 0) return type(uint256).max;
+		} catch {}
+		return _unavailableSince(oracle, "");
+	}
+
+	/// @dev When the oracle's price for `sym` became unreadable (IOracleAvailability), 0 if unknown.
+	function _unavailableSince(address priceOracle, string memory sym) internal view returns (uint256) {
+		try IOracleAvailability(priceOracle).priceUnavailableSince(sym) returns (uint256 t) {
+			return t > block.timestamp ? 0 : t;
+		} catch {
+			return 0;
+		}
 	}
 
 	/// @dev Accrue funding for the elapsed period using current mark price and cached oracle price.
@@ -624,10 +691,10 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 			_accrueFunding();
 			_cachedIndexPriceX18 = price;
 		} else {
-			// Index outage (revert or zero): advance the clock without accruing so
-			// outage time is never charged to payers.
-			lastFundingTimestamp = uint64(block.timestamp);
-			emit FundingSkipped(uint64(block.timestamp));
+			// Index outage (revert or zero): accrue up to the moment the index became unreadable when
+			// its oracle reports it, then advance the clock without accruing, so outage time is never
+			// charged to payers and the live time before it is not dropped.
+			_skipFunding(uint64(_unavailableSince(oracle, "")));
 		}
 
 		// Derive the signed funding rate delta from the long pay index change
@@ -652,7 +719,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(msg.sender == registry, "Not authorized");
 		if (paused) {
 			// Flush any accumulated funding under the current price before pausing
-			_pokeFundingInternal();
+			_flushFunding();
 		} else if (swapsPaused) {
 			// Skip the paused interval for funding so it doesn't retroactively accrue. Only on a
 			// paused-to-unpaused transition: a redundant unpause must not erase funding owed.
@@ -693,7 +760,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	function setOracle(address newOracle) external {
 		require(msg.sender == registry, "Not registry");
 		require(newOracle != address(0), "oracle=0");
-		_pokeFundingInternal(); // Flush funding at old oracle price; skipped (clock advanced) while it is down
+		_flushFunding(); // Flush funding at old oracle price; skipped (clock advanced) while it is down
 		uint256 price = IOracle(newOracle).getPrice();
 		require(price > 0, "oracle price=0");
 		oracle = newOracle;
@@ -754,7 +821,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(minReserveQuote <= newQuoteReserve * MAX_FLOOR_BPS / BPS_DENOMINATOR, "quote too close to min");
 
 		// Flush funding at current (pre-reset) mark price and refresh oracle cache
-		_pokeFundingInternal();
+		_flushFunding();
 
 		reserveBase = newBaseReserve;
 		reserveQuote = newQuoteReserve;
