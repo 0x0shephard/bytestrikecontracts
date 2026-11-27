@@ -238,9 +238,10 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     /// @notice Deposits quote tokens and adds them to an open position's margin in one call.
     /// @dev Stays open while the vault's deposits are paused or its caps are full, so a fully allocated
     ///      trader can always defend a position. Bounded: the position's equity after the top-up (margin
-    ///      valued at the backing collateral, plus unrealized PnL at the index, minus funding debt) may
-    ///      not exceed its initial margin at max(mark, index), so a top-up only restores what the
-    ///      position needs. removeMargin keeps that margin locked while the position is below it.
+    ///      valued at the backing collateral, plus min(unrealized PnL at the index, 0), minus funding
+    ///      debt, as removeMargin measures it) may not exceed its initial margin at max(mark, index), so
+    ///      a top-up only restores what the position needs. Profit does not count, so a position in
+    ///      profit but carrying funding debt it cannot pay can still be cured. removeMargin keeps that margin locked while the position is below it.
     /// @param marketId The market of the position.
     /// @param amount The amount of the market's quote token to deposit, in token units.
     function depositMargin(bytes32 marketId, uint256 amount) external override nonReentrant {
@@ -256,6 +257,11 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         (int256 equityAfter,) = _marginState(msg.sender, marketId);
         uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
         uint256 riskPrice = _getRiskPrice(m);
+        {
+            // Unrealized profit does not count, as in removeMargin: min(unrealized PnL at the index, 0).
+            int256 unrealizedPnL = _computeUnrealizedPnL(position, riskPrice);
+            if (unrealizedPnL > 0) equityAfter -= unrealizedPnL;
+        }
         uint256 imrMargin = uint256(position.size > 0 ? position.size : -position.size).mulDiv(
             markPrice > riskPrice ? markPrice : riskPrice, 1e18
         ).mulDiv(marketRiskParams[marketId].imrBps, BPS_DENOMINATOR);
