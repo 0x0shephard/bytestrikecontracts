@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {IVAMM} from "./Interfaces/IVAMM.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
 import {IOracle} from "./Interfaces/IOracle.sol";
+import {IClearingHouse} from "./Interfaces/IClearingHouse.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
@@ -673,10 +674,13 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		totalShortOI = shortOI;
 	}
 
-	/// @notice Updates the market registry authorized to pause/unpause swaps.
-	/// @param newRegistry Address of the replacement registry.
+	/// @notice Names the market registry authorized to pause/unpause swaps and move the funding oracle.
+	/// @dev Must be the ClearingHouse's own registry, so the vAMM owner cannot rebind a live market's pause
+	///      flag and funding oracle to a registry the ClearingHouse does not read.
+	/// @param newRegistry The ClearingHouse's market registry.
 	function setRegistry(address newRegistry) external onlyOwner {
 		require(newRegistry != address(0), "Registry=0");
+		require(newRegistry == IClearingHouse(clearinghouse).marketRegistry(), "Registry mismatch");
 		registry = newRegistry;
 		emit RegistryChanged(newRegistry);
 	}

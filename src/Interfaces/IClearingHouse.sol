@@ -126,6 +126,9 @@ interface IClearingHouse {
         uint256 newReservedMargin
     );
 
+    /// @notice The MarketRegistry this ClearingHouse reads markets from.
+    function marketRegistry() external view returns (address);
+
     /// @notice Deposit collateral into the vault.
     function deposit(address token, uint256 amount) external;
 
