@@ -560,7 +560,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         if (receiveDelta >= payDelta) {
             return int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18));
         } else {
-            return -int256(Calculations.mulDiv(payDelta - receiveDelta, absSize, 1e18));
+            // A payer's debit rounds up, as in settlement.
+            return -int256(Calculations.mulDivRoundingUp(payDelta - receiveDelta, absSize, 1e18));
         }
     }
 

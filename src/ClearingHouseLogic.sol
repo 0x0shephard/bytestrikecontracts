@@ -314,7 +314,7 @@ contract ClearingHouseLogic {
         uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
         return receiveDelta >= payDelta
             ? int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18))
-            : -int256(Calculations.mulDiv(payDelta - receiveDelta, absSize, 1e18));
+            : -int256(Calculations.mulDivRoundingUp(payDelta - receiveDelta, absSize, 1e18));
     }
 
     /// @dev Value of the account's quote-token balance above the margin reserved on that token.
@@ -652,7 +652,8 @@ contract ClearingHouseLogic {
             if (receiveDelta >= payDelta) {
                 fundingPayment = int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18));
             } else {
-                fundingPayment = -int256(Calculations.mulDiv(payDelta - receiveDelta, absSize, 1e18));
+                // A payer's debit rounds up, like fees and margin requirements; a credit rounds down.
+                fundingPayment = -int256(Calculations.mulDivRoundingUp(payDelta - receiveDelta, absSize, 1e18));
             }
 
             // New funding is netted against funding still owed from earlier settlements. What the
