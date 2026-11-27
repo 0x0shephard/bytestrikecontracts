@@ -565,8 +565,12 @@ if (canLiquidate) {
   fee router like a trade fee (pushed by `sweepFees`); without a router it goes to the funding
   surplus. What the balance cannot pay is carried as funding debt (the position becomes liquidatable)
   and goes to the insurance fund once paid
-- Time in which funding settlement is skipped (market paused, quote or index oracle down) is not charged;
-  on a quote-feed outage the live time before the feed became unavailable is still charged, as for funding
+- The fee runs on the vAMM's funding clock (`vAMM.liveFundingSeconds`): it is charged for exactly the
+  seconds funding accrues. Time in which funding is skipped (market paused, quote or index oracle down)
+  is not charged, the live time before a pause or an oracle outage still is, and a gap no settlement
+  observes counts at most one hour (`MAX_FUNDING_ELAPSED`), as for funding, so the funding keeper's
+  30-minute cadence also keeps the holding fee whole. A rate change first brings the market's funding
+  clock up to now, so it charges no paused or outage time at the old rate
 - The pending fee counts in `isLiquidatable` and `getMarginRatio` like pending funding
 
 ### Fee Distribution

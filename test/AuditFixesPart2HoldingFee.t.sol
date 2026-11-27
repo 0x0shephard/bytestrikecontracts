@@ -26,6 +26,25 @@ contract AuditFixesPart2HoldingFeeTest is BaseTest {
         clearingHouse.setHoldingFeeRate(ETH_PERP, bps);
     }
 
+    /// @dev Advances time by `duration` with a keeper settling the market every hour (an account with no
+    ///      position, so no position is charged on the way): funding and the holding fee accrue at most
+    ///      one hour per settlement, so a market left unsettled longer is not charged for the gap.
+    function _keepSettling(uint256 duration) internal {
+        address keeper = makeAddr("keeper");
+        uint256 t = vm.getBlockTimestamp();
+        uint256 end = t + duration;
+        while (t < end) {
+            t += 1 hours;
+            vm.warp(t);
+            clearingHouse.settleFunding(ETH_PERP, keeper);
+        }
+    }
+
+    /// @dev Index growth over `hoursCount` hourly settlements at `bps` a year.
+    function _hourly(uint256 bps, uint256 hoursCount) internal pure returns (uint256) {
+        return hoursCount * (bps * 1e14 * 1 hours / 365 days);
+    }
+
     function _routerFees() internal view returns (uint256) {
         return clearingHouse.pendingTradeFees(address(feeRouter), address(usdc));
     }
@@ -43,11 +62,10 @@ contract AuditFixesPart2HoldingFeeTest is BaseTest {
 
     function test_Finding26_DeltaNeutralPairPaysHoldingFee() public {
         _setRate(RATE_BPS);
-        vm.warp(block.timestamp + 30 days);
-
         uint256 routerBefore = _routerFees();
-        (,, uint256 updatedAt) = clearingHouse.holdingFees(ETH_PERP);
-        uint256 cumulative = RATE_BPS * 1e14 * (block.timestamp - updatedAt) / 365 days;
+        _keepSettling(30 days);
+
+        uint256 cumulative = _hourly(RATE_BPS, 30 * 24);
         uint256 feeAlice = _expectedFee(alice, cumulative);
         uint256 feeBob = _expectedFee(bob, cumulative);
         // 10% a year of a ~10,000 notional for 30 days: about 82 each.
@@ -76,14 +94,13 @@ contract AuditFixesPart2HoldingFeeTest is BaseTest {
 
     /// @notice A rate change applies from the moment it is set; the old rate covers the time before.
     function test_Finding26_RateChangeAccruesOldRate() public {
-        vm.warp(1_000_000);
         _setRate(RATE_BPS);
-        vm.warp(1_000_000 + 10 days);
+        _keepSettling(10 days);
         _setRate(2 * RATE_BPS);
-        vm.warp(1_000_000 + 20 days);
+        _keepSettling(10 days);
         clearingHouse.settleFunding(ETH_PERP, alice);
         (, uint256 cumulative,) = clearingHouse.holdingFees(ETH_PERP);
-        assertEq(cumulative, RATE_BPS * 1e14 * 10 days / 365 days + 2 * RATE_BPS * 1e14 * 10 days / 365 days);
+        assertEq(cumulative, _hourly(RATE_BPS, 240) + _hourly(2 * RATE_BPS, 240));
     }
 
     /// @notice A position opened later pays only from its open.
@@ -124,8 +141,12 @@ contract AuditFixesPart2HoldingFeeTest is BaseTest {
     /// @notice A fee beyond the position's margin plus free collateral is carried as funding debt,
     ///         which makes the position liquidatable.
     function test_Finding26_UnpaidFeeCarriedAsDebt() public {
+        // Alice keeps only her reserved margin, so a month of the fee exceeds what she can pay.
+        uint256 free = vault.balanceOf(alice, address(usdc)) - clearingHouse._totalReservedMargin(alice);
+        vm.prank(alice);
+        clearingHouse.withdraw(address(usdc), free);
         _setRate(10_000);
-        vm.warp(block.timestamp + 3 * 365 days);
+        _keepSettling(30 days);
         clearingHouse.settleFunding(ETH_PERP, alice);
         assertGt(clearingHouse.getPosition(alice, ETH_PERP).fundingDebt, 0);
         assertEq(vault.balanceOf(alice, address(usdc)), 0);

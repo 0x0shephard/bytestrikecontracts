@@ -110,6 +110,12 @@ interface IVAMM {
     /// @notice Binds the market's quote token (ClearingHouse-only, once).
     function bindQuoteToken(address quoteToken_) external;
 
+    /// @notice Seconds over which funding has accrued (the holding fee's clock).
+    function liveFundingSeconds() external view returns (uint256);
+
+    /// @notice liveFundingSeconds including the time the next accrual would add now.
+    function currentLiveFundingSeconds() external view returns (uint256);
+
     /// @notice Optional trading pause (e.g., after lastTradeTimestamp for dated futures). Closing-only is enforced by CH.
     function pauseSwaps(bool paused) external;
 

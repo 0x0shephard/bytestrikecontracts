@@ -38,6 +38,7 @@ abstract contract ClearingHouseLogicBase {
     mapping(address => mapping(address => uint256)) internal pendingTradeFees; // slot 16
     mapping(address => mapping(address => uint256)) internal pendingLiqPenalties; // slot 17
     mapping(bytes32 => IClearingHouse.HoldingFee) internal holdingFees; // slot 18
+    mapping(bytes32 => uint256) internal holdingFeeLiveSecondsAt; // slot 19
 
     uint256 internal constant BPS_DENOMINATOR = 10_000;
 
@@ -65,9 +66,13 @@ abstract contract ClearingHouseLogicBase {
     // Shared helpers
     // =========================================================================
 
-    /// @dev The market's holding fee index brought up to now at its current rate.
-    function _holdingFeeIndex(IClearingHouse.HoldingFee storage h) internal view returns (uint256) {
-        return h.cumulativeX18 + h.rateBpsPerYear * 1e14 * (block.timestamp - h.updatedAt) / 365 days;
+    /// @dev The market's holding fee index brought up to now at its current rate, over the funding
+    ///      seconds the vAMM would have accrued by now (IVAMM.currentLiveFundingSeconds).
+    function _holdingFeeIndex(bytes32 marketId, address vamm) internal view returns (uint256) {
+        IClearingHouse.HoldingFee storage h = holdingFees[marketId];
+        uint256 live = IVAMM(vamm).currentLiveFundingSeconds();
+        uint256 at = holdingFeeLiveSecondsAt[marketId];
+        return live > at ? h.cumulativeX18 + h.rateBpsPerYear * 1e14 * (live - at) / 365 days : h.cumulativeX18;
     }
 
     /// @dev Holding fee a position owes up to index `feeIndex`: its absolute notional at the index
@@ -112,7 +117,7 @@ abstract contract ClearingHouseLogicBase {
             receiveDelta >= payDelta
                 ? int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18))
                 : -int256(Calculations.mulDivRoundingUp(payDelta - receiveDelta, absSize, 1e18))
-        ) - int256(_holdingFeeDue(position, m.oracle, _holdingFeeIndex(holdingFees[marketId])));
+        ) - int256(_holdingFeeDue(position, m.oracle, _holdingFeeIndex(marketId, m.vamm)));
     }
 
     function _reservedMarginForToken(address account, address quoteToken) internal view returns (uint256 reserved) {
@@ -169,4 +174,127 @@ abstract contract ClearingHouseLogicBase {
         if (!(indexPrice > 0)) revert OraclePriceZero();
         return indexPrice;
     }
+
+    // Moved from ClearingHouseLogic for size: shared by Logic and Views.
+
+    /// @dev Value of the account's quote-token balance above the margin reserved on that token.
+    function _freeQuoteValue(address account, address quoteToken) internal view returns (uint256) {
+        (uint256 value, uint256 reserved) = _quoteBacking(account, quoteToken);
+        return value > reserved ? value - reserved : 0;
+    }
+
+    /// @dev Value of the account's quote-token balance and the margin reserved on that token.
+    function _quoteBacking(address account, address quoteToken)
+        internal
+        view
+        returns (uint256 value, uint256 reserved)
+    {
+        uint256 balance = ICollateralVault(vault).balanceOf(account, quoteToken);
+        value = balance == 0 ? 0 : _quoteValueX18(quoteToken, balance);
+        reserved = _reservedMarginForToken(account, quoteToken);
+    }
+
+    /// @dev Lowers a position's margin and the account's reserved margin by `amount`, floored at zero.
+    function _reduceMargin(address account, IClearingHouse.PositionView storage position, uint256 amount) internal {
+        uint256 cut = amount < position.margin ? amount : position.margin;
+        position.margin -= cut;
+        _totalReservedMargin[account] = _totalReservedMargin[account] > cut ? _totalReservedMargin[account] - cut : 0;
+    }
+
+    function _notionalToQuoteUnits(uint256 notionalX18, address quoteToken) internal view returns (uint256) {
+        if (notionalX18 == 0) return 0;
+        ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
+        uint256 priceX18 = IOracle(ICollateralVault(vault).oracle()).getPrice(cfg.oracleSymbol);
+        if (!(priceX18 > 0)) revert QuoteOracleUnavailable();
+        return Calculations.mulDivRoundingUp(notionalX18, cfg.baseUnit, priceX18);
+    }
+
+    function _computeUnrealizedPnL(IClearingHouse.PositionView storage position, uint256 priceX18) internal view returns (int256) {
+        int256 size = position.size;
+        uint256 entryPrice = position.entryPriceX18;
+        if (priceX18 == 0 || size == 0 || entryPrice == 0) {
+            return 0;
+        }
+
+        uint256 absSize = uint256(size > 0 ? size : -size);
+        if (size > 0) {
+            return (int256(priceX18) - int256(entryPrice)) * int256(absSize) / 1e18;
+        } else {
+            return (int256(entryPrice) - int256(priceX18)) * int256(absSize) / 1e18;
+        }
+    }
+
+    /// @dev Takes up to `need` token units from margin the account's open positions in `quoteToken` hold
+    ///      above both their maintenance requirement (equity net of funding debt and of pending funding
+    ///      owed) and their liquidation penalty floor, lowering those margins so reserved margin stays
+    ///      backed by the balance. A market whose index cannot be read keeps its margin instead of
+    ///      reverting the liquidation.
+    ///      `skipMarket` (the market being liquidated, or 0) is never drawn from.
+    function _drawSurplusMargin(
+        address account,
+        address quoteToken,
+        uint256 need,
+        uint256 balanceLeft,
+        bytes32 skipMarket
+    ) internal returns (uint256 drawn) {
+        if (balanceLeft == 0) return 0;
+        if (need > balanceLeft) need = balanceLeft;
+        uint256 reserved = _reservedMarginForToken(account, quoteToken);
+        if (reserved == 0) return 0;
+        uint256 valueX18 = _quoteValueX18(quoteToken, balanceLeft);
+        // A balance worth less than the reserved margin backs each margin only in that ratio.
+        uint256 backedX18 = valueX18 < reserved ? valueX18 : reserved;
+        bytes32[] memory markets = _userActiveMarkets[account];
+        for (uint256 i = 0; i < markets.length && drawn < need; i++) {
+            IMarketRegistry.Market memory mkt = IMarketRegistry(marketRegistry).getMarket(markets[i]);
+            if (markets[i] == skipMarket || mkt.quoteToken != quoteToken || mkt.oracle == address(0)) continue;
+            IClearingHouse.PositionView storage p = positions[account][markets[i]];
+            if (p.size == 0 || p.margin == 0) continue;
+            uint256 riskPrice;
+            try IOracle(mkt.oracle).getPrice() returns (uint256 price) {
+                riskPrice = price;
+            } catch {
+                continue;
+            }
+            if (riskPrice == 0) continue;
+            IClearingHouse.MarketRiskParams storage rp = marketRiskParams[markets[i]];
+            uint256 notional = Calculations.mulDivRoundingUp(uint256(p.size > 0 ? p.size : -p.size), riskPrice, 1e18);
+            uint256 penaltyFloor = Calculations.mulDivRoundingUp(notional, rp.liquidationPenaltyBps, BPS_DENOMINATOR);
+            if (rp.penaltyCap > 0 && penaltyFloor > rp.penaltyCap) penaltyFloor = rp.penaltyCap;
+            if (p.margin <= penaltyFloor) continue;
+            uint256 mm = Calculations.mulDivRoundingUp(notional, rp.mmrBps, BPS_DENOMINATOR);
+            uint256 backedMargin = Calculations.mulDiv(p.margin, backedX18, reserved);
+            int256 equity = int256(backedMargin) + _computeUnrealizedPnL(p, riskPrice) - int256(p.fundingDebt);
+            // Funding it still owes (unsettled, e.g. flushed when its market was paused) is charged at its
+            // next settlement, so it is not surplus either; pending credits are not counted.
+            {
+                int256 pending = _pendingFunding(account, markets[i]);
+                if (pending < 0) equity += pending;
+            }
+            if (equity <= int256(mm)) continue;
+            // Value that can leave: above maintenance, within the backed margin, and leaving the
+            // position at least its penalty floor (taken in nominal margin below).
+            uint256 x = uint256(equity - int256(mm));
+            if (x > backedMargin) x = backedMargin;
+            uint256 wantX18 = Calculations.mulDivRoundingUp(need - drawn, valueX18, balanceLeft);
+            uint256 units;
+            if (x >= wantX18) {
+                x = wantX18;
+                units = need - drawn;
+            } else {
+                units = Calculations.mulDiv(x, balanceLeft, valueX18);
+            }
+            uint256 take = Calculations.mulDivRoundingUp(x, reserved, backedX18);
+            uint256 maxTake = p.margin - penaltyFloor;
+            if (take > maxTake) {
+                // Scale the draw down to what the penalty floor allows.
+                units = Calculations.mulDiv(units, maxTake, take);
+                take = maxTake;
+            }
+            p.margin -= take;
+            _totalReservedMargin[account] = _totalReservedMargin[account] >= take ? _totalReservedMargin[account] - take : 0;
+            drawn += units;
+        }
+    }
+
 }

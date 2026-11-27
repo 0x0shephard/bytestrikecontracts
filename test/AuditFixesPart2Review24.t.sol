@@ -36,6 +36,19 @@ contract AuditFixesPart2Review24Test is BaseTest {
         usdc.approve(address(vault), type(uint256).max);
     }
 
+    /// @dev Advances time with a keeper settling the market every hour (funding and the holding fee
+    ///      accrue at most one hour per settlement).
+    function _keepSettling(uint256 duration) internal {
+        address keeper = makeAddr("keeper");
+        uint256 t = vm.getBlockTimestamp();
+        uint256 end = t + duration;
+        while (t < end) {
+            t += 1 hours;
+            vm.warp(t);
+            clearingHouse.settleFunding(ETH_PERP, keeper);
+        }
+    }
+
     function _pauseDeposits() internal {
         ICollateralVault.CollateralConfig memory cfg = vault.getConfig(address(usdc));
         cfg.depositPaused = true;
@@ -44,8 +57,9 @@ contract AuditFixesPart2Review24Test is BaseTest {
     }
 
     function test_DepositMarginCuresDebtLiquidatablePositionInProfit() public {
-        // 42 days later the fee exceeds alice's whole balance and the rest is carried as funding debt
-        vm.warp(vm.getBlockTimestamp() + 42 days);
+        // 42 days later (a keeper settling the market hourly) the fee exceeds alice's whole balance and
+        // the rest is carried as funding debt
+        _keepSettling(42 days);
         clearingHouse.settleFunding(ETH_PERP, alice);
         uint256 debt = clearingHouse.getPosition(alice, ETH_PERP).fundingDebt;
         assertGt(debt, 0, "no funding debt");
@@ -74,7 +88,7 @@ contract AuditFixesPart2Review24Test is BaseTest {
     }
 
     function test_DepositMarginStillBoundedByInitialMargin() public {
-        vm.warp(vm.getBlockTimestamp() + 42 days);
+        _keepSettling(42 days);
         clearingHouse.settleFunding(ETH_PERP, alice);
         uint256 debt = clearingHouse.getPosition(alice, ETH_PERP).fundingDebt;
         _pauseDeposits();

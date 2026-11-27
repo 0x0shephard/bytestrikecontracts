@@ -127,4 +127,59 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
         }
         return net[target] < 0;
     }
+
+    // Liquidation penalty steps, moved from ClearingHouseLogic for size (reached through its fallback).
+
+    /// @notice Takes up to `need` token units of surplus margin from the account's positions in
+    ///         `quoteToken` (except `skipMarket`) into free collateral; see _drawSurplusMargin.
+    /// @dev Delegatecall target of ClearingHouse._collectQuote.
+    function drawSurplusMargin(address account, address quoteToken, uint256 need, uint256 balanceLeft, bytes32 skipMarket)
+        external
+        returns (uint256)
+    {
+        return _drawSurplusMargin(account, quoteToken, need, balanceLeft, skipMarket);
+    }
+
+    /// @notice Makes a liquidation penalty of `penalty` (1e18 quote value) collectable from the account.
+    /// @dev Delegatecall target of ClearingHouse.liquidate, after the trade. The penalty is charged on
+    ///      the filled size at the pre-trade risk price, and the penalties of one liquidatable episode
+    ///      are capped at penaltyCap in total (PositionView.liquidationPenaltyCharged), so a liquidation
+    ///      split over several calls pays no more than one done at once. Free collateral (which holds
+    ///      the closed slice's released margin) pays first. What it cannot cover is drawn from surplus
+    ///      margin on the account's other positions, and only the rest is cut from the margin of the
+    ///      liquidated position's remaining size, so a partial liquidation's remainder keeps its margin
+    ///      whenever the account holds surplus elsewhere.
+    function chargeLiquidationPenalty(
+        address account,
+        bytes32 marketId,
+        address quoteToken,
+        uint256 filled,
+        uint256 riskPrice
+    ) external returns (uint256 notional, uint256 penalty) {
+        notional = Calculations.mulDivRoundingUp(filled, riskPrice, 1e18);
+        IClearingHouse.MarketRiskParams storage rp = marketRiskParams[marketId];
+        penalty = Calculations.mulDivRoundingUp(notional, rp.liquidationPenaltyBps, BPS_DENOMINATOR);
+        IClearingHouse.PositionView storage position = positions[account][marketId];
+        if (rp.penaltyCap > 0) {
+            uint256 charged = position.liquidationPenaltyCharged;
+            uint256 left = rp.penaltyCap > charged ? rp.penaltyCap - charged : 0;
+            if (penalty > left) penalty = left;
+            position.liquidationPenaltyCharged = charged + penalty;
+        }
+        uint256 freeValue = _freeQuoteValue(account, quoteToken);
+        if (penalty > freeValue) {
+            uint256 balance = ICollateralVault(vault).balanceOf(account, quoteToken);
+            uint256 reservedUnits = _notionalToQuoteUnits(_reservedMarginForToken(account, quoteToken), quoteToken);
+            _drawSurplusMargin(
+                account,
+                quoteToken,
+                _notionalToQuoteUnits(penalty - freeValue, quoteToken),
+                balance < reservedUnits ? balance : reservedUnits,
+                marketId
+            );
+            freeValue = _freeQuoteValue(account, quoteToken);
+        }
+        if (penalty > freeValue) _reduceMargin(account, position, penalty - freeValue);
+    }
+
 }

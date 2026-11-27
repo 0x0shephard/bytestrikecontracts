@@ -89,6 +89,12 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	///         time in which the quote token cannot be valued, as ClearingHouse settlement does.
 	address public quoteToken;
 
+	// ========= Live funding time (appended storage) =========
+	/// @notice Seconds over which funding has accrued (each accrual capped at MAX_FUNDING_ELAPSED, as
+	///         funding is). Paused time, skipped outage time and time no accrual covers never count, so
+	///         ClearingHouse's holding fee, measured in these seconds, runs on exactly the funding clock.
+	uint256 public liveFundingSeconds;
+
 	// ========= Events =========
 	event Initialized(
 		address indexed owner,
@@ -435,6 +441,19 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		}
 	}
 
+	/// @notice liveFundingSeconds including the time the next accrual would add now.
+	function currentLiveFundingSeconds() external view returns (uint256) {
+		if (swapsPaused || _cachedIndexPriceX18 == 0 || block.timestamp <= lastFundingTimestamp) {
+			return liveFundingSeconds;
+		}
+		return liveFundingSeconds + _cappedElapsed(lastFundingTimestamp, uint64(block.timestamp));
+	}
+
+	function _cappedElapsed(uint64 fromTs, uint64 toTs) internal pure returns (uint256) {
+		uint256 elapsed = toTs - fromTs;
+		return elapsed > MAX_FUNDING_ELAPSED ? MAX_FUNDING_ELAPSED : elapsed;
+	}
+
 	function currentCumulativeLongPayPerUnitX18() external view returns (uint256) {
 		int256 fundingRateX18 = _computeFundingRate();
 		if (fundingRateX18 > 0 && totalLongOI > 0 && totalShortOI > 0) {
@@ -620,6 +639,8 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		uint64 lastTs = lastFundingTimestamp;
 		if (nowTs <= lastTs) return;
 		if (_cachedIndexPriceX18 == 0) return;
+
+		liveFundingSeconds += _cappedElapsed(lastTs, nowTs);
 
 		// Skip accrual if either side has no OI (nothing to balance)
 		if (totalLongOI == 0 || totalShortOI == 0) {

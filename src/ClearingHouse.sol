@@ -85,6 +85,8 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     /// @notice Per-market holding fee rate and accrual index (see ClearingHouseLogic.setHoldingFeeRate).
     /// @dev Mirrored in ClearingHouseLogic, which accrues and charges it at funding settlement.
     mapping(bytes32 marketId => HoldingFee) public holdingFees; // slot 18
+    /// @dev vAMM.liveFundingSeconds at the market's last holding fee accrual (ClearingHouseLogic).
+    mapping(bytes32 marketId => uint256) internal holdingFeeLiveSecondsAt; // slot 19
 
     /// @notice Band used when a market has none set: 5%.
     uint256 public constant DEFAULT_LIQUIDATION_PRICE_BAND_BPS = 500;
