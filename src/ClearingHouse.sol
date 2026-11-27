@@ -317,6 +317,7 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
             revert InsufficientQuoteBalance();
         }
         positions[msg.sender][marketId].margin += amount;
+        positions[msg.sender][marketId].liquidationPenaltyCharged = 0;
         _totalReservedMargin[msg.sender] += amount;
         emit MarginAdded(msg.sender, marketId, amount);
     }
@@ -820,16 +821,22 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
             filled = uint256(baseDelta >= 0 ? baseDelta : -baseDelta);
         }
 
-        // Calculate penalty on the filled size using the pre-trade risk price snapshot
-        uint256 notional;
-        uint256 penalty;
-        {
-            notional = Calculations.mulDivRoundingUp(filled, riskPrice, 1e18);
-            penalty = Calculations.mulDivRoundingUp(notional, rp.liquidationPenaltyBps, BPS_DENOMINATOR);
-            if (rp.penaltyCap > 0 && penalty > rp.penaltyCap) {
-                penalty = rp.penaltyCap;
-            }
-        }
+        // Penalty on the filled size at the pre-trade risk price, capped at penaltyCap over the whole
+        // liquidatable episode. Free collateral pays first, then surplus margin on the account's other
+        // positions; only the part neither covers is taken from the margin of the size that stays open.
+        (uint256 notional, uint256 penalty) = abi.decode(
+            _delegate(
+                abi.encodeWithSignature(
+                    "chargeLiquidationPenalty(address,bytes32,address,uint256,uint256)",
+                    account,
+                    marketId,
+                    m.quoteToken,
+                    filled,
+                    riskPrice
+                )
+            ),
+            (uint256, uint256)
+        );
         // Split penalty and process payments
         uint256 liqIncentive;
         uint256 routeAmount;
@@ -842,14 +849,6 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
                 liqIncentive = penalty - routeAmount;
             }
 
-            // The penalty is paid from free collateral first, which now holds the closed slice's
-            // released margin, then from surplus margin on the account's other positions. Only the
-            // part neither covers is taken from the margin of the size that stays open.
-            _delegate(
-                abi.encodeWithSignature(
-                    "freePenaltyCollateral(address,bytes32,address,uint256)", account, marketId, m.quoteToken, penalty
-                )
-            );
 
             // Pay liquidator from collateral, insurance covers shortfall (up to available balance)
             insurancePayout = 0;
@@ -898,6 +897,9 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
                 revert MustLiquidateMore();
             }
         }
+
+        // The episode ends once the position is healthy again (or closed): the next one gets a full cap.
+        if (!_isLiquidatable(account, marketId)) position.liquidationPenaltyCharged = 0;
 
         emit LiquidationExecuted(
             marketId,

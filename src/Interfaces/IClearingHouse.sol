@@ -23,6 +23,10 @@ interface IClearingHouse {
         uint256 fundingDebtSurplus;
         // Market holding fee index (HoldingFee.cumulativeX18) at the position's last settlement.
         uint256 lastHoldingFeeIndexX18;
+        // Liquidation penalty charged since the position last became liquidatable, in quote value
+        // (1e18). The penalties of one liquidatable episode are capped at penaltyCap in total; reset
+        // once a liquidation leaves the position healthy or closed, and by addMargin or a trade.
+        uint256 liquidationPenaltyCharged;
     }
 
     struct MarketRiskParams {

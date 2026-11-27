@@ -409,7 +409,11 @@ Flow:
    index * (1 - d) closing a long, at or below index * (1 + d) closing a short). The rest
    stays open for later calls once arbitrage restores the mark.
 4. Calculate liquidation penalty:
-   penalty = min(notional * liquidationPenaltyBps / 10000, penaltyCap)
+   penalty = min(notional * liquidationPenaltyBps / 10000, penaltyCap - alreadyCharged)
+   where alreadyCharged is the penalty the position has paid since it last became liquidatable,
+   so a liquidation split over several calls pays at most penaltyCap in total. The running
+   total resets once a liquidation leaves the position healthy or closed, and on addMargin
+   or a trade.
 5. Calculate equity:
    equity = position.margin + realizedPnL (from closing)
 
@@ -520,7 +524,7 @@ if (canLiquidate) {
 | `imrBps` | Initial Margin Requirement | 1000 (10%) | 10x |
 | `mmrBps` | Maintenance Margin Requirement | 500 (5%) | Liquidation at 5% |
 | `liquidationPenaltyBps` | Penalty on liquidation | 250 (2.5%) | - |
-| `penaltyCap` | Maximum penalty in USD | 1000e18 ($1000) | - |
+| `penaltyCap` | Maximum penalty in USD per liquidatable episode (all calls together) | 1000e18 ($1000) | - |
 | `maxPositionSize` | Maximum position per user | 0 (unlimited) | - |
 | `minPositionSize` | Minimum position size | 1e18 (1 unit) | Prevents dust |
 
