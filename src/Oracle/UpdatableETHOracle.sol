@@ -2,29 +2,23 @@
 pragma solidity 0.8.28;
 
 import {IOracle} from "../Interfaces/IOracle.sol";
+import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /**
  * @title UpdatableETHOracle
  * @notice Simple oracle that returns ETH index price with owner update capability
+ * @dev Ownership moves in two steps (Ownable2Step) and cannot be renounced: the owner is the only
+ *      price writer.
  */
-contract UpdatableETHOracle is IOracle {
-    error OnlyOwner();
+contract UpdatableETHOracle is IOracle, Ownable2Step {
     error InvalidPrice();
 
-    address public owner;
     uint256 public ethPrice; // Price in 1e18 format
 
     event PriceUpdated(uint256 indexed newPrice, uint256 timestamp);
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert OnlyOwner();
-        _;
-    }
-
-    constructor(uint256 _initialPrice) {
+    constructor(uint256 _initialPrice) Ownable(msg.sender) {
         if (_initialPrice == 0) revert InvalidPrice();
-        owner = msg.sender;
         ethPrice = _initialPrice;
         emit PriceUpdated(_initialPrice, block.timestamp);
     }
@@ -47,12 +41,8 @@ contract UpdatableETHOracle is IOracle {
         emit PriceUpdated(_newPrice, block.timestamp);
     }
 
-    /// @notice Transfer ownership to a new address
-    /// @param _newOwner Address of the new owner
-    function transferOwnership(address _newOwner) external onlyOwner {
-        if (_newOwner == address(0)) revert InvalidPrice();
-        address oldOwner = owner;
-        owner = _newOwner;
-        emit OwnershipTransferred(oldOwner, _newOwner);
+    /// @notice Disabled: renouncing would permanently remove the oracle's only price writer.
+    function renounceOwnership() public pure override {
+        revert("Oracle: renounce disabled");
     }
 }

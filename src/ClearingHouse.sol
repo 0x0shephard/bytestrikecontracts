@@ -7,7 +7,7 @@ import {IMarketRegistry} from "./Interfaces/IMarketRegistry.sol";
 import {IVAMM} from "./Interfaces/IVAMM.sol";
 import {IOracle} from "./Interfaces/IOracle.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
@@ -16,7 +16,7 @@ import {IFeeRouter} from "./Interfaces/IFeeRouter.sol";
 
 /// @notice The central contract for managing user positions, margin, and trade settlement for perpetual vAMM markets.
 /// @dev It interacts with various components like the CollateralVault, MarketRegistry, and vAMMs.
-contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardTransient, IClearingHouse {
+contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, ReentrancyGuardTransient, IClearingHouse {
     using Calculations for uint256;
 
     // =========================================================================
@@ -144,6 +144,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     error OraclePriceZero();
     error PositionLiquidatable();
     error QuoteOracleUnavailable();
+    error RenounceOwnershipDisabled();
     error QuoteTokenValuationUnavailable();
     error ReduceExceedsPosition();
     error RemainingBelowMinCloseFull();
@@ -210,6 +211,14 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyAdmin {}
+
+    /// @notice Disabled: renouncing would permanently remove upgrade and risk-parameter authority.
+    /// @dev Ownership moves in two steps (transferOwnership, then acceptOwnership by the new owner);
+    ///      the pending owner lives in Ownable2StepUpgradeable's namespaced slot, so the proxy's
+    ///      sequential storage layout is unchanged.
+    function renounceOwnership() public pure override {
+        revert RenounceOwnershipDisabled();
+    }
 
 
     /// @notice Deposits collateral into the vault for the caller.

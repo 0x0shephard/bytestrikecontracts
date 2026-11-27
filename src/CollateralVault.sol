@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import {IClearingHouse} from "./Interfaces/IClearingHouse.sol";
 import {ICollateralVault} from "./Interfaces/ICollateralVault.sol";
 import {Oracle} from "./Oracle/Oracle.sol";
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {AccessControlDefaultAdminRules} from "@openzeppelin/contracts/access/extensions/AccessControlDefaultAdminRules.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
@@ -17,7 +17,7 @@ import {Calculations} from "./Libraries/Calculations.sol";
 /// - Admins configure per-token risk params, caps, and per-token pause flags.
 /// - Only Clearinghouse can move funds out (withdrawFor / seize / sweepFees).
 /// - Valuation helpers call an external Oracle by symbol and apply haircuts.
-contract CollateralVault is ICollateralVault, AccessControl {
+contract CollateralVault is ICollateralVault, AccessControlDefaultAdminRules {
 
     using SafeERC20 for IERC20;
 
@@ -47,10 +47,14 @@ contract CollateralVault is ICollateralVault, AccessControl {
         _;
     }
 
+    /// @notice Delay before a scheduled DEFAULT_ADMIN_ROLE transfer can be accepted.
+    uint48 public constant INITIAL_DEFAULT_ADMIN_DELAY = 1 days;
+
     /// @notice Initializes the admin to the deployer.
-    constructor() {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-    }
+    /// @dev DEFAULT_ADMIN_ROLE has a single holder and moves only in two steps
+    ///      (beginDefaultAdminTransfer, then acceptDefaultAdminTransfer by the new admin after the
+    ///      delay); renouncing it goes through the same delayed two steps.
+    constructor() AccessControlDefaultAdminRules(INITIAL_DEFAULT_ADMIN_DELAY, msg.sender) {}
 
     /// @notice Set the global Oracle contract used for valuation.
     /// @param _oracle Oracle address implementing getPrice(symbol) returning 1e18 price.

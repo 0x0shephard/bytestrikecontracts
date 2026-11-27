@@ -149,4 +149,9 @@ contract InsuranceFund is IInsuranceFund, Ownable2Step {
     function totalPaid() external view override returns (uint256) {
         return _totalPaid;
     }
+
+    /// @notice Disabled: renouncing would permanently remove authorization and fee-router authority.
+    function renounceOwnership() public pure override {
+        revert("IF: renounce disabled");
+    }
 }

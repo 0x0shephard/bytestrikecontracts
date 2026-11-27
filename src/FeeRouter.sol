@@ -147,4 +147,8 @@ contract FeeRouter is IFeeRouter, Ownable2Step {
 		emit SplitsSet(_tradeToFundBps, _liqToFundBps);
 	}
 
+	/// @notice Disabled: renouncing would permanently remove split, insurance fund and treasury-admin authority.
+	function renounceOwnership() public pure override {
+		revert("FR: renounce disabled");
+	}
 }

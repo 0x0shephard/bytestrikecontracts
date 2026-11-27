@@ -1,22 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+
 /**
  * @title MultiAssetOracle
  * @notice Simple oracle that stores index prices for multiple assets with owner update capability
  * @dev Each asset is identified by a bytes32 assetId. Prices are stored in 1e18 format.
+ *      Ownership moves in two steps (Ownable2Step) and cannot be renounced: the owner is the only
+ *      price writer.
  */
-contract MultiAssetOracle {
+contract MultiAssetOracle is Ownable2Step {
     // --- Errors ---
-    error OnlyOwner();
     error InvalidPrice();
     error InvalidAssetId();
     error AssetNotRegistered();
     error AssetAlreadyRegistered();
 
     // --- State Variables ---
-    address public owner;
-
     /// @notice Mapping from assetId to price in 1e18 format
     mapping(bytes32 => uint256) public prices;
 
@@ -30,23 +31,15 @@ contract MultiAssetOracle {
     event PriceUpdated(bytes32 indexed assetId, uint256 indexed newPrice, uint256 timestamp);
     event AssetRegistered(bytes32 indexed assetId, uint256 initialPrice);
     event AssetRemoved(bytes32 indexed assetId);
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     // --- Modifiers ---
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert OnlyOwner();
-        _;
-    }
-
     modifier assetExists(bytes32 assetId) {
         if (!registeredAssets[assetId]) revert AssetNotRegistered();
         _;
     }
 
     // --- Constructor ---
-    constructor() {
-        owner = msg.sender;
-    }
+    constructor() Ownable(msg.sender) {}
 
     // --- Asset Management ---
 
@@ -136,12 +129,8 @@ contract MultiAssetOracle {
 
     // --- Ownership ---
 
-    /// @notice Transfer ownership to a new address
-    /// @param newOwner Address of the new owner
-    function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) revert InvalidPrice();
-        address oldOwner = owner;
-        owner = newOwner;
-        emit OwnershipTransferred(oldOwner, newOwner);
+    /// @notice Disabled: renouncing would permanently remove the oracle's only price writer.
+    function renounceOwnership() public pure override {
+        revert("Oracle: renounce disabled");
     }
 }

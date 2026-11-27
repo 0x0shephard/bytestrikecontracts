@@ -767,4 +767,10 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 	function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
+	/// @notice Disabled: renouncing would permanently remove upgrade and repair authority
+	///         (setOracle via the registry aside, resetReserves, setMinReserves, setParams).
+	function renounceOwnership() public pure override {
+		revert("vAMM: renounce disabled");
+	}
+
 }

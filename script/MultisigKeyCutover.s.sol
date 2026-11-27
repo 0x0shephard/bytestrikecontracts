@@ -12,6 +12,14 @@ interface IAccessControlled {
     function hasRole(bytes32 role, address account) external view returns (bool);
 }
 
+/// @dev AccessControlDefaultAdminRules (MarketRegistry / CollateralVault deployed from the current
+///      sources). Legacy deployments use plain AccessControl and do not implement it.
+interface IDefaultAdminRules {
+    function defaultAdmin() external view returns (address);
+    function pendingDefaultAdmin() external view returns (address newAdmin, uint48 schedule);
+    function beginDefaultAdminTransfer(address newAdmin) external;
+}
+
 interface IMarketRegistryRoles is IAccessControlled {
     function MARKET_ADMIN_ROLE() external view returns (bytes32);
     function PARAM_ADMIN_ROLE() external view returns (bytes32);
@@ -50,7 +58,13 @@ interface IClearingHouseAdmin is IOwnableDirect {
 }
 
 /// @notice Moves ByteStrike Sepolia admin authority away from a single deployer EOA.
-/// @dev Run with the current privileged wallet. Ownable2Step recipients must accept ownership separately.
+/// @dev Run with the current privileged wallet. Nothing is handed over in one step: every Ownable2Step
+///      contract (ClearingHouse included) is left pending to its new owner, and the MarketRegistry and
+///      CollateralVault roles are granted to the multisigs while the old admin keeps its own. The
+///      multisig then runs AcceptMultisigOwnership, which accepts the pending ownerships (and, on a
+///      registry/vault deployed with AccessControlDefaultAdminRules, the pending default admin
+///      transfer once its delay has passed) and revokes the old admin's registry/vault roles itself,
+///      which it can only do if it really holds DEFAULT_ADMIN_ROLE (audit finding 29).
 ///
 /// Sign with the current privileged wallet via `--account <keystore-name> --sender <address>`
 /// (or `--ledger`); no private key is read from the environment.
@@ -74,7 +88,9 @@ interface IClearingHouseAdmin is IOwnableDirect {
 ///   deployment whose collateral Oracle cannot transfer ownership
 ///
 /// The run ends with end-state checks and reverts unless every handed-over contract is owned by, or
-/// pending to, its new owner and the old admin no longer holds the registry/vault admin roles.
+/// pending to, its new owner and the multisigs hold (or, for a default admin with transfer rules, are
+/// pending to receive) the registry/vault admin roles. VerifyProtocolKeyState checks the final state
+/// after AcceptMultisigOwnership.
 contract MultisigKeyCutover is Script {
     address internal constant DEFAULT_CLEARING_HOUSE = 0xDf4DDD4019097B335dD507f916984A1A53E40a0d;
     address internal constant DEFAULT_VAULT = 0x44345dFCD97973329A88aaE8c1432ea90525Ed13;
@@ -127,8 +143,8 @@ contract MultisigKeyCutover is Script {
 
         vm.startBroadcast();
 
-        _cutoverMarketRegistry(registry, oldAdmin, mainAdmin, riskParamAdmin, pauseGuardian);
-        _cutoverCollateralVault(vault, oldAdmin, mainAdmin);
+        _cutoverMarketRegistry(registry, mainAdmin, riskParamAdmin, pauseGuardian);
+        _cutoverCollateralVault(vault, mainAdmin);
         _cutoverClearingHouse(clearingHouse, mainAdmin, oldLiquidator, newLiquidator);
         _cutoverFeeRouter(feeRouter, mainAdmin, treasury);
         _cutoverInsuranceFund(insuranceFund, mainAdmin);
@@ -144,8 +160,8 @@ contract MultisigKeyCutover is Script {
         vm.stopBroadcast();
 
         // End-state checks: fail the run if anything is still controlled by the old admin.
-        _requireRolesHandedOff(registry, vault, oldAdmin, mainAdmin);
-        require(IOwnableDirect(clearingHouse).owner() == mainAdmin, "ClearingHouse not handed off");
+        _requireRolesHandedOff(registry, vault, mainAdmin);
+        _requireHandedOff(clearingHouse, mainAdmin, "ClearingHouse not handed off");
         _requireHandedOff(feeRouter, mainAdmin, "FeeRouter not handed off");
         _requireHandedOff(insuranceFund, mainAdmin, "InsuranceFund not handed off");
         _requireHandedOff(cuOracle, oracleAdmin, "CuOracle not handed off");
@@ -153,14 +169,14 @@ contract MultisigKeyCutover is Script {
             _requireHandedOff(collateralOracle, oracleAdmin, "Collateral Oracle not handed off");
         }
 
-        console.log("Cutover submission complete.");
-        console.log("Next: multisig must accept ownership for vAMMs, FeeRouter and InsuranceFund.");
+        console.log("Cutover submission complete. The old admin keeps its registry/vault roles for now.");
+        console.log("Next: main multisig runs AcceptMultisigOwnership (OLD_ADMIN set) to accept ClearingHouse,");
+        console.log("vAMMs, FeeRouter, InsuranceFund and the registry/vault default admin, then revoke the old admin.");
         console.log("CuOracle and Collateral Oracle (Ownable2Step) must be accepted by the oracle admin multisig.");
     }
 
     function _cutoverMarketRegistry(
         address registry,
-        address oldAdmin,
         address mainAdmin,
         address riskParamAdmin,
         address pauseGuardian
@@ -171,27 +187,42 @@ contract MultisigKeyCutover is Script {
         bytes32 paramAdmin = r.PARAM_ADMIN_ROLE();
         bytes32 pauseRole = r.PAUSE_GUARDIAN_ROLE();
 
-        _grantRoleIfMissing(r, defaultAdmin, mainAdmin, "MarketRegistry DEFAULT_ADMIN_ROLE");
+        _handOverDefaultAdmin(r, defaultAdmin, mainAdmin, "MarketRegistry DEFAULT_ADMIN_ROLE");
         _grantRoleIfMissing(r, marketAdmin, mainAdmin, "MarketRegistry MARKET_ADMIN_ROLE");
         _grantRoleIfMissing(r, paramAdmin, riskParamAdmin, "MarketRegistry PARAM_ADMIN_ROLE");
         _grantRoleIfMissing(r, pauseRole, pauseGuardian, "MarketRegistry PAUSE_GUARDIAN_ROLE");
 
-        _revokeRoleIfPresent(r, pauseRole, oldAdmin, "MarketRegistry old PAUSE_GUARDIAN_ROLE");
-        _revokeRoleIfPresent(r, paramAdmin, oldAdmin, "MarketRegistry old PARAM_ADMIN_ROLE");
-        _revokeRoleIfPresent(r, marketAdmin, oldAdmin, "MarketRegistry old MARKET_ADMIN_ROLE");
-        _revokeRoleIfPresent(r, defaultAdmin, oldAdmin, "MarketRegistry old DEFAULT_ADMIN_ROLE");
+        // The old admin's roles are revoked by mainAdmin in AcceptMultisigOwnership, which proves the
+        // multisig controls DEFAULT_ADMIN_ROLE before the old admin loses it.
     }
 
-    function _cutoverCollateralVault(address vault, address oldAdmin, address mainAdmin) internal {
+    function _cutoverCollateralVault(address vault, address mainAdmin) internal {
         ICollateralVaultRoles v = ICollateralVaultRoles(vault);
         bytes32 defaultAdmin = v.DEFAULT_ADMIN_ROLE();
         bytes32 vaultAdmin = v.VAULT_ADMIN_ROLE();
 
-        _grantRoleIfMissing(v, defaultAdmin, mainAdmin, "CollateralVault DEFAULT_ADMIN_ROLE");
+        _handOverDefaultAdmin(v, defaultAdmin, mainAdmin, "CollateralVault DEFAULT_ADMIN_ROLE");
         _grantRoleIfMissing(v, vaultAdmin, mainAdmin, "CollateralVault VAULT_ADMIN_ROLE");
 
-        _revokeRoleIfPresent(v, vaultAdmin, oldAdmin, "CollateralVault old VAULT_ADMIN_ROLE");
-        _revokeRoleIfPresent(v, defaultAdmin, oldAdmin, "CollateralVault old DEFAULT_ADMIN_ROLE");
+        // Revoked by mainAdmin in AcceptMultisigOwnership, as above.
+    }
+
+    /// @dev With AccessControlDefaultAdminRules the default admin moves only through a delayed two-step
+    ///      transfer, which is started here; a legacy AccessControl deployment grants the role (the
+    ///      old admin keeps its own until the multisig revokes it).
+    function _handOverDefaultAdmin(IAccessControlled target, bytes32 role, address mainAdmin, string memory label)
+        internal
+    {
+        try IDefaultAdminRules(address(target)).defaultAdmin() returns (address current) {
+            if (current == mainAdmin) return;
+            (address pending,) = IDefaultAdminRules(address(target)).pendingDefaultAdmin();
+            if (pending != mainAdmin) {
+                IDefaultAdminRules(address(target)).beginDefaultAdminTransfer(mainAdmin);
+                console.log("default admin transfer started", label, mainAdmin);
+            }
+        } catch {
+            _grantRoleIfMissing(target, role, mainAdmin, label);
+        }
     }
 
     function _cutoverClearingHouse(
@@ -275,18 +306,21 @@ contract MultisigKeyCutover is Script {
         require(pending == newOwner, err);
     }
 
-    function _requireRolesHandedOff(address registry, address vault, address oldAdmin, address mainAdmin) internal view {
+    function _requireRolesHandedOff(address registry, address vault, address mainAdmin) internal view {
         IMarketRegistryRoles r = IMarketRegistryRoles(registry);
-        require(r.hasRole(r.DEFAULT_ADMIN_ROLE(), mainAdmin), "MarketRegistry admin not handed off");
+        require(_holdsOrPendingDefaultAdmin(r, mainAdmin), "MarketRegistry admin not handed off");
+        require(r.hasRole(r.MARKET_ADMIN_ROLE(), mainAdmin), "MarketRegistry market admin not handed off");
         ICollateralVaultRoles v = ICollateralVaultRoles(vault);
-        require(v.hasRole(v.DEFAULT_ADMIN_ROLE(), mainAdmin), "CollateralVault admin not handed off");
-        if (oldAdmin != mainAdmin) {
-            require(!r.hasRole(r.DEFAULT_ADMIN_ROLE(), oldAdmin), "MarketRegistry old admin remains");
-            require(!r.hasRole(r.MARKET_ADMIN_ROLE(), oldAdmin), "MarketRegistry old market admin remains");
-            require(!r.hasRole(r.PARAM_ADMIN_ROLE(), oldAdmin), "MarketRegistry old param admin remains");
-            require(!r.hasRole(r.PAUSE_GUARDIAN_ROLE(), oldAdmin), "MarketRegistry old pause guardian remains");
-            require(!v.hasRole(v.DEFAULT_ADMIN_ROLE(), oldAdmin), "CollateralVault old admin remains");
-            require(!v.hasRole(v.VAULT_ADMIN_ROLE(), oldAdmin), "CollateralVault old vault admin remains");
+        require(_holdsOrPendingDefaultAdmin(v, mainAdmin), "CollateralVault admin not handed off");
+        require(v.hasRole(v.VAULT_ADMIN_ROLE(), mainAdmin), "CollateralVault vault admin not handed off");
+    }
+
+    function _holdsOrPendingDefaultAdmin(IAccessControlled target, address account) internal view returns (bool) {
+        if (target.hasRole(target.DEFAULT_ADMIN_ROLE(), account)) return true;
+        try IDefaultAdminRules(address(target)).pendingDefaultAdmin() returns (address pending, uint48) {
+            return pending == account;
+        } catch {
+            return false;
         }
     }
 
@@ -294,13 +328,6 @@ contract MultisigKeyCutover is Script {
         if (!target.hasRole(role, account)) {
             target.grantRole(role, account);
             console.log("granted", label, account);
-        }
-    }
-
-    function _revokeRoleIfPresent(IAccessControlled target, bytes32 role, address account, string memory label) internal {
-        if (account != address(0) && target.hasRole(role, account)) {
-            target.revokeRole(role, account);
-            console.log("revoked", label, account);
         }
     }
 

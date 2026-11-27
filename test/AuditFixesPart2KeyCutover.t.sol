@@ -28,8 +28,18 @@ contract AuditFixesPart2KeyCutoverTest is BaseTest {
         vm.stopPrank();
     }
 
-    /// @dev Hands every admin power held by `from` to `to`; `accept` completes Ownable2Step transfers.
-    function _handOver(address from, address to, bool accept) internal {
+    uint256 internal _now;
+
+    function _warpPastAdminDelay() internal {
+        if (_now == 0) _now = block.timestamp;
+        _now += marketRegistry.INITIAL_DEFAULT_ADMIN_DELAY() + 1;
+        vm.warp(_now);
+    }
+
+    /// @dev Hands every admin power held by `from` to `to` and lets `to` accept it all: Ownable2Step
+    ///      transfers, the registry/vault default admin (two-step, after its delay), and the other
+    ///      registry/vault roles, `from`'s being revoked by `to`.
+    function _handOver(address from, address to) internal {
         vm.startPrank(from);
         clearingHouse.transferOwnership(to);
         vamm.transferOwnership(to);
@@ -37,24 +47,27 @@ contract AuditFixesPart2KeyCutoverTest is BaseTest {
         insuranceFund.transferOwnership(to);
         cuOracle.transferOwnership(to);
         collateralOracle.transferOwnership(to);
-        bytes32[4] memory regRoles = [
-            marketRegistry.DEFAULT_ADMIN_ROLE(),
-            marketRegistry.MARKET_ADMIN_ROLE(),
-            marketRegistry.PARAM_ADMIN_ROLE(),
-            marketRegistry.PAUSE_GUARDIAN_ROLE()
-        ];
-        for (uint256 i; i < 4; i++) marketRegistry.grantRole(regRoles[i], to);
-        for (uint256 i; i < 4; i++) marketRegistry.renounceRole(regRoles[i], from);
-        vault.grantRole(vault.DEFAULT_ADMIN_ROLE(), to);
+        marketRegistry.beginDefaultAdminTransfer(to);
+        vault.beginDefaultAdminTransfer(to);
+        bytes32[3] memory regRoles =
+            [marketRegistry.MARKET_ADMIN_ROLE(), marketRegistry.PARAM_ADMIN_ROLE(), marketRegistry.PAUSE_GUARDIAN_ROLE()];
+        for (uint256 i; i < 3; i++) marketRegistry.grantRole(regRoles[i], to);
         vault.grantRole(vault.VAULT_ADMIN_ROLE(), to);
-        vault.renounceRole(vault.VAULT_ADMIN_ROLE(), from);
-        vault.renounceRole(vault.DEFAULT_ADMIN_ROLE(), from);
         vm.stopPrank();
-        if (accept) _acceptAll(to, to);
+
+        _warpPastAdminDelay();
+        _acceptAll(to, to);
+        vm.startPrank(to);
+        marketRegistry.acceptDefaultAdminTransfer();
+        vault.acceptDefaultAdminTransfer();
+        for (uint256 i; i < 3; i++) marketRegistry.revokeRole(regRoles[i], from);
+        vault.revokeRole(vault.VAULT_ADMIN_ROLE(), from);
+        vm.stopPrank();
     }
 
     function _acceptAll(address main, address oracleAdmin) internal {
         vm.startPrank(main);
+        clearingHouse.acceptOwnership();
         vamm.acceptOwnership();
         feeRouter.acceptOwnership();
         insuranceFund.acceptOwnership();
@@ -83,12 +96,13 @@ contract AuditFixesPart2KeyCutoverTest is BaseTest {
         vm.setEnv("MARKET_IDS", vm.toString(ETH_PERP));
     }
 
-    /// @notice Finding 30: the cutover hands over the collateral Oracle by default and every vAMM
-    /// resolved from MarketRegistry; acceptance and verification use the same market list and the
-    /// verifier fails until the end state is complete.
+    /// @notice Findings 29 and 30: the cutover hands over the collateral Oracle by default and every vAMM
+    /// resolved from MarketRegistry; nothing moves in one step (ClearingHouse is left pending, the
+    /// registry/vault default admin transfer is only scheduled and the old admin keeps its roles), the
+    /// main multisig accepts and revokes the old admin itself, and the verifier fails until then.
     function test_Finding30_cutoverHandsOffEverythingAndVerifies() public {
         address deployer = DEFAULT_SENDER;
-        _handOver(admin, deployer, true);
+        _handOver(admin, deployer);
         _setEnv(mainMs, oracleMs, deployer);
         VerifyProtocolKeyState verifier = new VerifyProtocolKeyState();
 
@@ -99,20 +113,36 @@ contract AuditFixesPart2KeyCutoverTest is BaseTest {
         // Cutover: TRANSFER_COLLATERAL_ORACLE is not set, so the collateral Oracle moves by default.
         MultisigKeyCutover cutover = new MultisigKeyCutover();
         cutover.run();
-        assertEq(clearingHouse.owner(), mainMs, "CH owner");
+        assertEq(clearingHouse.owner(), deployer, "CH moved in one step");
+        assertEq(clearingHouse.pendingOwner(), mainMs, "CH not pending to main admin");
         assertEq(vamm.pendingOwner(), mainMs, "vAMM from MarketRegistry not handed off");
         assertEq(feeRouter.pendingOwner(), mainMs, "FeeRouter");
         assertEq(insuranceFund.pendingOwner(), mainMs, "InsuranceFund");
         assertEq(cuOracle.pendingOwner(), oracleMs, "CuOracle");
         assertEq(collateralOracle.pendingOwner(), oracleMs, "collateral Oracle not handed off by default");
-        assertFalse(marketRegistry.hasRole(marketRegistry.DEFAULT_ADMIN_ROLE(), deployer), "registry admin kept");
-        assertFalse(vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), deployer), "vault admin kept");
+        (address pendingRegAdmin,) = marketRegistry.pendingDefaultAdmin();
+        (address pendingVaultAdmin,) = vault.pendingDefaultAdmin();
+        assertEq(pendingRegAdmin, mainMs, "registry default admin not scheduled");
+        assertEq(pendingVaultAdmin, mainMs, "vault default admin not scheduled");
+        assertTrue(marketRegistry.hasRole(marketRegistry.DEFAULT_ADMIN_ROLE(), deployer), "registry admin dropped early");
+        assertTrue(vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), deployer), "vault admin dropped early");
+        assertTrue(marketRegistry.hasRole(marketRegistry.MARKET_ADMIN_ROLE(), deployer), "old roles revoked by the cutover");
 
         // Pending transfers are not a finished cutover.
         vm.expectRevert(bytes("vAMM not owned by main admin"));
         verifier.run();
 
+        // The multisigs accept; the main multisig revokes the deployer's remaining roles itself.
+        _warpPastAdminDelay();
         _acceptAll(mainMs, oracleMs);
+        vm.startPrank(mainMs);
+        marketRegistry.acceptDefaultAdminTransfer();
+        vault.acceptDefaultAdminTransfer();
+        marketRegistry.revokeRole(marketRegistry.MARKET_ADMIN_ROLE(), deployer);
+        marketRegistry.revokeRole(marketRegistry.PARAM_ADMIN_ROLE(), deployer);
+        marketRegistry.revokeRole(marketRegistry.PAUSE_GUARDIAN_ROLE(), deployer);
+        vault.revokeRole(vault.VAULT_ADMIN_ROLE(), deployer);
+        vm.stopPrank();
         verifier.run();
 
         // An unknown market id fails instead of being skipped.
@@ -121,12 +151,18 @@ contract AuditFixesPart2KeyCutoverTest is BaseTest {
         cutover.marketVamms(address(marketRegistry));
         vm.setEnv("MARKET_IDS", vm.toString(ETH_PERP));
 
-        // Acceptance script: multisigs hand pending ownership to the script signer, which accepts the
-        // vAMM resolved from MarketRegistry and, by default, the collateral Oracle.
+        // Acceptance script: the multisigs hand everything to the script signer, which accepts
+        // ClearingHouse, the vAMM resolved from MarketRegistry, the registry/vault default admin and,
+        // by default, the collateral Oracle, then revokes OLD_ADMIN's registry/vault roles.
         vm.startPrank(mainMs);
+        clearingHouse.transferOwnership(deployer);
         vamm.transferOwnership(deployer);
         feeRouter.transferOwnership(deployer);
         insuranceFund.transferOwnership(deployer);
+        marketRegistry.beginDefaultAdminTransfer(deployer);
+        vault.beginDefaultAdminTransfer(deployer);
+        marketRegistry.grantRole(marketRegistry.MARKET_ADMIN_ROLE(), deployer);
+        vault.grantRole(vault.VAULT_ADMIN_ROLE(), deployer);
         vm.stopPrank();
         vm.startPrank(oracleMs);
         cuOracle.transferOwnership(deployer);
@@ -134,12 +170,19 @@ contract AuditFixesPart2KeyCutoverTest is BaseTest {
         vm.stopPrank();
         vm.setEnv("MAIN_ADMIN_MULTISIG", vm.toString(deployer));
         vm.setEnv("ORACLE_ADMIN_MULTISIG", vm.toString(deployer));
+        vm.setEnv("OLD_ADMIN", vm.toString(mainMs));
+        _warpPastAdminDelay();
 
         new AcceptMultisigOwnership().run();
+        assertEq(clearingHouse.owner(), deployer, "ClearingHouse not accepted");
         assertEq(vamm.owner(), deployer, "vAMM not accepted");
         assertEq(feeRouter.owner(), deployer, "FeeRouter not accepted");
         assertEq(insuranceFund.owner(), deployer, "InsuranceFund not accepted");
         assertEq(cuOracle.owner(), deployer, "CuOracle not accepted");
         assertEq(collateralOracle.owner(), deployer, "collateral Oracle not accepted by default");
+        assertEq(marketRegistry.defaultAdmin(), deployer, "registry default admin not accepted");
+        assertEq(vault.defaultAdmin(), deployer, "vault default admin not accepted");
+        assertFalse(marketRegistry.hasRole(marketRegistry.MARKET_ADMIN_ROLE(), mainMs), "old market admin kept");
+        assertFalse(vault.hasRole(vault.VAULT_ADMIN_ROLE(), mainMs), "old vault admin kept");
     }
 }

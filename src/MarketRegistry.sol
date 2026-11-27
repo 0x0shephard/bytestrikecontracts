@@ -3,13 +3,14 @@ pragma solidity 0.8.28;
 
 import {IMarketRegistry} from "./Interfaces/IMarketRegistry.sol";
 import {IVAMM} from "./Interfaces/IVAMM.sol";
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {AccessControlDefaultAdminRules} from "@openzeppelin/contracts/access/extensions/AccessControlDefaultAdminRules.sol";
 
 
 /// @title MarketRegistry
 /// @notice Registers, updates, and pauses perpetual markets (vAMM + Oracle + params) keyed by marketId.
-/// @dev Uses AccessControl for role-separated permissions. Events are inherited from the interface.
-contract MarketRegistry is IMarketRegistry, AccessControl {
+/// @dev Uses AccessControlDefaultAdminRules for role-separated permissions with a two-step, delayed
+///      default admin transfer. Events are inherited from the interface.
+contract MarketRegistry is IMarketRegistry, AccessControlDefaultAdminRules {
     // marketId => Market data
     mapping(bytes32 MarketId => Market) public markets;
     /// @notice Whether a vAMM already backs a registered market (a vAMM serves exactly one market).
@@ -36,10 +37,14 @@ contract MarketRegistry is IMarketRegistry, AccessControl {
     }
 
 
+    /// @notice Delay before a scheduled DEFAULT_ADMIN_ROLE transfer can be accepted.
+    uint48 public constant INITIAL_DEFAULT_ADMIN_DELAY = 1 days;
+
     /// @notice Constructor grants DEFAULT_ADMIN to the deployer to bootstrap role assignments.
-    constructor() {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-    }
+    /// @dev DEFAULT_ADMIN_ROLE has a single holder and moves only in two steps
+    ///      (beginDefaultAdminTransfer, then acceptDefaultAdminTransfer by the new admin after the
+    ///      delay); renouncing it goes through the same delayed two steps.
+    constructor() AccessControlDefaultAdminRules(INITIAL_DEFAULT_ADMIN_DELAY, msg.sender) {}
 
 
     /// @notice Register a new perpetual market with its vAMM, oracle, fee router, insurance fund and metadata.
