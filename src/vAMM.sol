@@ -700,11 +700,14 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 
 	/// @notice Emergency function to reset reserves if they become depleted
 	/// @dev Only callable by owner. Use to rescue vAMM from broken state.
-	/// Price change is limited to MAX_PRICE_CHANGE_BPS (10%) per call to prevent instant liquidations.
+	/// Price change is limited to MAX_PRICE_CHANGE_BPS (10%) per call to prevent instant liquidations:
+	/// a target further from the mark at execution is clamped to that limit, so the call is one step of
+	/// at most 10% toward the target (pass the index itself) and a trade landing first cannot revert it
+	/// or make it move the mark away from the target.
 	/// Only allowed while long and short open interest are equal: with a net open position, a change
 	/// of depth or price changes what the net side gets back on exit, and no account pays for it.
 	/// Mark is otherwise brought to the index by funding, not by resets.
-	/// @param newPriceX18 New mark price to set (quote per base, 1e18)
+	/// @param newPriceX18 Target mark price (quote per base, 1e18); clamped to within 10% of the current mark
 	/// @param newBaseReserve New base reserve amount (1e18 units)
 	function resetReserves(uint256 newPriceX18, uint256 newBaseReserve) external onlyOwner {
 		require(newPriceX18 > 0, "price=0");
@@ -718,7 +721,11 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 			? newPriceX18 - currentPrice
 			: currentPrice - newPriceX18;
 		uint256 maxAllowedChange = (currentPrice * MAX_PRICE_CHANGE_BPS) / BPS_DENOMINATOR;
-		require(priceDiff <= maxAllowedChange, "Price change too large");
+		if (priceDiff > maxAllowedChange) {
+			newPriceX18 = newPriceX18 > currentPrice
+				? currentPrice + maxAllowedChange
+				: currentPrice - maxAllowedChange;
+		}
 
 		// Calculate new quote reserve: Y = X * Price
 		uint256 newQuoteReserve = Calculations.mulDiv(newBaseReserve, newPriceX18, 1e18);
