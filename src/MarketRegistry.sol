@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {IMarketRegistry} from "./Interfaces/IMarketRegistry.sol";
 import {IVAMM} from "./Interfaces/IVAMM.sol";
+import {IInsuranceFund} from "./Interfaces/IInsuranceFund.sol";
 import {AccessControlDefaultAdminRules} from "@openzeppelin/contracts/access/extensions/AccessControlDefaultAdminRules.sol";
 
 
@@ -77,6 +78,7 @@ contract MarketRegistry is IMarketRegistry, AccessControlDefaultAdminRules {
         require(config.baseUnit > 0, "Base unit 0");
         require(config.feeRouter != address(0), "FeeRouter addr(0)");
         require(config.insuranceFund != address(0), "IF addr(0)");
+        require(IInsuranceFund(config.insuranceFund).quoteToken() == config.quoteToken, "IF quote mismatch");
         require(config.feeBps <= MAX_FEE_BPS, "Fee too high");
     }
 
@@ -108,6 +110,8 @@ contract MarketRegistry is IMarketRegistry, AccessControlDefaultAdminRules {
         require(feeBps <= MAX_FEE_BPS, "Fee too high");
         require(feeRouter != address(0), "FeeRouter addr(0)");
         require(insuranceFund != address(0), "IF addr(0)");
+        // The fund pays out in its own token, so it must hold the market's quote token
+        require(IInsuranceFund(insuranceFund).quoteToken() == market.quoteToken, "IF quote mismatch");
 
         market.feeBps = feeBps;
         market.feeRouter = feeRouter;
