@@ -219,7 +219,6 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         if (!(amount > 0)) revert AmountZero();
 
         // Settle funding for all active markets to ensure margin values are current
-        bytes32[] memory markets = _userActiveMarkets[msg.sender];
         _settleAccountFunding(msg.sender, bytes32(0), false);
 
         // Ensure the withdrawn token's remaining balance still covers all margin
@@ -237,19 +236,16 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
 
         // Post-withdrawal check: no position backed by the withdrawn token may become liquidatable.
         // Positions on other quote tokens are unaffected, so their feeds cannot block the withdrawal.
-        for (uint256 i = 0; i < markets.length; i++) {
-            if (
-                IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken == token
-                    && _isLiquidatable(msg.sender, markets[i])
-            ) revert WouldBeLiquidatable();
-        }
+        if (_hasLiquidatable(msg.sender, token, bytes32(0))) revert WouldBeLiquidatable();
 
         emit CollateralWithdrawn(msg.sender, token, amount, received);
     }
 
     /// @notice Adds margin to a specific position from the user's available collateral.
     /// @dev Requires an open position in the market. Allowed while the market is paused, since it
-    ///      touches no vAMM state and lets traders defend positions whose index keeps moving.
+    ///      touches no vAMM state and lets traders defend positions whose index keeps moving. While
+    ///      another position on the same quote token is liquidatable, only a liquidatable position
+    ///      can take margin, so free collateral stays available to that liquidation.
     /// @param marketId The ID of the market for the position.
     /// @param amount The amount of margin to add (in quote currency value, 1e18).
     function addMargin(bytes32 marketId, uint256 amount) external override {
@@ -257,6 +253,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         if (!(amount > 0)) revert AmountZero();
         if (positions[msg.sender][marketId].size == 0) revert NoPosition();
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        if (!_isLiquidatable(msg.sender, marketId) && _hasLiquidatable(msg.sender, m.quoteToken, marketId)) {
+            revert HasLiquidatablePosition();
+        }
         uint256 quoteBalance = ICollateralVault(vault).balanceOf(msg.sender, m.quoteToken);
         uint256 quoteValueX18 = _quoteValueX18(m.quoteToken, quoteBalance);
         uint256 reservedForToken = _reservedMarginForToken(msg.sender, m.quoteToken);
@@ -336,6 +335,19 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @return A boolean indicating if the position is liquidatable.
     function isLiquidatable(address account, bytes32 marketId) external view override returns (bool) {
         return _isLiquidatable(account, marketId);
+    }
+
+    /// @dev True if a position of the account on `quoteToken`, other than the one in `skip`, is
+    ///      liquidatable.
+    function _hasLiquidatable(address account, address quoteToken, bytes32 skip) internal view returns (bool) {
+        bytes32[] memory markets = _userActiveMarkets[account];
+        for (uint256 i = 0; i < markets.length; i++) {
+            if (
+                markets[i] != skip && IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken == quoteToken
+                    && _isLiquidatable(account, markets[i])
+            ) return true;
+        }
+        return false;
     }
 
     /// @dev A position is liquidatable below maintenance margin, and also whenever it carries funding
@@ -597,19 +609,12 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @param amountLimit For longs (buying base): max quote to spend. For shorts (selling base): min quote to receive. 0 = no limit.
     function openPosition(bytes32 marketId, bool isLong, uint128 size, uint256 amountLimit) external override onlyAllowedTrader nonReentrant {
         // Settle funding for all active markets and the target market to ensure margin values are current
-        bytes32[] memory activeMarkets = _userActiveMarkets[msg.sender];
         _settleAccountFunding(msg.sender, marketId, false);
 
         // Block new positions if the user has a liquidatable position on the target market's quote
         // token (the collateral the trade draws on); other quote tokens' feeds cannot block the open.
-        {
-            address quote = IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken;
-            for (uint256 i = 0; i < activeMarkets.length; i++) {
-                if (
-                    IMarketRegistry(marketRegistry).getMarket(activeMarkets[i]).quoteToken == quote
-                        && _isLiquidatable(msg.sender, activeMarkets[i])
-                ) revert HasLiquidatablePosition();
-            }
+        if (_hasLiquidatable(msg.sender, IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken, bytes32(0))) {
+            revert HasLiquidatablePosition();
         }
 
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
@@ -676,14 +681,19 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
     /// @notice Closes or reduces an existing position in a perpetual market.
+    /// @dev Reverts while any of the account's positions on the same quote token is liquidatable: the
+    ///      close's loss is paid from the balance that liquidation draws on, so a close pushed by a
+    ///      second account could otherwise move that collateral out before the keeper acts. The trader
+    ///      can cure the liquidatable position with addMargin, after which closes pass again.
     /// @param marketId The ID of the perpetual market.
     /// @param size The amount of base asset to trade for closing the position.
     /// @param amountLimit For closing longs (selling base): min quote to receive. For closing shorts (buying base): max quote to spend. 0 = no limit.
     function closePosition(bytes32 marketId, uint128 size, uint256 amountLimit) external override nonReentrant {
         _settleAccountFunding(msg.sender, marketId, true);
         if (_isLiquidatable(msg.sender, marketId)) revert PositionLiquidatable();
-        if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        if (_hasLiquidatable(msg.sender, m.quoteToken, marketId)) revert HasLiquidatablePosition();
+        if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
         if (!(m.vamm != address(0))) revert MarketNotFound();
         if (!(size > 0)) revert SizeZero();
 

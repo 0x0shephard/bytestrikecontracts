@@ -325,23 +325,25 @@ User calls: clearingHouse.closePosition(marketId, size, priceLimit)
 
 Flow:
 1. Settle pending funding
-2. Verify size <= |position.size|
-3. Execute reverse swap on vAMM:
+2. Revert if this position, or any other position of the account on the same quote token,
+   is liquidatable (cure it with addMargin first)
+3. Verify size <= |position.size|
+4. Execute reverse swap on vAMM:
    - Long closing: Sell base, receive quote
    - Short closing: Buy base, pay quote
-4. Apply slippage check
-5. Calculate realized PnL:
+5. Apply slippage check
+6. Calculate realized PnL:
    - Long: (exitPrice - entryPrice) * closedSize / 1e18
    - Short: (entryPrice - exitPrice) * closedSize / 1e18
-6. Apply fees
-7. Update position:
+7. Apply fees
+8. Update position:
    - size -= closedSize (or += for shorts)
    - margin adjusted by PnL and fees
    - realizedPnL accumulated
-8. If fully closed:
+9. If fully closed:
    - Return remaining margin to collateral
    - Remove from _userActiveMarkets
-9. If partially closed:
+10. If partially closed:
    - The closed slice's loss is netted against that slice's margin share; only the excess reaches the remaining margin
    - Verify the remaining position stays above maintenance margin (IMR applies only to opens, increases and flips)
 ```
@@ -374,6 +376,7 @@ marginRatio = equity * 1e18 / notionalValue
 clearingHouse.addMargin(marketId, amount)
 // Transfers from vault balance to position.margin
 // Requires an open position; allowed while the market is paused
+// While a position on the same quote token is liquidatable, only liquidatable positions take margin
 
 // Remove margin from position to collateral
 clearingHouse.removeMargin(marketId, amount)
