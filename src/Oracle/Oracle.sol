@@ -61,6 +61,18 @@ contract Oracle is Ownable2Step {
     }
 
     /**
+     * @notice Time at which the grace period after the latest sequencer restart ends.
+     * @dev ClearingHouse keeps liquidations closed for a reaction window after it, so traders can top
+     *      up positions the index moved while getPrice reverted.
+     * @return The end of the grace period, or 0 when no uptime feed is set.
+     */
+    function sequencerGraceEndsAt() external view returns (uint256) {
+        if (address(sequencerUptimeFeed) == address(0)) return 0;
+        (, , uint256 sequencerStartedAt, , ) = sequencerUptimeFeed.latestRoundData();
+        return sequencerStartedAt + SEQUENCER_GRACE_PERIOD;
+    }
+
+    /**
      * @notice Gets the price of an underlying asset, normalized for its base unit.
      * @param _tokenSymbol The symbol of the token (e.g., "USDC").
      * @return The normalized price.

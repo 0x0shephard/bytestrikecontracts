@@ -88,6 +88,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     ///         mmrBps - liquidationPenaltyBps: 1%. A narrower band blocks the next liquidation of a
     ///         long (short) as soon as one liquidation leaves the mark that far below (above) the index.
     uint256 public constant MIN_LIQUIDATION_BAND_BPS = 100;
+    /// @notice Time after the quote oracle's post-restart sequencer grace period during which
+    ///         liquidation stays closed, so traders can top up first.
+    uint256 public constant LIQUIDATION_REACTION_WINDOW = 30 minutes;
 
     // =========================================================================
     // Logic contract (immutable — embedded in implementation bytecode, not proxy storage)
@@ -120,6 +123,7 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     error InvalidSize();
     error InvalidVault();
     error LiquidationPriceOutOfBand(uint256 markPriceX18, uint256 indexPriceX18);
+    error LiquidationReactionWindow();
     error MMRZero();
     error MarginBelowPenalty();
     error MarketNotActive();
@@ -769,6 +773,8 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     ///      penalty is charged on the filled size. A partial liquidation must leave the remainder with
     ///      a margin ratio no worse than before, unless the fill was capped. The close trades through
     ///      the vAMM reserve floors (vAMM.liquidationSwap), so a parked reserve cannot block it.
+    ///      Closed for LIQUIDATION_REACTION_WINDOW after the quote oracle's sequencer grace period
+    ///      ends, since addMargin cannot value collateral during that grace period.
     /// @param account The address of the user whose position is being liquidated.
     /// @param marketId The ID of the market.
     /// @param size The amount of the position to liquidate.
@@ -776,6 +782,17 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         _settleAccountFunding(account, marketId, true);
         if (!_isLiquidatable(account, marketId)) revert NotLiquidatable();
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
+        {
+            // A failed call or short return data (an oracle without the function) reads as no grace.
+            (bool ok, bytes memory data) =
+                ICollateralVault(vault).oracle().staticcall(abi.encodeWithSignature("sequencerGraceEndsAt()"));
+            if (ok && data.length >= 32) {
+                uint256 graceEndsAt = abi.decode(data, (uint256));
+                if (graceEndsAt != 0 && block.timestamp < graceEndsAt + LIQUIDATION_REACTION_WINDOW) {
+                    revert LiquidationReactionWindow();
+                }
+            }
+        }
         PositionView storage position = positions[account][marketId];
         MarketRiskParams memory rp = marketRiskParams[marketId];
         // Pre-trade size and effective margin, to compare the remainder of a partial liquidation with.
