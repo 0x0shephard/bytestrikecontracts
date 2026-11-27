@@ -8,6 +8,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {CuOracle} from "../src/Oracle/CuOracle.sol";
 import {ClearingHouse} from "../src/ClearingHouse.sol";
 import {MarketRegistry} from "../src/MarketRegistry.sol";
+import {SeedLimits} from "./SeedLimits.sol";
 
 /// @title SeedMoreMarkets
 /// @notice Phase B for the batch market deployment: reveals every CuOracle price,
@@ -34,10 +35,8 @@ contract SeedMoreMarkets is Script {
     uint256 constant SEED_MARGIN_X18 = 300e18;          // $300 margin per market per side
     uint256 constant DEPOSIT_USDC    = 7_000 * 1e6;     // 7,000 USDC per seed wallet (~$5,700 of margin needed for 19 markets, $1,300 buffer)
 
-    // Slippage envelopes vs expected execution price.
-    uint256 constant LONG_MAX_BPS  = 11_000;            // up to 110% of notional → maxQuoteIn
-    uint256 constant SHORT_MIN_BPS = 8_500;             // down to 85%  of notional → minQuoteOut
-    uint256 constant BPS           = 10_000;
+    // Slippage limits: SeedLimits, SEED_SLIPPAGE_BPS from the fill expected at the reserves when each
+    // seed trade is sent, so a trade sequenced ahead of it makes it revert instead of filling at a loss.
 
     struct SeedSpec {
         string  name;
@@ -97,10 +96,7 @@ contract SeedMoreMarkets is Script {
     ) internal {
         bytes32 marketId = keccak256(bytes(spec.name));
 
-        // Estimated notional (size * price / 1e18) and slippage envelopes.
-        uint256 notional   = (uint256(SEED_SIZE) * spec.priceX18) / 1e18;
-        uint256 maxQuoteIn  = (notional * LONG_MAX_BPS)  / BPS;
-        uint256 minQuoteOut = (notional * SHORT_MIN_BPS) / BPS;
+        address vamm = SeedLimits.vammOf(REGISTRY, marketId);
 
         // 1. Deployer unpauses the market (race window opens).
         vm.startBroadcast();
@@ -109,13 +105,13 @@ contract SeedMoreMarkets is Script {
 
         // 2. Seed long opens long, then tops up its margin.
         vm.startBroadcast(seedLongPk);
-        ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, maxQuoteIn);
+        ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, SeedLimits.longMaxQuoteIn(vamm, SEED_SIZE));
         ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         vm.stopBroadcast();
 
         // 3. Seed short opens short, then tops up its margin.
         vm.startBroadcast(seedShortPk);
-        ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, minQuoteOut);
+        ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, SeedLimits.shortMinQuoteOut(vamm, SEED_SIZE));
         ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         vm.stopBroadcast();
 

@@ -14,6 +14,7 @@ import {vAMM} from "../src/vAMM.sol";
 import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
 import {ICollateralVault} from "../src/Interfaces/ICollateralVault.sol";
 import {IMarketRegistry} from "../src/Interfaces/IMarketRegistry.sol";
+import {SeedLimits} from "./SeedLimits.sol";
 
 interface IMintableERC20 is IERC20 {
     function mint(address to, uint256 amount) external;
@@ -194,9 +195,7 @@ contract CompleteSepoliaMarketsSeed is Script {
     uint128 constant SEED_SIZE = 100e18;
     uint256 constant SEED_MARGIN_X18 = 300e18;
     uint256 constant DEPOSIT_USDC = 10_000e6;
-    uint256 constant LONG_MAX_BPS = 11_000;
-    uint256 constant SHORT_MIN_BPS = 8_500;
-    uint256 constant BPS = 10_000;
+    // Seed slippage limits come from SeedLimits (a few bps from the expected fill), finding 65.
 
     struct SeedSpec {
         string name;
@@ -241,21 +240,19 @@ contract CompleteSepoliaMarketsSeed is Script {
 
     function _seedOne(SeedSpec memory spec, uint256 seedLongPk, uint256 seedShortPk) internal {
         bytes32 marketId = keccak256(bytes(spec.name));
-        uint256 notional = (uint256(SEED_SIZE) * spec.priceX18) / 1e18;
-        uint256 maxQuoteIn = (notional * LONG_MAX_BPS) / BPS;
-        uint256 minQuoteOut = (notional * SHORT_MIN_BPS) / BPS;
+        address seedVamm = SeedLimits.vammOf(REGISTRY, marketId);
 
         vm.startBroadcast();
         MarketRegistry(REGISTRY).pauseMarket(marketId, false);
         vm.stopBroadcast();
 
         vm.startBroadcast(seedLongPk);
-        ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, maxQuoteIn);
+        ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, SeedLimits.longMaxQuoteIn(seedVamm, SEED_SIZE));
         ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         vm.stopBroadcast();
 
         vm.startBroadcast(seedShortPk);
-        ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, minQuoteOut);
+        ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, SeedLimits.shortMinQuoteOut(seedVamm, SEED_SIZE));
         ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
         vm.stopBroadcast();
 
@@ -405,9 +402,7 @@ abstract contract SepoliaSeedBase is Script {
     uint128 constant SEED_SIZE = 100e18;
     uint256 constant SEED_MARGIN_X18 = 300e18;
     uint256 constant TARGET_SEED_COLLATERAL_X18 = 10_000e18;
-    uint256 constant LONG_MAX_BPS = 11_000;
-    uint256 constant SHORT_MIN_BPS = 8_500;
-    uint256 constant BPS = 10_000;
+    // Seed slippage limits come from SeedLimits (a few bps from the expected fill), finding 65.
 
     struct SeedSpec {
         string name;
@@ -451,9 +446,7 @@ abstract contract SepoliaSeedBase is Script {
 
     function _seedOne(SeedSpec memory spec, uint256 seedLongPk, uint256 seedShortPk) internal {
         bytes32 marketId = keccak256(bytes(spec.name));
-        uint256 notional = (uint256(SEED_SIZE) * spec.priceX18) / 1e18;
-        uint256 maxQuoteIn = (notional * LONG_MAX_BPS) / BPS;
-        uint256 minQuoteOut = (notional * SHORT_MIN_BPS) / BPS;
+        address seedVamm = SeedLimits.vammOf(REGISTRY, marketId);
         address seedLong = vm.addr(seedLongPk);
         address seedShort = vm.addr(seedShortPk);
 
@@ -466,7 +459,7 @@ abstract contract SepoliaSeedBase is Script {
         IClearingHouse.PositionView memory longPos = ClearingHouse(payable(CH)).getPosition(seedLong, marketId);
         if (longPos.size == 0) {
             vm.startBroadcast(seedLongPk);
-            ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, maxQuoteIn);
+            ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, SeedLimits.longMaxQuoteIn(seedVamm, SEED_SIZE));
             ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }
@@ -474,7 +467,7 @@ abstract contract SepoliaSeedBase is Script {
         IClearingHouse.PositionView memory shortPos = ClearingHouse(payable(CH)).getPosition(seedShort, marketId);
         if (shortPos.size == 0) {
             vm.startBroadcast(seedShortPk);
-            ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, minQuoteOut);
+            ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, SeedLimits.shortMinQuoteOut(seedVamm, SEED_SIZE));
             ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }
@@ -548,14 +541,12 @@ contract SeedSepoliaMarketFreshByIndex is SepoliaSeedBase {
         }
         vm.stopBroadcast();
 
-        uint256 notional = (uint256(SEED_SIZE) * spec.priceX18) / 1e18;
-        uint256 maxQuoteIn = (notional * LONG_MAX_BPS) / BPS;
-        uint256 minQuoteOut = (notional * SHORT_MIN_BPS) / BPS;
+        address seedVamm = SeedLimits.vammOf(REGISTRY, marketId);
 
         if (vAMM(market.vamm).totalLongOI() < SEED_SIZE) {
             vm.startBroadcast(freshLongPk);
             _ensureSeedDeposit();
-            ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, maxQuoteIn);
+            ClearingHouse(payable(CH)).openPosition(marketId, true, SEED_SIZE, SeedLimits.longMaxQuoteIn(seedVamm, SEED_SIZE));
             ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }
@@ -563,7 +554,7 @@ contract SeedSepoliaMarketFreshByIndex is SepoliaSeedBase {
         if (vAMM(market.vamm).totalShortOI() < SEED_SIZE) {
             vm.startBroadcast(freshShortPk);
             _ensureSeedDeposit();
-            ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, minQuoteOut);
+            ClearingHouse(payable(CH)).openPosition(marketId, false, SEED_SIZE, SeedLimits.shortMinQuoteOut(seedVamm, SEED_SIZE));
             ClearingHouse(payable(CH)).addMargin(marketId, SEED_MARGIN_X18);
             vm.stopBroadcast();
         }

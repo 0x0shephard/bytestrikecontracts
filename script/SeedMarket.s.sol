@@ -6,6 +6,8 @@ import {console} from "forge-std/console.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ICollateralVault} from "../src/Interfaces/ICollateralVault.sol";
 import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
+import {ClearingHouse} from "../src/ClearingHouse.sol";
+import {SeedLimits} from "./SeedLimits.sol";
 
 /// @title SeedMarket
 /// @notice Seeds a newly registered market with a minimal paired long+short position.
@@ -98,7 +100,9 @@ contract SeedMarket is Script {
         console.log("Step 2: Seed long wallet opens long position...");
         vm.startBroadcast(seedLongPk);
 
-        IClearingHouse(CLEARING_HOUSE).openPosition(MARKET_ID, true, SEED_SIZE, 0);
+        // Limit a few bps from the expected fill, so a trade sequenced ahead of the seed reverts it
+        address vamm = SeedLimits.vammOf(ClearingHouse(payable(CLEARING_HOUSE)).marketRegistry(), MARKET_ID);
+        IClearingHouse(CLEARING_HOUSE).openPosition(MARKET_ID, true, SEED_SIZE, SeedLimits.longMaxQuoteIn(vamm, SEED_SIZE));
 
         vm.stopBroadcast();
 
@@ -113,7 +117,7 @@ contract SeedMarket is Script {
         console.log("Step 3: Seed short wallet opens short position...");
         vm.startBroadcast(seedShortPk);
 
-        IClearingHouse(CLEARING_HOUSE).openPosition(MARKET_ID, false, SEED_SIZE, 0);
+        IClearingHouse(CLEARING_HOUSE).openPosition(MARKET_ID, false, SEED_SIZE, SeedLimits.shortMinQuoteOut(vamm, SEED_SIZE));
 
         vm.stopBroadcast();
 

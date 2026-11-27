@@ -8,6 +8,7 @@ import {CuOracle} from "../src/Oracle/CuOracle.sol";
 import {ClearingHouse} from "../src/ClearingHouse.sol";
 import {MarketRegistry} from "../src/MarketRegistry.sol";
 import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
+import {SeedLimits} from "./SeedLimits.sol";
 
 /// @title SeedAndUnpauseH100
 /// @notice Phase 5 of the Sepolia H100-PERP rollout: reveal the CuOracle price,
@@ -17,7 +18,12 @@ import {IClearingHouse} from "../src/Interfaces/IClearingHouse.sol";
 /// @dev MUST be run AT LEAST ONE BLOCK after DeploySepoliaH100 because
 ///      CuOracle::updatePrices requires `block.timestamp >= commitTime + 1s`.
 ///
-/// @dev Sign as the deployer (oracle owner; unpauses market) via `--account <keystore-name>`.
+/// @dev The market is listed unpaused, so it is open from the price reveal. The seed trades run with
+///      the trader allowlist enforced and only the seed wallets listed (nobody else trades yet), and
+///      with slippage limits a few bps from the expected fill (SeedLimits). Enforcement is switched
+///      back off at the end if it was off before.
+///
+/// @dev Sign as the deployer (oracle owner, ClearingHouse owner; unpauses market) via `--account <keystore-name>`.
 /// @dev Required env vars:
 ///        SEED_LONG_PK    - seed long wallet (already funded with USDC by Phase 1)
 ///        SEED_SHORT_PK   - seed short wallet (already funded with USDC by Phase 1)
@@ -37,9 +43,8 @@ contract SeedAndUnpauseH100 is Script {
     // amountLimit semantics (per ClearingHouse.openPosition docs):
     //   long  -> max quote tokens to SPEND   in WAD (1e18 units)
     //   short -> min quote tokens to RECEIVE in WAD
-    // Expected grossQuoteIn for 100 H100-hr at $4.22 mark with 1% slippage + 0.1% fee ≈ $427.
-    uint256 constant LONG_MAX_QUOTE_IN_X18  = 500e18;   // $500 budget cap
-    uint256 constant SHORT_MIN_QUOTE_OUT_X18 = 350e18;  // $350 minimum receive
+    // Both come from SeedLimits: SEED_SLIPPAGE_BPS from the fill expected at the reserves right
+    // before each seed trade.
 
     function run() external {
         uint256 seedLongPk  = vm.envUint("SEED_LONG_PK");
@@ -68,6 +73,20 @@ contract SeedAndUnpauseH100 is Script {
         console.log("Seed short: ", seedShort);
         console.log("");
 
+        address vamm = SeedLimits.vammOf(registryAddr, H100_PERP);
+        ClearingHouse ch = ClearingHouse(payable(chAddr));
+        bool allowlistWasEnforced = ch.allowlistEnforced();
+
+        // ── Step 0: only the seed wallets may deposit or open until both seeds land ──
+        vm.startBroadcast();
+        address[] memory seeds = new address[](2);
+        seeds[0] = seedLong;
+        seeds[1] = seedShort;
+        ch.setAllowedTraders(seeds, true);
+        if (!allowlistWasEnforced) ch.setAllowlistEnforced(true);
+        vm.stopBroadcast();
+        console.log("Step 0: trader allowlist enforced with the seed wallets listed");
+
         // ── Step 1: deployer reveals oracle price ─────────────────────────────
         vm.startBroadcast();
         CuOracle(cuOracle).updatePrices(H100_ASSET_ID, INITIAL_PRICE_X18, nonce);
@@ -78,7 +97,7 @@ contract SeedAndUnpauseH100 is Script {
         vm.startBroadcast(seedLongPk);
         IERC20(usdc).approve(vault, SEED_DEPOSIT_USDC);
         ClearingHouse(payable(chAddr)).deposit(usdc, SEED_DEPOSIT_USDC);
-        ClearingHouse(payable(chAddr)).openPosition(H100_PERP, true, SEED_SIZE, LONG_MAX_QUOTE_IN_X18);
+        ClearingHouse(payable(chAddr)).openPosition(H100_PERP, true, SEED_SIZE, SeedLimits.longMaxQuoteIn(vamm, SEED_SIZE));
         ClearingHouse(payable(chAddr)).addMargin(H100_PERP, SEED_MARGIN_X18);
         vm.stopBroadcast();
 
@@ -93,7 +112,7 @@ contract SeedAndUnpauseH100 is Script {
         vm.startBroadcast(seedShortPk);
         IERC20(usdc).approve(vault, SEED_DEPOSIT_USDC);
         ClearingHouse(payable(chAddr)).deposit(usdc, SEED_DEPOSIT_USDC);
-        ClearingHouse(payable(chAddr)).openPosition(H100_PERP, false, SEED_SIZE, SHORT_MIN_QUOTE_OUT_X18);
+        ClearingHouse(payable(chAddr)).openPosition(H100_PERP, false, SEED_SIZE, SeedLimits.shortMinQuoteOut(vamm, SEED_SIZE));
         ClearingHouse(payable(chAddr)).addMargin(H100_PERP, SEED_MARGIN_X18);
         vm.stopBroadcast();
 
@@ -104,11 +123,14 @@ contract SeedAndUnpauseH100 is Script {
         console.logInt(shortPos.size);
         console.log("  entry price: ", shortPos.entryPriceX18);
 
-        // ── Step 4: deployer unpauses the market ──────────────────────────────
+        // ── Step 4: deployer opens the market to everyone ─────────────────────
         vm.startBroadcast();
-        MarketRegistry(registryAddr).pauseMarket(H100_PERP, false);
+        if (MarketRegistry(registryAddr).isPaused(H100_PERP)) {
+            MarketRegistry(registryAddr).pauseMarket(H100_PERP, false);
+        }
+        if (!allowlistWasEnforced) ch.setAllowlistEnforced(false);
         vm.stopBroadcast();
-        console.log("Step 4: H100-PERP market unpaused");
+        console.log("Step 4: H100-PERP open for public trading");
 
         console.log("");
         console.log("============================================");
