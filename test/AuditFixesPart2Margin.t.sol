@@ -253,6 +253,38 @@ contract AuditFixesPart2MarginTest is BaseTest {
         clearingHouse.removeMargin(ETH_PERP, 1 ether);
     }
 
+    /// @dev Finding 57: removeMargin takes unrealized PnL at the index only, so its result cannot be
+    /// changed by trading the vAMM mark for one call. With the mark pushed below the index, the long
+    /// can remove exactly what it could with the mark at the index: down to the initial margin at
+    /// max(mark, index) net of its loss at the index.
+    function test_Finding57_removeMarginIgnoresMarkForPnL() public {
+        fundAndDeposit(alice, 10_000 * USDC_UNIT);
+        fundAndDeposit(bob, 50_000 * USDC_UNIT);
+        vm.startPrank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, 10 ether, 0);
+        clearingHouse.addMargin(ETH_PERP, 2_000 ether);
+        vm.stopPrank();
+
+        // bob pushes the mark about 5% below the unchanged index
+        vm.prank(bob);
+        clearingHouse.openPosition(ETH_PERP, false, 40 ether, 0);
+        uint256 index = oracle.getPrice();
+        assertLt(getMarkPrice(), index * 96 / 100);
+
+        IClearingHouse.PositionView memory pos = getPosition(alice);
+        uint256 imrReq = ((10 ether * index) / 1e18) * IMR_BPS / 10_000;
+        uint256 lossAtIndex = ((pos.entryPriceX18 - index) * 10 ether) / 1e18 + 1;
+        uint256 maxRemovable = pos.margin - imrReq - lossAtIndex;
+
+        vm.prank(alice);
+        vm.expectRevert(bytes4(keccak256("IMRBreach()")));
+        clearingHouse.removeMargin(ETH_PERP, maxRemovable + 2);
+
+        vm.prank(alice);
+        clearingHouse.removeMargin(ETH_PERP, maxRemovable - 1);
+        assertEq(getMargin(alice), pos.margin - maxRemovable + 1);
+    }
+
     /// @dev Draft finding 48: with under-backed quote collateral, the post-removal margin is valued
     /// against the post-removal reserved sum, so a removal that leaves the position fully backed
     /// and above IMR is accepted in one call.

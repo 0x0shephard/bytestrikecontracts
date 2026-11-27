@@ -269,8 +269,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     }
 
     /// @notice Removes margin from a specific position, making it available for withdrawal or use in other positions.
-    /// @dev The margin left must meet the initial margin requirement of the whole position at the higher of
-    ///      mark and index (net of any unrealized loss), stay above maintenance, and cover the liquidation penalty.
+    /// @dev The margin left plus min(unrealized PnL at the index, 0) must meet the initial margin of the
+    ///      whole position at the higher of mark and index, the margin left must stay above maintenance
+    ///      (PnL at the index) and cover the liquidation penalty. Unrealized profit never counts.
     /// @param marketId The ID of the market for the position.
     /// @param amount The amount of margin to remove (in quote currency value, 1e18).
     function removeMargin(bytes32 marketId, uint256 amount) external override {
@@ -279,15 +280,12 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
         PositionView storage position = positions[msg.sender][marketId];
         if (!(position.margin >= amount)) revert InsufficientMargin();
-        // Use the less favorable price between oracle and mark to prevent
-        // margin extraction when mark diverges from oracle.
+        // Unrealized PnL is taken at the index only: the vAMM mark can be moved for one call by a
+        // second account, so it must not decide how much margin leaves. Profit never counts towards
+        // the initial margin below.
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
         uint256 riskPrice = _getRiskPrice(m);
-        uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
-        uint256 conservativePrice = position.size > 0
-            ? (riskPrice < markPrice ? riskPrice : markPrice)
-            : (riskPrice > markPrice ? riskPrice : markPrice);
-        int256 unrealizedPnL = _computeUnrealizedPnL(position, conservativePrice);
+        int256 unrealizedPnL = _computeUnrealizedPnL(position, riskPrice);
         uint256 maintenanceMargin = _getMaintenanceMargin(msg.sender, marketId);
         // Use real-time collateral value for the margin component
         uint256 nominalAfter = position.margin - amount;
@@ -314,8 +312,10 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
             uint256 minMargin = _getLiquidationPenalty(msg.sender, marketId);
             if (!(nominalAfter >= minMargin)) revert MarginBelowPenalty();
 
-            // The margin left, net of any unrealized loss, must meet the initial margin of the whole
-            // position at the same price and rate as an open or increase.
+            // The margin left plus min(unrealized PnL at the index, 0), net of funding debt, must meet
+            // the initial margin of the whole position at max(mark, index), the price and rate of an
+            // open or increase. Moving the mark can only raise this requirement.
+            uint256 markPrice = IVAMM(m.vamm).getMarkPrice();
             uint256 imrPrice = markPrice > riskPrice ? markPrice : riskPrice;
             uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
             uint256 requiredMargin =
