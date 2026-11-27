@@ -5,6 +5,7 @@ import {IClearingHouse} from "./Interfaces/IClearingHouse.sol";
 import {ICollateralVault} from "./Interfaces/ICollateralVault.sol";
 import {IMarketRegistry} from "./Interfaces/IMarketRegistry.sol";
 import {IOracle} from "./Interfaces/IOracle.sol";
+import {IVAMM} from "./Interfaces/IVAMM.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
 
 /// @notice Storage layout and shared helpers of the ClearingHouse delegatecall targets
@@ -87,6 +88,30 @@ abstract contract ClearingHouseLogicBase {
             uint256(position.size > 0 ? position.size : -position.size), indexPrice, 1e18
         );
         return Calculations.mulDivRoundingUp(notional, feeIndex - position.lastHoldingFeeIndexX18, 1e18);
+    }
+
+    /// @dev Funding not yet settled for a position, from the vAMM's current (accrued) indices, minus
+    ///      the holding fee accrued since its last settlement.
+    function _pendingFunding(address account, bytes32 marketId) internal view returns (int256) {
+        IClearingHouse.PositionView storage position = positions[account][marketId];
+        if (position.size == 0) return 0;
+        IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
+        IVAMM vamm = IVAMM(m.vamm);
+        uint256 payDelta;
+        uint256 receiveDelta;
+        if (position.size > 0) {
+            payDelta = vamm.currentCumulativeLongPayPerUnitX18() - position.lastFundingPayIndex;
+            receiveDelta = vamm.currentCumulativeLongReceivePerUnitX18() - position.lastFundingReceiveIndex;
+        } else {
+            payDelta = vamm.currentCumulativeShortPayPerUnitX18() - position.lastFundingPayIndex;
+            receiveDelta = vamm.currentCumulativeShortReceivePerUnitX18() - position.lastFundingReceiveIndex;
+        }
+        uint256 absSize = uint256(position.size > 0 ? position.size : -position.size);
+        return (
+            receiveDelta >= payDelta
+                ? int256(Calculations.mulDiv(receiveDelta - payDelta, absSize, 1e18))
+                : -int256(Calculations.mulDivRoundingUp(payDelta - receiveDelta, absSize, 1e18))
+        ) - int256(_holdingFeeDue(position, m.oracle, _holdingFeeIndex(holdingFees[marketId])));
     }
 
     function _reservedMarginForToken(address account, address quoteToken) internal view returns (uint256 reserved) {

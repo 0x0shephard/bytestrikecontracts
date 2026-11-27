@@ -931,9 +931,10 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
     }
 
     /// @dev Takes up to `need` token units from margin the account's open positions in `quoteToken` hold
-    ///      above both their maintenance requirement (equity net of funding debt) and their liquidation
-    ///      penalty floor, lowering those margins so reserved margin stays backed by the balance. A
-    ///      market whose index cannot be read keeps its margin instead of reverting the liquidation.
+    ///      above both their maintenance requirement (equity net of funding debt and of pending funding
+    ///      owed) and their liquidation penalty floor, lowering those margins so reserved margin stays
+    ///      backed by the balance. A market whose index cannot be read keeps its margin instead of
+    ///      reverting the liquidation.
     ///      `skipMarket` (the market being liquidated, or 0) is never drawn from.
     function _drawSurplusMargin(
         address account,
@@ -970,6 +971,12 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
             uint256 mm = Calculations.mulDivRoundingUp(notional, rp.mmrBps, BPS_DENOMINATOR);
             uint256 backedMargin = Calculations.mulDiv(p.margin, backedX18, reserved);
             int256 equity = int256(backedMargin) + _computeUnrealizedPnL(p, riskPrice) - int256(p.fundingDebt);
+            // Funding it still owes (unsettled, e.g. flushed when its market was paused) is charged at its
+            // next settlement, so it is not surplus either; pending credits are not counted.
+            {
+                int256 pending = _pendingFunding(account, markets[i]);
+                if (pending < 0) equity += pending;
+            }
             if (equity <= int256(mm)) continue;
             // Value that can leave: above maintenance, within the backed margin, and leaving the
             // position at least its penalty floor (taken in nominal margin below).
