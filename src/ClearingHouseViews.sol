@@ -59,8 +59,9 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
     ///      Replays settleAccountFunding over the account's markets on the same quote token, in the
     ///      same order and with the same rules: a credit adds its tokens to the balance and their value
     ///      to that market's margin; a debit (pending funding net of carried debt) is paid up to the
-    ///      paying market's margin plus the free collateral value and the balance, the rest staying as
-    ///      debt; then markets left in debt are retried. Pending funding is read from the vAMMs'
+    ///      backed part of the paying market's margin plus the free collateral value and the balance
+    ///      (cutting paid * reserved / value of nominal margin when the balance is worth less than the
+    ///      reserve), the rest staying as debt; then markets left in debt are retried. Pending funding is read from the vAMMs'
     ///      current indices.
     function carriesFundingDebt(address account, bytes32 marketId) external view returns (bool) {
         if (_pendingFunding(account, marketId) - int256(positions[account][marketId].fundingDebt) >= 0) {
@@ -103,7 +104,10 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
                 } else {
                     uint256 debit = uint256(-x);
                     uint256 value = bal == 0 ? 0 : _quoteValueX18(quote, bal);
-                    uint256 cap = margin[i] + (value > reserved ? value - reserved : 0);
+                    // Below the reserved margin each margin is backed only in the ratio value / reserved.
+                    uint256 cap = value >= reserved
+                        ? margin[i] + (value - reserved)
+                        : Calculations.mulDiv(margin[i], value, reserved);
                     uint256 paidX18 = debit < cap ? debit : cap;
                     uint256 units = Calculations.mulDivRoundingUp(paidX18, baseUnit, 1e18);
                     if (units > bal) {
@@ -111,7 +115,10 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
                         paidX18 = Calculations.mulDiv(bal, 1e18, baseUnit);
                     }
                     bal -= units;
-                    uint256 cut = paidX18 < margin[i] ? paidX18 : margin[i];
+                    uint256 cut = paidX18 == 0 || value >= reserved
+                        ? paidX18
+                        : Calculations.mulDivRoundingUp(paidX18, reserved, value);
+                    if (cut > margin[i]) cut = margin[i];
                     margin[i] -= cut;
                     reserved = reserved > cut ? reserved - cut : 0;
                     net[i] = -int256(debit - paidX18);
