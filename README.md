@@ -408,12 +408,28 @@ Flow:
    average price stays within d = (mmrBps - liquidationPenaltyBps) / 10000 of the index (at or above
    index * (1 - d) closing a long, at or below index * (1 + d) closing a short). The rest
    stays open for later calls once arbitrage restores the mark.
+   Liquidation progress therefore depends on arbitrage: a capped call from a mark at the index
+   leaves the mark at about index * (1 - d)^2 (index * (1 + d)^2 for a short), outside the band,
+   so further liquidations on that side revert until someone trades the mark back toward the
+   index (or the index moves to it). In a fast move, liquidations of large positions (and of
+   other positions on the same side) can lag behind the index for as long as the mark is not
+   restored, and that delay can add bad debt. Operators should run a mark-restoring arbitrage
+   bot next to the liquidation keepers, with collateral to trade the mark back after each
+   capped call.
 4. Calculate liquidation penalty:
    penalty = min(notional * liquidationPenaltyBps / 10000, penaltyCap - alreadyCharged)
    where alreadyCharged is the penalty the position has paid since it last became liquidatable,
    so a liquidation split over several calls pays at most penaltyCap in total. The running
-   total resets once a liquidation leaves the position healthy or closed, and on addMargin
-   or a trade.
+   total resets once the position is no longer liquidatable: after a liquidation leaves it
+   healthy or closed, after a top-up (addMargin, depositMargin) that cures it, or at the
+   account's next settlement, trade or withdrawal. A top-up that leaves it liquidatable keeps
+   the running total.
+   A call that leaves size open collects only the keeper's half of its penalty; the protocol's
+   half stays owed on the position (PositionView.liquidationPenaltyOwed) until the episode ends,
+   so the account's collateral first covers the loss of the later calls and the insurance fund
+   never pays for loss that half would have covered. At the end of the episode the owed half is
+   collected (free collateral, then surplus margin); what the account cannot pay is recorded as
+   bad debt.
 5. Calculate equity:
    equity = position.margin + realizedPnL (from closing)
 

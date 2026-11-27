@@ -266,6 +266,7 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
             markPrice > riskPrice ? markPrice : riskPrice, 1e18
         ).mulDiv(marketRiskParams[marketId].imrBps, BPS_DENOMINATOR);
         if (equityAfter > int256(imrMargin)) revert ExceedsMarginTopUp();
+        _endPenaltyEpisode(msg.sender, marketId);
         emit CollateralDeposited(msg.sender, m.quoteToken, amount);
         emit MarginAdded(msg.sender, marketId, valueX18);
     }
@@ -331,8 +332,8 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
             revert InsufficientQuoteBalance();
         }
         positions[msg.sender][marketId].margin += amount;
-        positions[msg.sender][marketId].liquidationPenaltyCharged = 0;
         _totalReservedMargin[msg.sender] += amount;
+        _endPenaltyEpisode(msg.sender, marketId);
         emit MarginAdded(msg.sender, marketId, amount);
     }
 
@@ -894,10 +895,9 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
                 emit BadDebtRecorded(account, marketId, uncompensatedBadDebt);
             }
 
-            // Route protocol share of penalty
-            if (routeAmount > 0) {
-                _routeLiqPenalty(account, marketId, routeAmount, m);
-            }
+            // The protocol's share stays owed until the episode ends (below), so while size stays
+            // open the account's collateral first covers the loss of the later calls.
+            position.liquidationPenaltyOwed += routeAmount;
         }
 
         // A partial liquidation must not leave the remainder with a worse margin ratio than the
@@ -912,8 +912,9 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
             }
         }
 
-        // The episode ends once the position is healthy again (or closed): the next one gets a full cap.
-        if (!_isLiquidatable(account, marketId)) position.liquidationPenaltyCharged = 0;
+        // The episode ends once the position is healthy again (or closed): the protocol's owed share is
+        // collected and the next episode gets a full cap.
+        _endPenaltyEpisode(account, marketId);
 
         emit LiquidationExecuted(
             marketId,
@@ -1126,6 +1127,29 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         );
     }
 
+    /// @notice Ends a position's liquidation penalty episode if it is no longer liquidatable.
+    /// @dev Self-call only (ClearingHouseLogic.settleAccountFunding).
+    function endPenaltyEpisode(address account, bytes32 marketId) external {
+        if (msg.sender != address(this)) revert NotSelf();
+        _endPenaltyEpisode(account, marketId);
+    }
+
+    /// @dev While the position is liquidatable, or its state cannot be read (e.g. its index is down),
+    ///      nothing changes. Otherwise the running penalty total is reset and the protocol's owed share
+    ///      of the episode's penalties is collected (_routeLiqPenalty).
+    function _endPenaltyEpisode(address account, bytes32 marketId) internal {
+        try this.isLiquidatable(account, marketId) returns (bool liquidatable) {
+            if (liquidatable) return;
+        } catch {
+            return;
+        }
+        PositionView storage position = positions[account][marketId];
+        position.liquidationPenaltyCharged = 0;
+        uint256 owed = position.liquidationPenaltyOwed;
+        position.liquidationPenaltyOwed = 0;
+        _routeLiqPenalty(account, marketId, owed, IMarketRegistry(marketRegistry).getMarket(marketId));
+    }
+
     /// @dev Delegatecalls ClearingHouseLogic with `data`, bubbling up any revert; returns its return data.
     function _delegate(bytes memory data) internal returns (bytes memory ret) {
         bool ok;
@@ -1266,7 +1290,9 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         return IInsuranceFund(fund).totalReceived() - IInsuranceFund(fund).totalPaid();
     }
 
-    /// @notice Internal function to route liquidation penalties.
+    /// @notice Collects a liquidation penalty's protocol share for the market's fee router.
+    /// @dev Free collateral first, then surplus margin on the account's positions (_collectQuote); the
+    ///      part neither covers is recorded as bad debt, which the insurance fund does not pay.
     function _routeLiqPenalty(
         address account,
         bytes32 marketId,
@@ -1280,15 +1306,13 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         if (penaltyInQuoteDecimals == 0) return;
 
         (uint256 seized, uint256 shortfall) = _collectQuote(account, m.feeRouter, m.quoteToken, penaltyInQuoteDecimals);
-        // The insurance fund pays nothing toward the protocol's penalty share, so the whole
-        // uncollected share is recorded.
         if (shortfall > 0) {
             totalBadDebt += shortfall;
             emit BadDebtRecorded(account, marketId, shortfall);
         }
 
         // Booked to the router's vault balance; pushed and split in one self-call, or left booked
-        // for sweepFees if that fails, so a liquidation never reverts on the push.
+        // for sweepFees if that fails, so the caller never reverts on the push.
         if (seized > 0) {
             (bool ok,) = address(this).call(abi.encodeCall(this.pushFee, (m.feeRouter, m.quoteToken, seized, true)));
             if (!ok) pendingLiqPenalties[m.feeRouter][m.quoteToken] += seized;

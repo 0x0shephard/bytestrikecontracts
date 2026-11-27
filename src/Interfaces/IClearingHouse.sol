@@ -25,8 +25,15 @@ interface IClearingHouse {
         uint256 lastHoldingFeeIndexX18;
         // Liquidation penalty charged since the position last became liquidatable, in quote value
         // (1e18). The penalties of one liquidatable episode are capped at penaltyCap in total; reset
-        // once a liquidation leaves the position healthy or closed, and by addMargin or a trade.
+        // once the position is no longer liquidatable (after a liquidation, a top-up, at a settlement
+        // or before a trade).
         uint256 liquidationPenaltyCharged;
+        // Protocol share of the liquidation penalties of the current episode, in quote value (1e18), not
+        // yet collected: a liquidation call that leaves size open collects only the keeper's share, so
+        // the account's collateral still covers the loss of the later calls. Collected once the episode
+        // ends (the position closed or no longer liquidatable); what the account cannot pay then is
+        // recorded as bad debt.
+        uint256 liquidationPenaltyOwed;
     }
 
     struct MarketRiskParams {

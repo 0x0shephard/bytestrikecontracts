@@ -14,6 +14,10 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ClearingHouseLogicBase} from "./ClearingHouseLogicBase.sol";
 import {ClearingHouseViews} from "./ClearingHouseViews.sol";
 
+interface IPenaltyEpisode {
+    function endPenaltyEpisode(address account, bytes32 marketId) external;
+}
+
 /// @notice Logic contract for ClearingHouse heavy functions, called via delegatecall.
 /// @dev Storage layout comes from ClearingHouseLogicBase and MUST mirror ClearingHouse exactly.
 ///      Selectors not implemented here (views moved out for size) are forwarded by the fallback to
@@ -171,6 +175,21 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
             if (settled[i] && positions[account][markets[i]].fundingDebt != 0) {
                 _settleFundingInternal(markets[i], account);
             }
+        }
+        // A position that is no longer liquidatable ends its penalty episode before the account trades
+        // or withdraws (every settled market) or closes it (marketId), so the protocol's owed share is
+        // collected. A liquidation's own market is still liquidatable, and its siblings are left as they are.
+        for (uint256 i = 0; i < markets.length; i++) {
+            if (settled[i] && (!sameQuoteOnly || markets[i] == marketId)) _endPenaltyEpisodeIfOpen(account, markets[i]);
+        }
+    }
+
+    /// @dev ClearingHouse.endPenaltyEpisode (a self-call) for a position in a penalty episode
+    ///      (anything charged or owed).
+    function _endPenaltyEpisodeIfOpen(address account, bytes32 marketId) internal {
+        IClearingHouse.PositionView storage position = positions[account][marketId];
+        if (position.liquidationPenaltyCharged != 0 || position.liquidationPenaltyOwed != 0) {
+            IPenaltyEpisode(address(this)).endPenaltyEpisode(account, marketId);
         }
     }
 
