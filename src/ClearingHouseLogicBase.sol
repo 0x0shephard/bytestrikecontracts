@@ -113,9 +113,23 @@ abstract contract ClearingHouseLogicBase {
     ///      price capped at par (1e18 per whole token, before the haircut). Realized PnL and funding
     ///      are debited at par, so a token must not back more margin than it pays at that rate.
     function _quoteValueX18(address quoteToken, uint256 amount) internal view returns (uint256) {
+        return _parValueX18(quoteToken, amount, true);
+    }
+
+    /// @dev Value of credited tokens (realized profit or funding credit) as margin: the same par-capped
+    ///      value, but a credit the vault values at zero (dust after the haircut) backs no margin
+    ///      instead of reverting, so a dust credit cannot block the settlement that carries it.
+    function _creditValueX18(address quoteToken, uint256 amount) internal view returns (uint256) {
+        return _parValueX18(quoteToken, amount, false);
+    }
+
+    function _parValueX18(address quoteToken, uint256 amount, bool strict) private view returns (uint256) {
         if (amount == 0) return 0;
         uint256 v = ICollateralVault(vault).getTokenValueX18(quoteToken, amount);
-        if (!(v > 0)) revert QuoteTokenValuationUnavailable();
+        if (v == 0) {
+            if (strict) revert QuoteTokenValuationUnavailable();
+            return 0;
+        }
         ICollateralVault.CollateralConfig memory cfg = ICollateralVault(vault).getConfig(quoteToken);
         uint256 par = Calculations.mulDiv(
             Calculations.mulDiv(1e18, amount, cfg.baseUnit), BPS_DENOMINATOR - cfg.haircutBps, BPS_DENOMINATOR

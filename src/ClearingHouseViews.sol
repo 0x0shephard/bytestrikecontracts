@@ -95,7 +95,7 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
                 if (!sameQuote[i] || x == 0 || (pass == 1 && x > 0)) continue;
                 if (x > 0) {
                     uint256 units = Calculations.mulDiv(uint256(x), baseUnit, 1e18);
-                    uint256 v = _quoteValueX18(quote, units);
+                    uint256 v = _creditValueX18(quote, units);
                     bal += units;
                     margin[i] += v;
                     reserved += v;

@@ -375,7 +375,7 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
         if (realized != 0) {
             // Only a liquidation may realize a loss beyond the account's vault balance or the cap above.
             uint256 credited = _settlePnLInVault(account, marketId, realized, isLiquidation, 0, lossCapUnits);
-            if (realized > 0) creditValue = _quoteValueX18(m.quoteToken, credited);
+            if (realized > 0) creditValue = _creditValueX18(m.quoteToken, credited);
         }
 
         // Margin share of the closed slice, taken from the margin before any realized loss. A flip
@@ -628,7 +628,7 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
                 // Reserved at the haircut value of the tokens credited, as the margin checks value
                 // the balance, so a credit never leaves the account's other margins unbacked.
                 uint256 creditValue =
-                    _quoteValueX18(m.quoteToken, _settlePnLInVault(account, marketId, net, true, 0, 0));
+                    _creditValueX18(m.quoteToken, _settlePnLInVault(account, marketId, net, true, 0, 0));
                 position.margin += creditValue;
                 _totalReservedMargin[account] += creditValue;
             } else if (net < 0) {
