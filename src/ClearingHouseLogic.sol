@@ -821,7 +821,8 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
     }
 
     /// @dev Pays up to `amount` quote tokens from the market's insurance fund into the vault, capped
-    /// at the fund's tracked balance (what payout enforces). Returns the amount paid; 0 if the fund
+    /// at the fund's tracked balance (what payout enforces). Returns the amount the vault received
+    /// (its balance delta, net of any transfer fee); 0 if the fund
     /// is unset, holds a different token, is empty, or the payout reverts.
     function _drawInsurance(IMarketRegistry.Market memory m, uint256 amount) internal returns (uint256 paid) {
         if (m.insuranceFund == address(0)) return 0;
@@ -830,9 +831,14 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
         uint256 tracked = fund.totalReceived() - fund.totalPaid();
         paid = amount < tracked ? amount : tracked;
         if (paid == 0) return 0;
+        // Only what the vault actually received backs the loss: a quote token with a transfer fee
+        // delivers less than the payout, and the shortfall must stay in the bad debt.
+        uint256 before = IERC20(m.quoteToken).balanceOf(vault);
         try fund.payout(vault, paid) {} catch {
-            paid = 0;
+            return 0;
         }
+        uint256 received = IERC20(m.quoteToken).balanceOf(vault) - before;
+        if (received < paid) paid = received;
     }
 
     function _routeTradeFee(address account, uint256 fee, IMarketRegistry.Market memory m) internal {
