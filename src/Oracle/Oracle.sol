@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 //@dev - having same stale time period for uptime and price staleness check
 
 import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import {AggregatorV3Interface, AggregatorInterface} from "./interfaces/AggregatorV3Interface.sol";
+import {AggregatorV3Interface, AggregatorInterface} from "./Interfaces/AggregatorV3Interface.sol";
 
 // --- Errors ---
 error ChainlinkOracle_NoPriceFeed();
