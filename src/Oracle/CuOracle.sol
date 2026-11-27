@@ -11,7 +11,8 @@ import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step
  * Publishers can only move a price within maxPriceMoveBps of its last value and within maxPriceMoveBps of the
  * price the owner last revealed for the asset (its anchor), so chained publisher reveals cannot compound.
  * Publishers cannot set an asset's first price. Only the owner can reveal outside those bounds, which also
- * re-centres the anchor.
+ * re-centres the anchor. A commitment can only be revealed by its maker or the owner, so a publisher cannot
+ * consume the owner's commitment and leave the anchor behind.
  */
 contract CuOracle is Ownable2Step {
     // --- Custom Errors ---
@@ -30,6 +31,7 @@ contract CuOracle is Ownable2Step {
     error CommitRevealDelayNotMet();
     error CommitExpired();
     error CommitPendingFromAnotherPublisher();
+    error NotCommitOwner();
     error RoleAlreadyGranted();
     error RoleNotGranted();
     error InvalidPriceMoveLimit();
@@ -154,6 +156,11 @@ contract CuOracle is Ownable2Step {
         bytes32 commit = priceCommits[_assetId];
         if (commit == 0) revert NoPriceCommitted();
 
+        // Only the commitment's maker or the owner can reveal it, so a publisher that learns another
+        // party's nonce (for example the owner's, from a pending multisig proposal) cannot consume it
+        address maker = commitOwners[_assetId];
+        if (msg.sender != maker && msg.sender != owner()) revert NotCommitOwner();
+
         uint256 commitTime = commitTimestamps[_assetId];
 
         // Ensure minimum delay between commit and reveal
@@ -171,6 +178,8 @@ contract CuOracle is Ownable2Step {
             revert InvalidPrice();
         }
 
+        // A publisher can only reach this point with its own commitment, so the anchor moves only on a
+        // price the owner itself chose to publish (its own commitment, or a publisher's it reveals)
         if (msg.sender != owner()) {
             _checkPriceMove(latestPrices[_assetId].price, _price);
             _checkPriceMove(ownerAnchorPrices[_assetId], _price);
