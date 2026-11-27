@@ -497,6 +497,9 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	/// @dev ClearingHouse-only: funding may only accrue when ClearingHouse can also settle it, so the
 	///      ClearingHouse checks the quote-token oracle first and calls skipFunding instead when it is down.
 	///      Keepers advance funding through ClearingHouse.settleFunding.
+	/// @dev Funding for a gap past the cap is not charged, so a keeper must settle every market at least
+	///      every 30 minutes (script/FundingKeeper.s.sol). The cap stays: it bounds what the first
+	///      settlement after an outage that no settlement observed can charge.
 	uint256 public constant MAX_FUNDING_ELAPSED = 1 hours; // 1 hour cap per update
 
 	function pokeFunding() external onlyCH returns (uint256 longPay, uint256 longReceive, uint256 shortPay, uint256 shortReceive) {

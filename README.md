@@ -454,6 +454,8 @@ cumulativeFundingPerUnitX18 += fundingRatePerHour * elapsedHours
 lastFundingTime = block.timestamp
 ```
 
+**Accrual cap and funding keeper**: one accrual covers at most `MAX_FUNDING_ELAPSED` (1 hour); the funding clock still moves to the current time, so the part of a gap past the first hour is never charged. The cap is kept because it bounds what the first settlement after an oracle outage that no settlement observed can charge. A keeper must therefore call `ClearingHouse.settleFunding(marketId, address(0))` on every market at least every 30 minutes (`script/FundingKeeper.s.sol`, run with `CLEARING_HOUSE` and a comma-separated `MARKET_IDS`). While the quote-token oracle is down, settlement accrues funding up to the moment the feed went down (stale round, sequencer outage) and skips only the outage itself.
+
 **Settlement for User**:
 ```solidity
 fundingDelta = cumulativeFundingPerUnitX18 - position.lastFundingIndex
