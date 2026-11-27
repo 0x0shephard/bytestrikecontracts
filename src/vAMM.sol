@@ -648,6 +648,10 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		} else {
 			// Skip the paused interval for funding so it doesn't retroactively accrue
 			lastFundingTimestamp = uint64(block.timestamp);
+			// Refresh the index cached at pause time so the first accrual prices against the current index
+			try IOracle(oracle).getPrice() returns (uint256 price) {
+				if (price > 0) _cachedIndexPriceX18 = price;
+			} catch {}
 		}
 		swapsPaused = paused;
 		emit SwapsPaused(paused);

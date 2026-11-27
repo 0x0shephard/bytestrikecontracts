@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import {BaseTest} from "./BaseTest.sol";
 import {ClearingHouse} from "../src/ClearingHouse.sol";
 
-/// @notice Regression tests for margin top-ups on paused markets (Cyfrin bytestrike part 2, finding 17
+/// @notice Regression tests for paused markets (Cyfrin bytestrike part 2, findings 17 and 28
 /// and draft 42).
 contract AuditFixesPart2PauseTest is BaseTest {
     function _openThinLongAndPause() internal {
@@ -58,5 +58,35 @@ contract AuditFixesPart2PauseTest is BaseTest {
 
         assertEq(clearingHouse._totalReservedMargin(alice), 0, "nothing booked");
         assertEq(getMargin(alice), 0, "no margin on the empty position");
+    }
+
+    /// @notice Finding 28: unpausing refreshes the cached index, so the first accrual after the pause
+    /// prices funding against the current index rather than the one from before the pause.
+    function test_Finding28_unpauseRefreshesCachedIndex() public {
+        address carol = makeAddr("carol");
+        fundAndDeposit(alice, 100_000 * USDC_UNIT);
+        fundAndDeposit(carol, 100_000 * USDC_UNIT);
+        vm.prank(alice);
+        clearingHouse.openPosition(ETH_PERP, true, 10 ether, 0);
+        vm.prank(carol);
+        clearingHouse.openPosition(ETH_PERP, false, 1 ether, 0);
+        uint256 t = block.timestamp;
+        settleFunding(carol); // cache the pre-pause index (mark is above it: longs would pay)
+
+        vm.prank(admin);
+        marketRegistry.pauseMarket(ETH_PERP, true);
+        // During the pause the index moves above the mark: from now on shorts pay.
+        uint256 newIndex = (getMarkPrice() * 105) / 100;
+        setOraclePrice(newIndex);
+        vm.prank(admin);
+        marketRegistry.pauseMarket(ETH_PERP, false);
+        assertEq(vamm.cachedIndexPrice(), newIndex, "cache not refreshed on unpause");
+
+        uint256 longPayBefore = vamm.cumulativeLongPayPerUnitX18();
+        uint256 shortPayBefore = vamm.cumulativeShortPayPerUnitX18();
+        vm.warp(t + 1 hours);
+        settleFunding(carol);
+        assertEq(vamm.cumulativeLongPayPerUnitX18(), longPayBefore, "longs charged against the stale index");
+        assertGt(vamm.cumulativeShortPayPerUnitX18(), shortPayBefore, "shorts not charged");
     }
 }
