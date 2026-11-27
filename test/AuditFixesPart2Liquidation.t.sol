@@ -18,8 +18,7 @@ contract AuditFixesPart2LiquidationTest is BaseTest {
     function _clampSellsTo(uint256 dx) internal {
         (, uint256 y) = getReserves();
         uint256 minQuote = y - _quoteOutForSell(dx);
-        vm.prank(admin);
-        vamm.setMinReserves(0, minQuote);
+        forceMinReserves(0, minQuote);
     }
 
     // ---------------------------------------------------------------------

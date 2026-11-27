@@ -74,8 +74,7 @@ contract PositionSizeLimitsTest is BaseTest {
 
         // Base floor leaves 9.5 ETH of room: a full close of the 10 ETH short is clamped to 9.5
         (uint256 baseReserve,) = getReserves();
-        vm.prank(admin);
-        vamm.setMinReserves(baseReserve - 9.5 ether, 0);
+        forceMinReserves(baseReserve - 9.5 ether, 0);
 
         vm.prank(alice);
         clearingHouse.closePosition(ETH_PERP, ethQty(10), 0);

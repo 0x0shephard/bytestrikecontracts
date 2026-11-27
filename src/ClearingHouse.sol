@@ -179,8 +179,9 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
         _;
     }
 
-    /// @notice Modifier to restrict risk-increasing trader functions (deposit, openPosition) while the allowlist is enforced.
+    /// @notice Modifier to restrict risk-increasing trader functions (openPosition) while the allowlist is enforced.
     /// @dev Exits (closePosition, addMargin, removeMargin, withdraw) stay open so a removed wallet can always de-risk and leave.
+    ///      deposit is gated only for wallets without an open position, so a removed holder can top up.
     /// @dev Reads the wallet's entry first so a listed trader pays for one storage read.
     modifier onlyAllowedTrader() {
         if (!allowedTraders[msg.sender] && allowlistEnforced) revert TraderNotAllowed();
@@ -214,7 +215,12 @@ contract ClearingHouse is Initializable, OwnableUpgradeable, UUPSUpgradeable, Re
     /// @notice Deposits collateral into the vault for the caller.
     /// @param token The address of the ERC20 token to deposit.
     /// @param amount The amount of the token to deposit.
-    function deposit(address token, uint256 amount) external override onlyAllowedTrader nonReentrant {
+    /// @dev While the allowlist is enforced, an unlisted wallet can deposit only if it has an open
+    ///      position, so a holder removed from the allowlist can still top up its margin.
+    function deposit(address token, uint256 amount) external override nonReentrant {
+        if (allowlistEnforced && !allowedTraders[msg.sender] && _userActiveMarkets[msg.sender].length == 0) {
+            revert TraderNotAllowed();
+        }
         if (!(amount > 0)) revert AmountZero();
         ICollateralVault(vault).deposit(token, amount, msg.sender);
         emit CollateralDeposited(msg.sender, token, amount);

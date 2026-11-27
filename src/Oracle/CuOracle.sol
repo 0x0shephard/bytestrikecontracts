@@ -233,6 +233,8 @@ contract CuOracle is Ownable2Step {
      * @param _newDelay The new minimum delay in seconds.
      */
     function updateCommitRevealDelay(uint256 _newDelay) external onlyOwner {
+        // The delay must stay below the maximum commit age, or no commit could ever be revealed
+        if (_newDelay >= maxCommitAge) revert InvalidInterval();
         minCommitRevealDelay = _newDelay;
         emit CommitRevealDelayUpdated(_newDelay);
     }
@@ -243,6 +245,7 @@ contract CuOracle is Ownable2Step {
      */
     function updateMaxCommitAge(uint256 _newMaxAge) external onlyOwner {
         if (_newMaxAge == 0) revert InvalidInterval();
+        if (_newMaxAge <= minCommitRevealDelay) revert InvalidInterval();
         maxCommitAge = _newMaxAge;
         emit MaxCommitAgeUpdated(_newMaxAge);
     }

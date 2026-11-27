@@ -20,8 +20,7 @@ contract AuditFixesPart2LiquidationFloorTest is BaseTest {
 
         // Floor 100 quote below the reserve; bob's oversized short fills to it.
         (, uint256 y) = getReserves();
-        vm.prank(admin);
-        vamm.setMinReserves(0, y - 100 ether);
+        forceMinReserves(0, y - 100 ether);
         vm.prank(bob);
         clearingHouse.openPosition(ETH_PERP, false, 10 ether, 0);
         (, y) = getReserves();
@@ -45,8 +44,7 @@ contract AuditFixesPart2LiquidationFloorTest is BaseTest {
         assertTrue(isLiquidatable(alice));
 
         (uint256 x,) = getReserves();
-        vm.prank(admin);
-        vamm.setMinReserves(x - 0.05 ether, 0);
+        forceMinReserves(x - 0.05 ether, 0);
         vm.prank(bob);
         clearingHouse.openPosition(ETH_PERP, true, 10 ether, 0);
         (x,) = getReserves();

@@ -43,14 +43,6 @@ contract UpgradeVAMMWithReserveProtection is Script {
         proxy.upgradeToAndCall(address(newImpl), "");
         console.log("Proxy upgraded successfully!");
 
-        // Set minimum reserves
-        console.log("");
-        console.log("Setting minimum reserves...");
-        console.log("  Min Base Reserve:", MIN_RESERVE_BASE / 1e18, "GPU-HRS");
-        console.log("  Min Quote Reserve:", MIN_RESERVE_QUOTE / 1e18, "USDC");
-        proxy.setMinReserves(MIN_RESERVE_BASE, MIN_RESERVE_QUOTE);
-        console.log("Minimum reserves set!");
-
         // Reset reserves to rescue from depleted state
         console.log("");
         console.log("Resetting reserves to rescue vAMM...");
@@ -62,6 +54,15 @@ contract UpgradeVAMMWithReserveProtection is Script {
         // resetReserves reverts while long and short open interest differ (audit finding 2).
         proxy.resetReserves(NEW_PRICE_X18, NEW_BASE_RESERVE);
         console.log("Reserves reset successfully!");
+
+        // Set minimum reserves after the reset: a floor may take at most half of the live reserve
+        // (vAMM.MAX_FLOOR_BPS, audit finding 27), which a depleted reserve would not allow.
+        console.log("");
+        console.log("Setting minimum reserves...");
+        console.log("  Min Base Reserve:", MIN_RESERVE_BASE / 1e18, "GPU-HRS");
+        console.log("  Min Quote Reserve:", MIN_RESERVE_QUOTE / 1e18, "USDC");
+        proxy.setMinReserves(MIN_RESERVE_BASE, MIN_RESERVE_QUOTE);
+        console.log("Minimum reserves set!");
 
         // Verify the upgrade
         console.log("");

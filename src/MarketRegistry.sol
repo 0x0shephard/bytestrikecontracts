@@ -12,6 +12,8 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 contract MarketRegistry is IMarketRegistry, AccessControl {
     // marketId => Market data
     mapping(bytes32 MarketId => Market) public markets;
+    /// @notice Whether a vAMM already backs a registered market (a vAMM serves exactly one market).
+    mapping(address vamm => bool) public vammInUse;
 
     /// @notice Max trade fee in basis points that governance allows (3.00%).
     uint16 public constant MAX_FEE_BPS = 300; // 3.00% cap
@@ -62,6 +64,7 @@ contract MarketRegistry is IMarketRegistry, AccessControl {
         require(config.marketId != bytes32(0), "Zero marketId");
         require(market.vamm == address(0), "Market Exists");
         require(config.vamm != address(0), "vAMM addr(0)");
+        require(!vammInUse[config.vamm], "vAMM in use");
         require(config.oracle != address(0), "Oracle addr(0)");
         require(config.baseAsset != address(0), "Base addr(0)");
         require(config.quoteToken != address(0), "Quote addr(0)");
@@ -77,6 +80,7 @@ contract MarketRegistry is IMarketRegistry, AccessControl {
         Market storage market
     ) private {
         market.vamm = config.vamm;
+        vammInUse[config.vamm] = true;
         market.feeBps = config.feeBps;
         market.paused = false;          // markets start unpaused
         market.oracle = config.oracle;

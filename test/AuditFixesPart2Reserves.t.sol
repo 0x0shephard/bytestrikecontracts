@@ -59,8 +59,7 @@ contract AuditFixesPart2ReservesTest is BaseTest {
     /// to the room above the floor like any other oversized order, instead of reverting.
     function test_Finding56_buyOfWholeReserveIsClampedAtFloor() public {
         (uint256 base,) = getReserves();
-        vm.prank(admin);
-        vamm.setMinReserves(base - 10 ether, 0);
+        forceMinReserves(base - 10 ether, 0);
 
         vm.prank(address(clearingHouse));
         (int256 baseDelta,,) = vamm.buyBase(uint128(base), 0);
@@ -90,8 +89,7 @@ contract AuditFixesPart2ReservesTest is BaseTest {
     /// the full-order total.
     function test_Finding39_clampedBuyKeepsLimitPrice() public {
         (uint256 base,) = getReserves();
-        vm.prank(admin);
-        vamm.setMinReserves(base - 4 ether, 0); // 4 ETH of room
+        forceMinReserves(base - 4 ether, 0); // 4 ETH of room
         uint256 cost4 = _quoteToBuy(4 ether);
 
         // A 10 ETH order whose limit price is 1% below the clamped fill's price, but whose total
@@ -119,8 +117,7 @@ contract AuditFixesPart2ReservesTest is BaseTest {
         vm.revertToState(snap);
 
         // Floor leaves room for about 4 ETH of the 10 ETH sell
-        vm.prank(admin);
-        vamm.setMinReserves(0, quote - uint256(fullOut) * 4 / 10);
+        forceMinReserves(0, quote - uint256(fullOut) * 4 / 10);
 
         // Limit price 1% under the unclamped average: its full total is more than the clamped fill pays
         uint256 minOut = uint256(fullOut) * 99 / 100;
@@ -139,8 +136,7 @@ contract AuditFixesPart2ReservesTest is BaseTest {
         (, int256 fullOut,) = vamm.sellBase(10 ether, 0);
         vm.revertToState(snap);
 
-        vm.prank(admin);
-        vamm.setMinReserves(0, quote - uint256(fullOut) * 4 / 10);
+        forceMinReserves(0, quote - uint256(fullOut) * 4 / 10);
 
         // The clamped fill sells ~4 ETH at a better average than the full order; ask for 10% more
         vm.prank(address(clearingHouse));

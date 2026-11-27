@@ -62,6 +62,11 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	uint256 public constant RESET_COOLDOWN = 1 hours;
 	/// @notice Timestamp of the last resetReserves call
 	uint64 public lastResetTimestamp;
+	/// @notice Largest reserve floor, in bps of the live reserve: a floor may take at most half of it,
+	///         so trades keep real headroom above it.
+	uint256 public constant MAX_FLOOR_BPS = 5_000;
+	/// @notice Largest funding clamp per hour (1%), well inside the margin buffer above maintenance.
+	uint256 public constant MAX_FR_BPS_PER_HOUR = 100;
 
 	// ========= Funding surplus (appended storage) =========
 	/// @dev Per paying unit, the part of the long (short) pay index that no receiver is credited: the
@@ -121,6 +126,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(liquidity_ > 0, "L=0");
 		require(feeBps_ == 0, "vAMM fee must be 0");
 		require(frMaxBpsPerHour_ > 0, "frMax=0");
+		require(frMaxBpsPerHour_ <= MAX_FR_BPS_PER_HOUR, "frMax too high");
 		require(kFundingX18_ > 0, "kFunding=0");
 
 		__Ownable_init(msg.sender);
@@ -482,6 +488,7 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		_pokeFundingInternal();
 		require(feeBps_ == 0, "vAMM fee must be 0");
 		require(frMaxBpsPerHour_ > 0, "frMax=0");
+		require(frMaxBpsPerHour_ <= MAX_FR_BPS_PER_HOUR, "frMax too high");
 		require(kFundingX18_ > 0, "kFunding=0");
 		feeBps = feeBps_;
 		frMaxBpsPerHour = frMaxBpsPerHour_;
@@ -645,8 +652,9 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		if (paused) {
 			// Flush any accumulated funding under the current price before pausing
 			_pokeFundingInternal();
-		} else {
-			// Skip the paused interval for funding so it doesn't retroactively accrue
+		} else if (swapsPaused) {
+			// Skip the paused interval for funding so it doesn't retroactively accrue. Only on a
+			// paused-to-unpaused transition: a redundant unpause must not erase funding owed.
 			lastFundingTimestamp = uint64(block.timestamp);
 			// Refresh the index cached at pause time so the first accrual prices against the current index
 			try IOracle(oracle).getPrice() returns (uint256 price) {
@@ -690,9 +698,14 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 	}
 
 	/// @notice Sets minimum reserve thresholds to prevent reserve depletion
+	/// @dev Each floor may be at most MAX_FLOOR_BPS (half) of the live reserve, so a floor never sits at
+	///      or just under a reserve and blocks closes and liquidations on one side. A rescue sets the
+	///      floors after resetReserves, not before.
 	/// @param minBase_ Minimum base reserve (1e18 units)
 	/// @param minQuote_ Minimum quote reserve (1e18 units)
 	function setMinReserves(uint256 minBase_, uint256 minQuote_) external onlyOwner {
+		require(minBase_ <= reserveBase * MAX_FLOOR_BPS / BPS_DENOMINATOR, "minBase too close to reserve");
+		require(minQuote_ <= reserveQuote * MAX_FLOOR_BPS / BPS_DENOMINATOR, "minQuote too close to reserve");
 		minReserveBase = minBase_;
 		minReserveQuote = minQuote_;
 		emit MinReservesSet(minBase_, minQuote_);
@@ -733,8 +746,8 @@ contract vAMM is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, IVAMM 
 		require(Calculations.mulDiv(newQuoteReserve, 1e18, newBaseReserve) > 0, "mark price=0");
 
 		// Ensure new reserves meet minimum requirements
-		require(newBaseReserve >= minReserveBase, "base < min");
-		require(newQuoteReserve >= minReserveQuote, "quote < min");
+		require(minReserveBase <= newBaseReserve * MAX_FLOOR_BPS / BPS_DENOMINATOR, "base too close to min");
+		require(minReserveQuote <= newQuoteReserve * MAX_FLOOR_BPS / BPS_DENOMINATOR, "quote too close to min");
 
 		// Flush funding at current (pre-reset) mark price and refresh oracle cache
 		_pokeFundingInternal();

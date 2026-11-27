@@ -106,6 +106,8 @@ contract TraderAllowlistTest is BaseTest {
         vm.stopPrank();
     }
 
+    /// @dev A removed holder can still deposit to top up its position (audit finding 27), but not
+    ///      open more.
     function test_RemovedTraderCannotAddExposure() public {
         _aliceTradingWhileEnforced();
         _setAllowed(alice, false);
@@ -113,7 +115,6 @@ contract TraderAllowlistTest is BaseTest {
 
         vm.startPrank(alice);
         usdc.approve(address(vault), AMOUNT);
-        vm.expectRevert(ClearingHouse.TraderNotAllowed.selector);
         clearingHouse.deposit(address(usdc), AMOUNT);
 
         vm.expectRevert(ClearingHouse.TraderNotAllowed.selector);

@@ -338,6 +338,15 @@ abstract contract BaseTest is Test {
         oracle.setPrice(newPrice);
     }
 
+    /// @notice Sets the vAMM reserve floors directly in storage.
+    /// @dev setMinReserves only accepts floors up to vAMM.MAX_FLOOR_BPS of the live reserve (finding 27);
+    ///      tests of the floor clamp itself need a floor just under the reserve, so they write it here.
+    function forceMinReserves(uint256 minBase, uint256 minQuote) public {
+        vm.store(address(vamm), bytes32(uint256(8)), bytes32(minBase)); // vAMM.minReserveBase
+        vm.store(address(vamm), bytes32(uint256(9)), bytes32(minQuote)); // vAMM.minReserveQuote
+        require(vamm.minReserveBase() == minBase && vamm.minReserveQuote() == minQuote, "vAMM floor slots moved");
+    }
+
     /// @notice Get user's position
     function getPosition(address user) public view returns (IClearingHouse.PositionView memory) {
         return clearingHouse.getPosition(user, ETH_PERP);

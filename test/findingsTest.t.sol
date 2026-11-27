@@ -764,8 +764,7 @@ contract AuditFindingsTest is BaseTest {
         // amount of base can be bought before hitting the floor.
         (uint256 baseBefore, ) = getReserves();
         uint256 allowance = 5 ether; // only 5 ETH of capacity
-        vm.prank(admin);
-        vamm.setMinReserves(baseBefore - allowance, 0);
+        forceMinReserves(baseBefore - allowance, 0);
 
         // Alice deposits and opens a long larger than the available capacity.
         fundAndDeposit(alice, 500_000 * USDC_UNIT);
@@ -791,8 +790,7 @@ contract AuditFindingsTest is BaseTest {
         // Set minimum quote reserve close to current reserve.
         (, uint256 quoteBefore) = getReserves();
         uint256 allowedQuoteDrain = 5_000 ether; // ~$5000 worth of quote
-        vm.prank(admin);
-        vamm.setMinReserves(0, quoteBefore - allowedQuoteDrain);
+        forceMinReserves(0, quoteBefore - allowedQuoteDrain);
 
         // Alice deposits and opens a large short (sells base into the pool).
         fundAndDeposit(alice, 500_000 * USDC_UNIT);
