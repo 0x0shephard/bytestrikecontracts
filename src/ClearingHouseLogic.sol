@@ -588,10 +588,11 @@ contract ClearingHouseLogic is ClearingHouseLogicBase {
         IVAMM vamm = IVAMM(m.vamm);
 
         // No funding accrues while the market is not active: its traders cannot top up, trade or close.
+        // What the pause flushed (debit or credit) is still settled below, so a liquidation's own
+        // settlement books a paused sibling's flushed funding; the paused time itself stays uncharged.
         if (!IMarketRegistry(marketRegistry).isActive(marketId)) {
             vamm.skipFunding(0);
             _accrueHoldingFee(marketId, 0);
-            return;
         }
 
         // Funding only accrues while it can be settled in the quote token. If the quote oracle is
