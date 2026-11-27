@@ -912,9 +912,17 @@ contract ClearingHouseLogic {
         uint256 balance = ICollateralVault(vault).balanceOf(account, quoteToken);
         uint256 available;
         {
+            // Free is the share of the balance whose haircut value exceeds the reserved margin, as the
+            // margin, withdrawal and health checks value the balance.
             uint256 reservedForToken = _reservedMarginForToken(account, quoteToken);
-            uint256 reservedInTokenUnits = _notionalToQuoteUnits(reservedForToken, quoteToken);
-            available = balance > reservedInTokenUnits ? balance - reservedInTokenUnits : 0;
+            if (reservedForToken == 0) {
+                available = balance;
+            } else if (balance > 0) {
+                uint256 balanceValueX18 = _quoteValueX18(quoteToken, balance);
+                available = balanceValueX18 > reservedForToken
+                    ? Calculations.mulDiv(balance, balanceValueX18 - reservedForToken, balanceValueX18)
+                    : 0;
+            }
         }
         uint256 seized = amount <= available ? amount : available;
         actualReceived = seized;
