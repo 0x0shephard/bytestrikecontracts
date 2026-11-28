@@ -326,7 +326,10 @@ User calls: clearingHouse.closePosition(marketId, size, priceLimit)
 Flow:
 1. Settle pending funding
 2. Revert if this position, or any other position of the account on the same quote token,
-   is liquidatable (cure it with addMargin first)
+   is liquidatable (cure it with addMargin first). Another position whose index cannot be read,
+   or a liquidatable one on a paused market, does not block the close (no keeper can liquidate
+   it either), but while one is skipped the close's average fill must stay inside the
+   liquidation price band around the index
 3. Verify size <= |position.size|
 4. Execute reverse swap on vAMM:
    - Long closing: Sell base, receive quote
@@ -377,6 +380,7 @@ clearingHouse.addMargin(marketId, amount)
 // Transfers from vault balance to position.margin
 // Requires an open position; allowed while the market is paused
 // While a position on the same quote token is liquidatable, only liquidatable positions take margin
+// (a position whose index cannot be read counts as not liquidatable for this check)
 
 // Deposit quote tokens straight into a position's margin (top-up)
 clearingHouse.depositMargin(marketId, tokenAmount)

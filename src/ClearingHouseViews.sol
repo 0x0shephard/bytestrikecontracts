@@ -5,6 +5,7 @@ import {IClearingHouse} from "./Interfaces/IClearingHouse.sol";
 import {ICollateralVault} from "./Interfaces/ICollateralVault.sol";
 import {IMarketRegistry} from "./Interfaces/IMarketRegistry.sol";
 import {IVAMM} from "./Interfaces/IVAMM.sol";
+import {IOracle} from "./Interfaces/IOracle.sol";
 import {Calculations} from "./Libraries/Calculations.sol";
 import {ClearingHouseLogicBase} from "./ClearingHouseLogicBase.sol";
 
@@ -24,6 +25,7 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
     error InvalidLiquidationPriceBand();
     error InvalidOpenInterestCaps();
     error LiquidationReactionWindow();
+    error LiquidationPriceOutOfBand(uint256 markPriceX18, uint256 indexPriceX18);
 
     // Admin setters, moved from ClearingHouse for size (ClearingHouse checks onlyAdmin and forwards).
 
@@ -97,18 +99,69 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
         emit IClearingHouse.LiquidationPriceBandSet(marketId, bandBps);
     }
 
-    /// @notice True if a position of the account on `quoteToken`, other than the one in `skip`, is
-    ///         liquidatable (ClearingHouse.isLiquidatable).
-    /// @dev Delegatecall target of ClearingHouse._hasLiquidatable.
-    function hasLiquidatable(address account, address quoteToken, bytes32 skip) external view returns (bool) {
+    /// @notice 1 if a position of the account on `quoteToken`, other than the one in `skip`, is
+    ///         liquidatable (ClearingHouse.isLiquidatable); otherwise 2 if `mode` skipped a position,
+    ///         else 0.
+    /// @dev Delegatecall target of ClearingHouse._hasLiquidatable. Mode 0 (withdraw, openPosition)
+    ///      reads every position and reverts if an index cannot be read. Mode 1 (addMargin) skips a
+    ///      position whose index cannot be read; mode 2 (closePosition) also skips a liquidatable
+    ///      position on a paused market. No keeper can liquidate a skipped position until its index or
+    ///      market is back, so it does not block the call.
+    function hasLiquidatable(address account, address quoteToken, bytes32 skip, uint256 mode)
+        external
+        view
+        returns (uint256 result)
+    {
         bytes32[] memory markets = _userActiveMarkets[account];
         for (uint256 i = 0; i < markets.length; i++) {
-            if (
-                markets[i] != skip && IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken == quoteToken
-                    && IClearingHouse(address(this)).isLiquidatable(account, markets[i])
-            ) return true;
+            if (markets[i] == skip) continue;
+            IMarketRegistry.Market memory mk = IMarketRegistry(marketRegistry).getMarket(markets[i]);
+            if (mk.quoteToken != quoteToken) continue;
+            if (mode != 0 && !_indexReadable(mk.oracle)) {
+                result = 2;
+                continue;
+            }
+            if (IClearingHouse(address(this)).isLiquidatable(account, markets[i])) {
+                if (mode == 2 && !IMarketRegistry(marketRegistry).isActive(markets[i])) {
+                    result = 2;
+                    continue;
+                }
+                return 1;
+            }
         }
-        return false;
+    }
+
+    /// @notice Reverts if a close's average fill is worse than the index by more than the market's
+    ///         liquidation price band: below index * (1 - band) closing a long, above
+    ///         index * (1 + band) closing a short.
+    /// @dev Delegatecall target of ClearingHouse.closePosition while it skips another position of the
+    ///      account that no keeper can liquidate yet, so a mark pushed by a second account cannot move
+    ///      the collateral that liquidation will draw on out through the close. The band is
+    ///      ClearingHouse.liquidationPriceBandBps.
+    function checkCloseFill(bytes32 marketId, bool closingLong, int256 baseDelta, int256 quoteDelta) external view {
+        uint256 absBase = uint256(baseDelta >= 0 ? baseDelta : -baseDelta);
+        if (absBase == 0) return;
+        uint256 fillX18 = Calculations.mulDiv(uint256(quoteDelta >= 0 ? quoteDelta : -quoteDelta), 1e18, absBase);
+        uint256 indexX18 = _getRiskPrice(IMarketRegistry(marketRegistry).getMarket(marketId));
+        uint256 band = _liquidationPriceBandBps[marketId];
+        if (band == 0) band = DEFAULT_LIQUIDATION_PRICE_BAND_BPS;
+        IClearingHouse.MarketRiskParams storage rp = marketRiskParams[marketId];
+        uint256 maxBand = rp.mmrBps > rp.liquidationPenaltyBps ? rp.mmrBps - rp.liquidationPenaltyBps : 0;
+        if (band > maxBand) band = maxBand;
+        if (
+            closingLong
+                ? fillX18 < Calculations.mulDiv(indexX18, BPS_DENOMINATOR - band, BPS_DENOMINATOR)
+                : fillX18 > Calculations.mulDiv(indexX18, BPS_DENOMINATOR + band, BPS_DENOMINATOR)
+        ) revert LiquidationPriceOutOfBand(fillX18, indexX18);
+    }
+
+    function _indexReadable(address indexOracle) internal view returns (bool) {
+        if (indexOracle == address(0)) return false;
+        try IOracle(indexOracle).getPrice() returns (uint256 price) {
+            return price > 0;
+        } catch {
+            return false;
+        }
     }
 
     /// @notice Reverts if an openPosition trade (not a pure reduction) breaks the market's OI caps.

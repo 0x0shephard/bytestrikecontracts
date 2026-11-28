@@ -301,7 +301,7 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
 
         // Post-withdrawal check: no position backed by the withdrawn token may become liquidatable.
         // Positions on other quote tokens are unaffected, so their feeds cannot block the withdrawal.
-        if (_hasLiquidatable(msg.sender, token, bytes32(0))) revert WouldBeLiquidatable();
+        if (_hasLiquidatable(msg.sender, token, bytes32(0), 0) != 0) revert WouldBeLiquidatable();
 
         emit CollateralWithdrawn(msg.sender, token, amount, received);
     }
@@ -311,8 +311,8 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     ///      touches no vAMM state and lets traders defend positions whose index keeps moving. While
     ///      another position on the same quote token is liquidatable, only a liquidatable position
     ///      can take margin, so free collateral stays available to that liquidation. A position whose
-    ///      own index cannot be read counts as not liquidatable for this check, so a lone position can
-    ///      still be topped up during its index outage. The protocol penalty shares the account's
+    ///      index cannot be read (the topped-up one or another) counts as not liquidatable for this
+    ///      check, so one stale feed does not block top-ups. The protocol penalty shares the account's
     ///      positions still owe cannot be moved, so they stay collectable when their episode ends.
     /// @param marketId The ID of the market for the position.
     /// @param amount The amount of margin to add (in quote currency value, 1e18).
@@ -327,7 +327,7 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         try IOracle(m.oracle).getPrice() returns (uint256 indexPrice) {
             ownLiquidatable = indexPrice > 0 && _isLiquidatable(msg.sender, marketId);
         } catch {}
-        if (!ownLiquidatable && _hasLiquidatable(msg.sender, m.quoteToken, marketId)) {
+        if (!ownLiquidatable && _hasLiquidatable(msg.sender, m.quoteToken, marketId, 1) == 1) {
             revert HasLiquidatablePosition();
         }
         // Free collateral above the reserved margin, less the protocol penalty shares still owed, which
@@ -417,12 +417,21 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         return _isLiquidatable(account, marketId);
     }
 
-    /// @dev True if a position of the account on `quoteToken`, other than the one in `skip`, is
-    ///      liquidatable (ClearingHouseViews.hasLiquidatable).
-    function _hasLiquidatable(address account, address quoteToken, bytes32 skip) internal returns (bool) {
+    /// @dev 1 if a position of the account on `quoteToken`, other than the one in `skip`, is
+    ///      liquidatable; else 2 if `mode` skipped one, else 0 (ClearingHouseViews.hasLiquidatable).
+    ///      Mode 0 checks every position; mode 1 skips those whose index cannot be read; mode 2 also
+    ///      skips liquidatable positions on paused markets.
+    function _hasLiquidatable(address account, address quoteToken, bytes32 skip, uint256 mode)
+        internal
+        returns (uint256)
+    {
         return abi.decode(
-            _delegate(abi.encodeWithSignature("hasLiquidatable(address,address,bytes32)", account, quoteToken, skip)),
-            (bool)
+            _delegate(
+                abi.encodeWithSignature(
+                    "hasLiquidatable(address,address,bytes32,uint256)", account, quoteToken, skip, mode
+                )
+            ),
+            (uint256)
         );
     }
 
@@ -604,7 +613,7 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
 
         // Block new positions if the user has a liquidatable position on the target market's quote
         // token (the collateral the trade draws on); other quote tokens' feeds cannot block the open.
-        if (_hasLiquidatable(msg.sender, IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken, bytes32(0))) {
+        if (_hasLiquidatable(msg.sender, IMarketRegistry(marketRegistry).getMarket(marketId).quoteToken, bytes32(0), 0) != 0) {
             revert HasLiquidatablePosition();
         }
 
@@ -685,7 +694,11 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     /// @dev Reverts while any of the account's positions on the same quote token is liquidatable: the
     ///      close's loss is paid from the balance that liquidation draws on, so a close pushed by a
     ///      second account could otherwise move that collateral out before the keeper acts. The trader
-    ///      can cure the liquidatable position with addMargin, after which closes pass again.
+    ///      can cure the liquidatable position with addMargin, after which closes pass again. A
+    ///      position whose index cannot be read, or a liquidatable one on a paused market, does not
+    ///      block the close, since no keeper can liquidate it either; while one is skipped, the
+    ///      close's average fill must stay inside the liquidation price band around the index
+    ///      (LiquidationPriceOutOfBand otherwise), so a pushed mark cannot move collateral out.
     /// @param marketId The ID of the perpetual market.
     /// @param size The amount of base asset to trade for closing the position.
     /// @param amountLimit For closing longs (selling base): min quote to receive. For closing shorts (buying base): max quote to spend. 0 = no limit.
@@ -693,7 +706,10 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         _settleAccountFunding(msg.sender, marketId, true);
         if (_isLiquidatable(msg.sender, marketId)) revert PositionLiquidatable();
         IMarketRegistry.Market memory m = IMarketRegistry(marketRegistry).getMarket(marketId);
-        if (_hasLiquidatable(msg.sender, m.quoteToken, marketId)) revert HasLiquidatablePosition();
+        // A sibling no keeper can liquidate now (its index unreadable, or its market paused) does not
+        // block the close, but the close's fill is then held inside the liquidation price band.
+        uint256 siblings = _hasLiquidatable(msg.sender, m.quoteToken, marketId, 2);
+        if (siblings == 1) revert HasLiquidatablePosition();
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
         if (!(m.vamm != address(0))) revert MarketNotFound();
         if (!(size > 0)) revert SizeZero();
@@ -718,6 +734,13 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         (int256 baseDelta, int256 quoteDelta, uint256 avgPrice) = position.size > 0
             ? vamm.sellBase(size, amountLimit)
             : vamm.buyBase(size, amountLimit);
+        if (siblings == 2) {
+            _delegate(
+                abi.encodeWithSignature(
+                    "checkCloseFill(bytes32,bool,int256,int256)", marketId, position.size > 0, baseDelta, quoteDelta
+                )
+            );
+        }
 
         // Store realized PnL before applying trade
         int256 oldRealizedPnL = position.realizedPnL;
