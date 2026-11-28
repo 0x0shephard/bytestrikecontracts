@@ -94,8 +94,9 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     ///         mmrBps - liquidationPenaltyBps: 1%. A narrower band blocks the next liquidation of a
     ///         long (short) as soon as one liquidation leaves the mark that far below (above) the index.
     uint256 public constant MIN_LIQUIDATION_BAND_BPS = 100;
-    /// @notice Time after the quote oracle's post-restart sequencer grace period during which
-    ///         liquidation stays closed, so traders can top up first.
+    /// @notice Time after the quote oracle's post-restart sequencer grace period, and after the quote
+    ///         price becomes readable again following a stale round, during which liquidation stays
+    ///         closed, so traders can top up first. Mirrored in ClearingHouseViews.
     uint256 public constant LIQUIDATION_REACTION_WINDOW = 30 minutes;
 
     // =========================================================================
@@ -740,7 +741,9 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     ///      a margin ratio no worse than before, unless the fill was capped. The close trades through
     ///      the vAMM reserve floors (vAMM.liquidationSwap), so a parked reserve cannot block it.
     ///      Closed for LIQUIDATION_REACTION_WINDOW after the quote oracle's sequencer grace period
-    ///      ends, since addMargin cannot value collateral during that grace period.
+    ///      ends, and after a quote price round that ends a stale period lands, since addMargin and
+    ///      depositMargin cannot value collateral while the quote price is unreadable
+    ///      (ClearingHouseViews.checkLiquidationWindow).
     /// @param account The address of the user whose position is being liquidated.
     /// @param marketId The ID of the market.
     /// @param size The amount of the position to liquidate.
@@ -748,17 +751,6 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         _settleAccountFunding(account, marketId, true);
         if (!_isLiquidatable(account, marketId)) revert NotLiquidatable();
         if (!(IMarketRegistry(marketRegistry).isActive(marketId))) revert MarketNotActive();
-        {
-            // A failed call or short return data (an oracle without the function) reads as no grace.
-            (bool ok, bytes memory data) =
-                ICollateralVault(vault).oracle().staticcall(abi.encodeWithSignature("sequencerGraceEndsAt()"));
-            if (ok && data.length >= 32) {
-                uint256 graceEndsAt = abi.decode(data, (uint256));
-                if (graceEndsAt != 0 && block.timestamp < graceEndsAt + LIQUIDATION_REACTION_WINDOW) {
-                    revert LiquidationReactionWindow();
-                }
-            }
-        }
         PositionView storage position = positions[account][marketId];
         MarketRiskParams memory rp = marketRiskParams[marketId];
         // Pre-trade size and effective margin, to compare the remainder of a partial liquidation with.
@@ -776,6 +768,8 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         }
 
         IMarketRegistry.Market memory m = _getMarketInfo(marketId);
+        // Closed for a reaction window after the quote price becomes readable again.
+        _delegate(abi.encodeWithSignature("checkLiquidationWindow(address)", m.quoteToken));
 
         // Snapshot risk price before the vAMM trade
         uint256 riskPrice = _getRiskPrice(m);

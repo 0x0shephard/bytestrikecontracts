@@ -15,12 +15,15 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
     /// @dev Mirrors ClearingHouse.DEFAULT_LIQUIDATION_PRICE_BAND_BPS and MIN_LIQUIDATION_BAND_BPS.
     uint256 internal constant DEFAULT_LIQUIDATION_PRICE_BAND_BPS = 500;
     uint256 internal constant MIN_LIQUIDATION_BAND_BPS = 100;
+    /// @dev Mirrors ClearingHouse.LIQUIDATION_REACTION_WINDOW.
+    uint256 internal constant LIQUIDATION_REACTION_WINDOW = 30 minutes;
 
     error IMRBelowMMR();
     error MMRZero();
     error MinExceedsMax();
     error InvalidLiquidationPriceBand();
     error InvalidOpenInterestCaps();
+    error LiquidationReactionWindow();
 
     // Admin setters, moved from ClearingHouse for size (ClearingHouse checks onlyAdmin and forwards).
 
@@ -222,6 +225,36 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
             }
         }
         return net[target] < 0;
+    }
+
+    /// @notice Reverts while liquidations of positions on `quoteToken` wait for traders to top up:
+    ///         until LIQUIDATION_REACTION_WINDOW after the vault oracle's post-restart sequencer grace
+    ///         period ends (sequencerGraceEndsAt), and after the round that made the token's price
+    ///         readable again after it was stale (priceResumedAt). addMargin and depositMargin cannot
+    ///         value collateral while the quote price is unreadable, so they need that time first.
+    /// @dev Delegatecall target of ClearingHouse.liquidate. Each time is probed with a low-level
+    ///      staticcall: a failed call or short return data (an oracle without the function) reads as
+    ///      0, which leaves liquidation open.
+    function checkLiquidationWindow(address quoteToken) external view {
+        address quoteOracle = ICollateralVault(vault).oracle();
+        uint256 opensAt = _probeTime(quoteOracle, abi.encodeWithSignature("sequencerGraceEndsAt()"));
+        uint256 resumedAt = _probeTime(
+            quoteOracle,
+            abi.encodeWithSignature(
+                "priceResumedAt(string,uint256)",
+                ICollateralVault(vault).getConfig(quoteToken).oracleSymbol,
+                LIQUIDATION_REACTION_WINDOW
+            )
+        );
+        if (resumedAt > opensAt) opensAt = resumedAt;
+        if (opensAt != 0 && block.timestamp < opensAt + LIQUIDATION_REACTION_WINDOW) {
+            revert LiquidationReactionWindow();
+        }
+    }
+
+    function _probeTime(address target, bytes memory data) internal view returns (uint256) {
+        (bool ok, bytes memory ret) = target.staticcall(data);
+        return ok && ret.length >= 32 ? abi.decode(ret, (uint256)) : 0;
     }
 
     // Liquidation penalty steps, moved from ClearingHouseLogic for size (reached through its fallback).

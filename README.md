@@ -400,7 +400,8 @@ Liquidator calls: clearingHouse.liquidate(user, marketId)
 Flow:
 1. Settle user's pending funding (updates unrealizedPnL). Liquidation stays closed for 30 minutes
    after the quote oracle's post-restart sequencer grace period ends (Oracle.sequencerGraceEndsAt),
-   so traders can top up first
+   and for 30 minutes after a quote price round lands that ends a stale period
+   (Oracle.priceResumedAt), so traders can top up first
 2. Check isLiquidatable(user, marketId):
    - equity < requiredMaintenanceMargin (getMarginRatio < mmrBps * 1e14), or settling funding
      would leave the position with funding debt

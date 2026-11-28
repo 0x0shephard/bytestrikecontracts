@@ -33,6 +33,8 @@ contract Oracle is Ownable2Step {
     /// @notice Grace period to wait after sequencer comes back online before trusting prices
     /// @dev Recommended by Chainlink to avoid stale prices right after sequencer restarts
     uint256 public constant SEQUENCER_GRACE_PERIOD = 3600; // 1 hour
+    /// @notice Most rounds priceResumedAt walks back through to find the end of a stale period.
+    uint256 public constant RESUME_LOOKBACK_ROUNDS = 16;
 
     // --- Events ---
     event PriceFeedSet(string indexed tokenSymbol, address indexed priceFeedAddress);
@@ -70,6 +72,48 @@ contract Oracle is Ownable2Step {
         if (address(sequencerUptimeFeed) == address(0)) return 0;
         (, , uint256 sequencerStartedAt, , ) = sequencerUptimeFeed.latestRoundData();
         return sequencerStartedAt + SEQUENCER_GRACE_PERIOD;
+    }
+
+    /**
+     * @notice Time at which the token's price became readable again after it was last stale, when
+     *         that was less than `_within` seconds ago.
+     * @dev ClearingHouse keeps liquidations closed for a reaction window after it, as after the
+     *      sequencer grace period, so traders can top up positions the index moved while getPrice
+     *      reverted. Walks back from the latest round while the rounds are younger than `_within`,
+     *      through at most RESUME_LOOKBACK_ROUNDS rounds, and returns the updatedAt of the first round
+     *      that landed more than the stale period after the round before it. Returns 0 when no such
+     *      round is found, when no feed or stale period is set, or when a previous round cannot be
+     *      read (e.g. the first round of a new aggregator phase).
+     * @param _tokenSymbol The symbol of the token (e.g., "USDC").
+     * @param _within How far back, in seconds, a stale period's end is still reported.
+     * @return The updatedAt of the round that ended the latest stale period within `_within`, or 0.
+     */
+    function priceResumedAt(string memory _tokenSymbol, uint256 _within) external view returns (uint256) {
+        uint256 stalePeriod = priceStalePeriods[_tokenSymbol];
+        AggregatorV3Interface priceFeed = priceFeeds[_tokenSymbol];
+        if (stalePeriod == 0 || address(priceFeed) == address(0)) return 0;
+        uint80 roundId;
+        uint256 updatedAt;
+        try priceFeed.latestRoundData() returns (uint80 latestId, int256, uint256, uint256 latestUpdatedAt, uint80) {
+            roundId = latestId;
+            updatedAt = latestUpdatedAt;
+        } catch {
+            return 0;
+        }
+        for (uint256 i = 0; i < RESUME_LOOKBACK_ROUNDS; i++) {
+            if (roundId == 0 || updatedAt == 0 || updatedAt > block.timestamp || block.timestamp - updatedAt >= _within) {
+                return 0;
+            }
+            try priceFeed.getRoundData(roundId - 1) returns (uint80, int256, uint256, uint256 prevUpdatedAt, uint80) {
+                if (prevUpdatedAt == 0 || prevUpdatedAt > updatedAt) return 0;
+                if (updatedAt - prevUpdatedAt > stalePeriod) return updatedAt;
+                updatedAt = prevUpdatedAt;
+            } catch {
+                return 0;
+            }
+            roundId--;
+        }
+        return 0;
     }
 
     /**
