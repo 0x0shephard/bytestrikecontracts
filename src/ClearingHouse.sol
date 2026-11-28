@@ -311,7 +311,8 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     ///      another position on the same quote token is liquidatable, only a liquidatable position
     ///      can take margin, so free collateral stays available to that liquidation. A position whose
     ///      own index cannot be read counts as not liquidatable for this check, so a lone position can
-    ///      still be topped up during its index outage.
+    ///      still be topped up during its index outage. The protocol penalty shares the account's
+    ///      positions still owe cannot be moved, so they stay collectable when their episode ends.
     /// @param marketId The ID of the market for the position.
     /// @param amount The amount of margin to add (in quote currency value, 1e18).
     function addMargin(bytes32 marketId, uint256 amount) external override {
@@ -328,12 +329,17 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
         if (!ownLiquidatable && _hasLiquidatable(msg.sender, m.quoteToken, marketId)) {
             revert HasLiquidatablePosition();
         }
-        uint256 quoteBalance = ICollateralVault(vault).balanceOf(msg.sender, m.quoteToken);
-        uint256 quoteValueX18 = _quoteValueX18(m.quoteToken, quoteBalance);
-        uint256 reservedForToken = _reservedMarginForToken(msg.sender, m.quoteToken);
-        if (quoteValueX18 < reservedForToken || amount > quoteValueX18 - reservedForToken) {
-            revert InsufficientQuoteBalance();
-        }
+        // Free collateral above the reserved margin, less the protocol penalty shares still owed, which
+        // stay free until their liquidation episode ends (ClearingHouseViews.unowedFreeValue).
+        uint256 freeX18 = abi.decode(
+            _delegate(
+                abi.encodeWithSignature(
+                    "unowedFreeValue(address,address,bytes32)", msg.sender, m.quoteToken, marketId
+                )
+            ),
+            (uint256)
+        );
+        if (amount > freeX18) revert InsufficientQuoteBalance();
         positions[msg.sender][marketId].margin += amount;
         _totalReservedMargin[msg.sender] += amount;
         _endPenaltyEpisode(msg.sender, marketId);

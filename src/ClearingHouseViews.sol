@@ -241,7 +241,8 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
     ///      the filled size at the pre-trade risk price, and the penalties of one liquidatable episode
     ///      are capped at penaltyCap in total (PositionView.liquidationPenaltyCharged), so a liquidation
     ///      split over several calls pays no more than one done at once. Free collateral (which holds
-    ///      the closed slice's released margin) pays first. What it cannot cover is drawn from surplus
+    ///      the closed slice's released margin) pays first, except the protocol shares earlier calls
+    ///      of the account's episodes left owed, which stay there until those episodes end. What it cannot cover is drawn from surplus
     ///      margin on the account's other positions, and only the rest is cut from the margin of the
     ///      liquidated position's remaining size, so a partial liquidation's remainder keeps its margin
     ///      whenever the account holds surplus elsewhere.
@@ -262,7 +263,8 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
             if (penalty > left) penalty = left;
             position.liquidationPenaltyCharged = charged + penalty;
         }
-        uint256 freeValue = _freeQuoteValue(account, quoteToken);
+        // The protocol's shares earlier calls left owed stay in free collateral for the episode's end.
+        uint256 freeValue = _unowedFreeValue(account, quoteToken, marketId);
         if (penalty > freeValue) {
             uint256 balance = ICollateralVault(vault).balanceOf(account, quoteToken);
             uint256 reservedUnits = _notionalToQuoteUnits(_reservedMarginForToken(account, quoteToken), quoteToken);
@@ -273,9 +275,31 @@ contract ClearingHouseViews is ClearingHouseLogicBase {
                 balance < reservedUnits ? balance : reservedUnits,
                 marketId
             );
-            freeValue = _freeQuoteValue(account, quoteToken);
+            freeValue = _unowedFreeValue(account, quoteToken, marketId);
         }
         if (penalty > freeValue) _reduceMargin(account, position, penalty - freeValue);
+    }
+
+    /// @notice Free quote value the account can spend or move into margin: the value of its balance
+    ///         above the margin reserved on `quoteToken`, less the protocol penalty shares its positions
+    ///         on that token still owe (PositionView.liquidationPenaltyOwed, collected when their
+    ///         liquidation episode ends). Delegatecall target of ClearingHouse.addMargin.
+    /// @dev `marketId`'s owed share is counted even when the position has just been closed and left
+    ///      the account's active markets.
+    function unowedFreeValue(address account, address quoteToken, bytes32 marketId) external view returns (uint256) {
+        return _unowedFreeValue(account, quoteToken, marketId);
+    }
+
+    function _unowedFreeValue(address account, address quoteToken, bytes32 marketId) internal view returns (uint256) {
+        uint256 owed = positions[account][marketId].liquidationPenaltyOwed;
+        bytes32[] memory markets = _userActiveMarkets[account];
+        for (uint256 i = 0; i < markets.length; i++) {
+            if (markets[i] != marketId && IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken == quoteToken) {
+                owed += positions[account][markets[i]].liquidationPenaltyOwed;
+            }
+        }
+        uint256 free = _freeQuoteValue(account, quoteToken);
+        return free > owed ? free - owed : 0;
     }
 
 }
