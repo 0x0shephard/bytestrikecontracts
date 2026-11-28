@@ -380,7 +380,8 @@ clearingHouse.addMargin(marketId, amount)
 
 // Deposit quote tokens straight into a position's margin (top-up)
 clearingHouse.depositMargin(marketId, tokenAmount)
-// Works while vault deposits are paused or the caps are full; reverts if the position's equity
+// Works while vault deposits are paused, the caps are full or the quote token is disabled
+// (being retired); reverts if the position's equity
 // after it (margin + unrealizedPnL at the index - funding debt) exceeds IMR * size * max(mark, index)
 
 // Remove margin from position to collateral

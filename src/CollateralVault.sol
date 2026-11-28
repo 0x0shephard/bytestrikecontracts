@@ -163,14 +163,14 @@ contract CollateralVault is ICollateralVault, AccessControlDefaultAdminRules {
     }
 
     /// @notice Deposit collateral that ClearingHouse adds to an open position's margin. CH only.
-    /// @dev Ignores the deposit pause and the caps, so a position can be topped up while they bind;
+    /// @dev Ignores the deposit pause, the caps and the enabled flag, so a position can be topped up
+    /// while they bind, including while its quote token is being retired (disabled for new deposits);
     /// ClearingHouse.depositMargin bounds each top-up by the position's shortfall from its initial margin.
     /// @param token ERC20 collateral token.
     /// @param amount Amount to transferFrom.
     /// @param onBehalfOf Account whose internal balance increases.
     /// @return received Actual amount credited after transfer fees, if any.
     function depositForMargin(address token, uint256 amount, address onBehalfOf) external onlyClearingHouse override returns (uint256 received) {
-        require(collateralConfigs[token].enabled, "CV: token disabled");
         require(amount > 0, "CV: amount=0");
         require(onBehalfOf != address(0), "CV: zero address");
 
