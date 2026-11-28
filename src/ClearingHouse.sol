@@ -411,16 +411,12 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     }
 
     /// @dev True if a position of the account on `quoteToken`, other than the one in `skip`, is
-    ///      liquidatable.
-    function _hasLiquidatable(address account, address quoteToken, bytes32 skip) internal view returns (bool) {
-        bytes32[] memory markets = _userActiveMarkets[account];
-        for (uint256 i = 0; i < markets.length; i++) {
-            if (
-                markets[i] != skip && IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken == quoteToken
-                    && _isLiquidatable(account, markets[i])
-            ) return true;
-        }
-        return false;
+    ///      liquidatable (ClearingHouseViews.hasLiquidatable).
+    function _hasLiquidatable(address account, address quoteToken, bytes32 skip) internal returns (bool) {
+        return abi.decode(
+            _delegate(abi.encodeWithSignature("hasLiquidatable(address,address,bytes32)", account, quoteToken, skip)),
+            (bool)
+        );
     }
 
     /// @dev A position is liquidatable below maintenance margin, and also whenever it carries funding
@@ -493,38 +489,13 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     }
 
     /// @notice Sets the risk parameters for a market.
-    function setRiskParams(
-        bytes32 marketId,
-        uint256 imrBps,
-        uint256 mmrBps,
-        uint256 liquidationPenaltyBps,
-        uint256 penaltyCap,
-        uint256 maxPositionSize,
-        uint256 minPositionSize
-    ) external override onlyAdmin {
-        if (!(IMarketRegistry(marketRegistry).getMarket(marketId).vamm != address(0))) revert MarketNotFound();
-        if (!(imrBps >= mmrBps)) revert IMRBelowMMR();
-        if (!(mmrBps > 0)) revert MMRZero();
-        if (!(minPositionSize <= maxPositionSize || maxPositionSize == 0)) revert MinExceedsMax();
-        // A liquidation inside the band must leave a position at the maintenance threshold enough
-        // margin to fund the penalty: band + penalty <= mmr. An unset band is capped by the getter
-        // at mmr - penalty, which must itself leave at least the minimum band.
-        {
-            uint256 band = _liquidationPriceBandBps[marketId];
-            if (band < MIN_LIQUIDATION_BAND_BPS) band = MIN_LIQUIDATION_BAND_BPS;
-            if (!(band + liquidationPenaltyBps <= mmrBps)) revert InvalidLiquidationPriceBand();
-        }
-
-        marketRiskParams[marketId] = MarketRiskParams({
-            imrBps: imrBps,
-            mmrBps: mmrBps,
-            liquidationPenaltyBps: liquidationPenaltyBps,
-            penaltyCap: penaltyCap,
-            maxPositionSize: maxPositionSize,
-            minPositionSize: minPositionSize
-        });
-
-        emit RiskParamsSet(marketId, imrBps, mmrBps, liquidationPenaltyBps, penaltyCap, maxPositionSize, minPositionSize);
+    /// @dev Runs in ClearingHouseViews.setRiskParams (through ClearingHouseLogic's fallback).
+    function setRiskParams(bytes32, uint256, uint256, uint256, uint256, uint256, uint256)
+        external
+        override
+        onlyAdmin
+    {
+        _delegate(msg.data);
     }
 
     /// @notice Internal function to calculate the maintenance margin for a position.
@@ -602,23 +573,10 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
     }
 
 
-    /// @notice Sets the aggregate open-interest caps for a market. 0 disables a cap.
-    /// @dev Lowering a cap below current OI never traps positions: closes, pure reductions and
-    ///      liquidations are never capped. Above the gross cap, a trade is accepted only if it moves
-    ///      the vAMM mark toward the index without crossing it, so a pushed premium can always be
-    ///      traded back (see ClearingHouseLogic.checkOpenInterestCaps).
-    /// @param marketId The market to configure.
-    /// @param maxGrossOI Cap on long OI + short OI, in base units (1e18).
-    /// @param maxNetOI Cap on |long OI - short OI|, in base units (1e18). Limits new one-sided exposure only;
-    ///        closes can still leave net OI above it. Requires a non-zero maxGrossOI.
-    function setOpenInterestCaps(bytes32 marketId, uint128 maxGrossOI, uint128 maxNetOI) external onlyAdmin {
-        if (!(IMarketRegistry(marketRegistry).getMarket(marketId).vamm != address(0))) revert MarketNotFound();
-        // Net OI can be pushed past its cap by building both sides and then closing one, so the
-        // gross cap is the hard bound and a net cap is only accepted alongside one.
-        if (maxNetOI != 0 && (maxGrossOI == 0 || maxNetOI > maxGrossOI)) revert InvalidOpenInterestCaps();
-
-        openInterestCaps[marketId] = OpenInterestCaps({maxGrossOI: maxGrossOI, maxNetOI: maxNetOI});
-        emit OpenInterestCapsSet(marketId, maxGrossOI, maxNetOI);
+    /// @notice Sets the aggregate open-interest caps for a market (maxGrossOI, maxNetOI). 0 disables a cap.
+    /// @dev Runs in ClearingHouseViews.setOpenInterestCaps (through ClearingHouseLogic's fallback).
+    function setOpenInterestCaps(bytes32, uint128, uint128) external onlyAdmin {
+        _delegate(msg.data);
     }
 
     /// @notice True if the position kept its side (or closed) and did not grow.
@@ -946,16 +904,9 @@ contract ClearingHouse is Initializable, Ownable2StepUpgradeable, UUPSUpgradeabl
 
     /// @notice Sets how far the pre-trade mark may be worse than the index for a liquidation.
     ///         0 restores the default (5%, capped at mmrBps - liquidationPenaltyBps).
-    /// @param bandBps Band in bps; at least MIN_LIQUIDATION_BAND_BPS, and bandBps + liquidationPenaltyBps
-    ///        must not exceed mmrBps, so the market's risk parameters must be set first.
-    function setLiquidationPriceBand(bytes32 marketId, uint256 bandBps) external onlyAdmin {
-        if (!(IMarketRegistry(marketRegistry).getMarket(marketId).vamm != address(0))) revert MarketNotFound();
-        MarketRiskParams storage rp = marketRiskParams[marketId];
-        if (bandBps != 0 && (bandBps < MIN_LIQUIDATION_BAND_BPS || bandBps + rp.liquidationPenaltyBps > rp.mmrBps)) {
-            revert InvalidLiquidationPriceBand();
-        }
-        _liquidationPriceBandBps[marketId] = bandBps;
-        emit LiquidationPriceBandSet(marketId, bandBps);
+    /// @dev Runs in ClearingHouseViews.setLiquidationPriceBand (through ClearingHouseLogic's fallback).
+    function setLiquidationPriceBand(bytes32, uint256) external onlyAdmin {
+        _delegate(msg.data);
     }
 
     /// @notice Reverts if the vAMM mark before a liquidation is worse than the index by more than the

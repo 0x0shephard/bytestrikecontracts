@@ -12,6 +12,102 @@ import {ClearingHouseLogicBase} from "./ClearingHouseLogicBase.sol";
 /// @dev Deployed by ClearingHouseLogic's constructor and reached through its fallback, i.e. always by
 ///      delegatecall in ClearingHouse's storage context.
 contract ClearingHouseViews is ClearingHouseLogicBase {
+    /// @dev Mirrors ClearingHouse.DEFAULT_LIQUIDATION_PRICE_BAND_BPS and MIN_LIQUIDATION_BAND_BPS.
+    uint256 internal constant DEFAULT_LIQUIDATION_PRICE_BAND_BPS = 500;
+    uint256 internal constant MIN_LIQUIDATION_BAND_BPS = 100;
+
+    error IMRBelowMMR();
+    error MMRZero();
+    error MinExceedsMax();
+    error InvalidLiquidationPriceBand();
+    error InvalidOpenInterestCaps();
+
+    // Admin setters, moved from ClearingHouse for size (ClearingHouse checks onlyAdmin and forwards).
+
+    /// @notice Sets the risk parameters for a market. Delegatecall target of ClearingHouse.setRiskParams.
+    function setRiskParams(
+        bytes32 marketId,
+        uint256 imrBps,
+        uint256 mmrBps,
+        uint256 liquidationPenaltyBps,
+        uint256 penaltyCap,
+        uint256 maxPositionSize,
+        uint256 minPositionSize
+    ) external {
+        if (!(IMarketRegistry(marketRegistry).getMarket(marketId).vamm != address(0))) revert MarketNotFound();
+        if (!(imrBps >= mmrBps)) revert IMRBelowMMR();
+        if (!(mmrBps > 0)) revert MMRZero();
+        if (!(minPositionSize <= maxPositionSize || maxPositionSize == 0)) revert MinExceedsMax();
+        // A liquidation inside the band must leave a position at the maintenance threshold enough
+        // margin to fund the penalty: band + penalty <= mmr. An unset band is capped by the getter
+        // at mmr - penalty, which must itself leave at least the minimum band.
+        {
+            uint256 band = _liquidationPriceBandBps[marketId];
+            if (band < MIN_LIQUIDATION_BAND_BPS) band = MIN_LIQUIDATION_BAND_BPS;
+            if (!(band + liquidationPenaltyBps <= mmrBps)) revert InvalidLiquidationPriceBand();
+        }
+
+        marketRiskParams[marketId] = IClearingHouse.MarketRiskParams({
+            imrBps: imrBps,
+            mmrBps: mmrBps,
+            liquidationPenaltyBps: liquidationPenaltyBps,
+            penaltyCap: penaltyCap,
+            maxPositionSize: maxPositionSize,
+            minPositionSize: minPositionSize
+        });
+
+        emit IClearingHouse.RiskParamsSet(
+            marketId, imrBps, mmrBps, liquidationPenaltyBps, penaltyCap, maxPositionSize, minPositionSize
+        );
+    }
+
+    /// @notice Sets the aggregate open-interest caps for a market. 0 disables a cap.
+    /// @dev Delegatecall target of ClearingHouse.setOpenInterestCaps. Lowering a cap below current OI
+    ///      never traps positions: closes, pure reductions and liquidations are never capped. Above the
+    ///      gross cap, a trade is accepted only if it moves the vAMM mark toward the index without
+    ///      crossing it, so a pushed premium can always be traded back (see checkOpenInterestCaps).
+    /// @param maxGrossOI Cap on long OI + short OI, in base units (1e18).
+    /// @param maxNetOI Cap on |long OI - short OI|, in base units (1e18). Limits new one-sided exposure only;
+    ///        closes can still leave net OI above it. Requires a non-zero maxGrossOI.
+    function setOpenInterestCaps(bytes32 marketId, uint128 maxGrossOI, uint128 maxNetOI) external {
+        if (!(IMarketRegistry(marketRegistry).getMarket(marketId).vamm != address(0))) revert MarketNotFound();
+        // Net OI can be pushed past its cap by building both sides and then closing one, so the
+        // gross cap is the hard bound and a net cap is only accepted alongside one.
+        if (maxNetOI != 0 && (maxGrossOI == 0 || maxNetOI > maxGrossOI)) revert InvalidOpenInterestCaps();
+
+        openInterestCaps[marketId] = IClearingHouse.OpenInterestCaps({maxGrossOI: maxGrossOI, maxNetOI: maxNetOI});
+        emit IClearingHouse.OpenInterestCapsSet(marketId, maxGrossOI, maxNetOI);
+    }
+
+    /// @notice Sets how far the pre-trade mark may be worse than the index for a liquidation.
+    ///         0 restores the default (5%, capped at mmrBps - liquidationPenaltyBps).
+    /// @dev Delegatecall target of ClearingHouse.setLiquidationPriceBand.
+    /// @param bandBps Band in bps; at least MIN_LIQUIDATION_BAND_BPS, and bandBps + liquidationPenaltyBps
+    ///        must not exceed mmrBps, so the market's risk parameters must be set first.
+    function setLiquidationPriceBand(bytes32 marketId, uint256 bandBps) external {
+        if (!(IMarketRegistry(marketRegistry).getMarket(marketId).vamm != address(0))) revert MarketNotFound();
+        IClearingHouse.MarketRiskParams storage rp = marketRiskParams[marketId];
+        if (bandBps != 0 && (bandBps < MIN_LIQUIDATION_BAND_BPS || bandBps + rp.liquidationPenaltyBps > rp.mmrBps)) {
+            revert InvalidLiquidationPriceBand();
+        }
+        _liquidationPriceBandBps[marketId] = bandBps;
+        emit IClearingHouse.LiquidationPriceBandSet(marketId, bandBps);
+    }
+
+    /// @notice True if a position of the account on `quoteToken`, other than the one in `skip`, is
+    ///         liquidatable (ClearingHouse.isLiquidatable).
+    /// @dev Delegatecall target of ClearingHouse._hasLiquidatable.
+    function hasLiquidatable(address account, address quoteToken, bytes32 skip) external view returns (bool) {
+        bytes32[] memory markets = _userActiveMarkets[account];
+        for (uint256 i = 0; i < markets.length; i++) {
+            if (
+                markets[i] != skip && IMarketRegistry(marketRegistry).getMarket(markets[i]).quoteToken == quoteToken
+                    && IClearingHouse(address(this)).isLiquidatable(account, markets[i])
+            ) return true;
+        }
+        return false;
+    }
+
     /// @notice Reverts if an openPosition trade (not a pure reduction) breaks the market's OI caps.
     /// @dev Delegatecall target of ClearingHouse.openPosition, after the trade. A trade that leaves gross
     ///      OI above its cap is accepted only if it moved the vAMM mark toward the index without

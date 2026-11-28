@@ -10,7 +10,7 @@ import {Calculations} from "./Libraries/Calculations.sol";
 
 /// @notice Storage layout and shared helpers of the ClearingHouse delegatecall targets
 ///         (ClearingHouseLogic and ClearingHouseViews).
-/// @dev Storage layout MUST mirror ClearingHouse exactly (slots 11-14 are placeholders).
+/// @dev Storage layout MUST mirror ClearingHouse exactly (slots 11-12 are placeholders).
 ///      Any addition/removal of storage variables in ClearingHouse must be reflected here.
 abstract contract ClearingHouseLogicBase {
     // =========================================================================
@@ -28,12 +28,12 @@ abstract contract ClearingHouseLogicBase {
     uint256 internal totalBadDebt; // slot 8
     mapping(bytes32 => uint256) internal totalLongOI; // slot 9
     mapping(bytes32 => uint256) internal totalShortOI; // slot 10
-    // Slots 11-14 are set by ClearingHouse only; they are held here so the slots after them line up.
+    // Slots 11-12 are set by ClearingHouse only; they are held here so the slots after them line up.
     address private _slot11AllowlistManager; // slot 11
     bool private _slot11AllowlistEnforced; // slot 11 (packed)
     mapping(address => bool) private _slot12AllowedTraders; // slot 12
     mapping(bytes32 => IClearingHouse.OpenInterestCaps) internal openInterestCaps; // slot 13 (read by checkOpenInterestCaps)
-    mapping(bytes32 => uint256) private _slot14LiquidationPriceBandBps; // slot 14
+    mapping(bytes32 => uint256) internal _liquidationPriceBandBps; // slot 14 (set by ClearingHouseViews.setLiquidationPriceBand)
     mapping(bytes32 => uint256) internal fundingSurplus; // slot 15
     mapping(address => mapping(address => uint256)) internal pendingTradeFees; // slot 16
     mapping(address => mapping(address => uint256)) internal pendingLiqPenalties; // slot 17
